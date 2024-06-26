@@ -1,0 +1,11 @@
+[
+    {
+        "caption": "Language Server Client: Initialize",
+        "command": "language_server_client_initialize"
+    },
+    {
+        "caption": "Language Server Client: Shutdown",
+        "command": "language_server_client_shutdown"
+    },
+    
+]
