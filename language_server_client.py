@@ -85,18 +85,27 @@ class LanguageServerClient:
             except subprocess.TimeoutExpired:
                 logger.debug("Timeout")
 
-            # try:
-            #     o, e = p.communicate(timeout=10)
+    def exit(self):
+        if p := self.server_process:
+            self.server_shutdown.set()
 
-            #     logger.debug(f"Out: {o}, Error: {e}")
-            # except subprocess.TimeoutExpired:
-            #     logger.debug("Timeout")
+            def _exit():
+                logger.debug("Exiting")
 
-            #     p.kill()
+                try:
+                    o, e = p.communicate(timeout=10)
 
-            #     o, e = p.communicate()
+                    logger.debug(f"Out: {o}, Error: {e}")
+                except subprocess.TimeoutExpired:
+                    logger.debug("Timeout")
 
-            #     logger.debug(f"Out: {o}, Error: {e}")
+                    p.kill()
+
+                    o, e = p.communicate()
+
+                    logger.debug(f"Out: {o}, Error: {e}")
+
+            threading.Thread(name="ServerExit", target=_exit).start()
 
 
 class ServerInputHandler(sublime_plugin.ListInputHandler):
@@ -201,6 +210,18 @@ class LanguageServerClientShutdownCommand(sublime_plugin.WindowCommand):
     def run(self):
         if c := self.window._lsc_client:
             c.shutdown()
+
+class LanguageServerClientExitCommand(sublime_plugin.WindowCommand):
+    # The shutdown request is sent from the client to the server.
+    # It asks the server to shut down,
+    # but to not exit (otherwise the response might not be delivered correctly to the client).
+    # There is a separate exit notification that asks the server to exit.
+    #
+    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
+
+    def run(self):
+        if c := self.window._lsc_client:
+            c.exit()
 
 
 def plugin_loaded():
