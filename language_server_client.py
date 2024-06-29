@@ -15,7 +15,7 @@ SERVERS = {
     ],
 }
 
-logger = logging.getLogger("Pep")
+logger = logging.getLogger("LSC")
 
 
 class LanguageServerClient:
@@ -23,7 +23,41 @@ class LanguageServerClient:
         self.server_name = server_name
         self.server_process_args = server_process_args
         self.server_process = None
+        self.server_shutdown = threading.Event()
         self.server_reader = None
+
+    def read(self):
+        logger.debug("Start reading")
+
+        while not self.server_shutdown.is_set():
+            out = self.server_process.stdout
+
+            # -- HEADER
+
+            headers = {}
+
+            while True:
+                line = out.readline().decode("ascii").strip()
+
+                if line == "":
+                    break
+
+                k, v = line.split(": ", 1)
+
+                headers[k] = v
+
+            logger.debug(f"Headers: {headers}")
+
+            # -- BODY
+
+            body = None
+
+            if content_length := headers.get("Content-Length"):
+                body = out.read(int(content_length)).decode("utf-8").strip()
+
+            logger.debug(f"Body: {body}")
+
+        logger.debug("Stop reading")
 
     def initialize(self):
         logger.debug(f"Initialize {self.server_name} {self.server_process_args}")
@@ -31,47 +65,38 @@ class LanguageServerClient:
         self.server_process = subprocess.Popen(
             self.server_process_args,
             stdin=subprocess.PIPE,
-
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             bufsize=0,
         )
 
-        logger.debug(f"{self.server_process.pid}")
+        logger.debug(f"Server PID{self.server_process.pid}")
+
+        self.server_reader = threading.Thread(name="Reader", target=self.read)
+        self.server_reader.start()
 
     def shutdown(self):
         if p := self.server_process:
-            try:
-                o, e = p.communicate(timeout=10)
+            self.server_shutdown.set()
 
-                logger.debug(f"Out: {o}, Error: {e}")
+            try:
+                p.terminate()
+                p.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 logger.debug("Timeout")
 
-                p.kill()
+            # try:
+            #     o, e = p.communicate(timeout=10)
 
-                o, e = p.communicate()
+            #     logger.debug(f"Out: {o}, Error: {e}")
+            # except subprocess.TimeoutExpired:
+            #     logger.debug("Timeout")
 
-                logger.debug(f"Out: {o}, Error: {e}")
+            #     p.kill()
 
+            #     o, e = p.communicate()
 
-def lsp_reader(stdout):
-    while True:
-        length_header = stdout.readline().decode("ascii").strip()
-
-        print(length_header)
-
-        if not length_header.startswith("Content-Length:"):
-            continue
-
-        length = int(length_header.split(":")[1].strip())
-
-        # Consume the empty line:
-        stdout.readline()
-
-        message = stdout.read(length).decode("utf-8")
-
-        print(message)
+            #     logger.debug(f"Out: {o}, Error: {e}")
 
 
 class ServerInputHandler(sublime_plugin.ListInputHandler):
@@ -100,7 +125,7 @@ class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
             return ServerInputHandler()
 
     def run(self, server):
-        client = LanguageServerClient(
+        self.window._lsc_client = LanguageServerClient(
             server_name="Nightincode",
             server_process_args=[
                 "java",
@@ -109,9 +134,7 @@ class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
             ],
         )
 
-        client.initialize()
-
-        self.window._lsc_client = client
+        self.window._lsc_client.initialize()
 
         # server_process = subprocess.Popen(
         #     ["java", "-jar", "/Users/pedro/Developer/Nightincode/nightincode.jar"],
