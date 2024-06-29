@@ -24,6 +24,15 @@ class LanguageServerClient:
         self.server_process = None
         self.server_shutdown = threading.Event()
         self.server_reader = None
+        self.server_writer_lock = threading.Lock()
+        self.server_request_count = 0
+        self.server_initialized = False
+
+    def write(self, header, body):
+        with self.server_writer_lock:
+            self.server_process.stdin.write(header.encode("ascii"))
+            self.server_process.stdin.write(body.encode("utf-8"))
+            self.server_process.stdin.flush()
 
     def read(self):
         logger.debug("Start reading")
@@ -69,16 +78,18 @@ class LanguageServerClient:
             bufsize=0,
         )
 
-        logger.debug(f"Server PID{self.server_process.pid}")
+        logger.debug(f"{self.server_name} is up and running; PID {self.server_process.pid}")
 
-        self.server_reader = threading.Thread(name="Reader", target=self.read)
+        self.server_reader = threading.Thread(name="MessageHandler", target=self.read)
         self.server_reader.start()
 
         rootUri = Path(rootPath).as_uri()
 
+        self.server_request_count += 1
+
         message = {
             "jsonrpc": "2.0",
-            "id": 1,
+            "id": self.server_request_count,
             "method": "initialize",
             "params": {
                 "processId": os.getpid(),
@@ -96,9 +107,7 @@ class LanguageServerClient:
 
         header = f"Content-Length: {len(body)}\r\n\r\n"
 
-        self.server_process.stdin.write(header.encode("ascii"))
-        self.server_process.stdin.write(body.encode("utf-8"))
-        self.server_process.stdin.flush()
+        self.write(header, body)
 
     def shutdown(self):
         if p := self.server_process:
