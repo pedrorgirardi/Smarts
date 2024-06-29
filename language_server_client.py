@@ -4,9 +4,10 @@ import os
 import subprocess
 import threading
 from pathlib import Path
+from queue import Queue
 
-import sublime_plugin  # pyright: ignore
 import sublime  # pyright: ignore
+import sublime_plugin  # pyright: ignore
 
 logger = logging.getLogger("LSC")
 
@@ -27,6 +28,8 @@ class LanguageServerClient:
         self.server_writer_lock = threading.Lock()
         self.server_request_count = 0
         self.server_initialized = False
+        self.receive_queue = Queue(maxsize=1)
+        self.receive_worker = None
 
     def write(self, header, body):
         with self.server_writer_lock:
@@ -35,7 +38,7 @@ class LanguageServerClient:
             self.server_process.stdin.flush()
 
     def read(self):
-        logger.debug("Start reading")
+        logger.debug("Reader is ready")
 
         while not self.server_shutdown.is_set():
             out = self.server_process.stdout
@@ -54,8 +57,6 @@ class LanguageServerClient:
 
                 headers[k] = v
 
-            logger.debug(f"Headers: {headers}")
-
             # -- BODY
 
             body = None
@@ -63,9 +64,36 @@ class LanguageServerClient:
             if content_length := headers.get("Content-Length"):
                 body = out.read(int(content_length)).decode("utf-8").strip()
 
-            logger.debug(f"Body: {body}")
+                # Enqueue message (header & body).
+                # Blocks if queue is full.
+                self.receive_queue.put((headers, body))
 
-        logger.debug("Stop reading")
+        logger.debug("Reader is done")
+
+    def handle(self):
+        logger.debug("Worker is ready")
+
+        def rec():
+            logger.debug("Waiting for message...")
+
+            message = self.receive_queue.get()
+
+            if message is None:
+                logger.debug("Received None")
+
+            return message
+
+        while (message := rec()) is not None:
+            _, body = message
+
+            logger.debug(f"Handle {body}")
+
+            self.receive_queue.task_done()
+
+        # 'None Task' is complete.
+        self.receive_queue.task_done()
+
+        logger.debug("Worker is done")
 
     def initialize(self, rootPath):
         logger.debug(f"Initialize {self.server_name} {self.server_process_args}")
@@ -78,9 +106,16 @@ class LanguageServerClient:
             bufsize=0,
         )
 
-        logger.debug(f"{self.server_name} is up and running; PID {self.server_process.pid}")
+        logger.debug(
+            f"{self.server_name} is up and running; PID {self.server_process.pid}"
+        )
 
-        self.server_reader = threading.Thread(name="MessageHandler", target=self.read)
+        # Start Worker - responsible for handling messages.
+        self.receive_worker = threading.Thread(name="Worker", target=self.handle)
+        self.receive_worker.start()
+
+        # Start Reader - responsible for reading messages from sever's stdout.
+        self.server_reader = threading.Thread(name="Reader", target=self.read)
         self.server_reader.start()
 
         rootUri = Path(rootPath).as_uri()
@@ -131,13 +166,16 @@ class LanguageServerClient:
 
                     logger.debug(f"Out: {o}, Error: {e}")
                 except subprocess.TimeoutExpired:
-                    logger.debug("Timeout")
-
                     p.kill()
 
                     o, e = p.communicate()
 
                     logger.debug(f"Out: {o}, Error: {e}")
+
+                # Enqueue `None` to signal that handler must stop.
+                logger.debug("Stop Worker")
+
+                self.receive_queue.put(None)
 
             threading.Thread(name="ServerExit", target=_exit).start()
 
