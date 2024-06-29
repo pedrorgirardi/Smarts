@@ -1,5 +1,13 @@
 [
     {
+        "caption": "Language Server Client: Settings",
+        "command": "edit_settings",
+        "args": {
+            "base_file": "${packages}/LanguageServerClient/LanguageServerClient.sublime-settings",
+            "user_file": "${packages}/User/LanguageServerClient.sublime-settings"
+        }
+    },
+    {
         "caption": "Language Server Client: Initialize",
         "command": "language_server_client_initialize"
     },

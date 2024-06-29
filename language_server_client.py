@@ -6,16 +6,15 @@ import threading
 from pathlib import Path
 
 import sublime_plugin  # pyright: ignore
-
-SERVERS = {
-    "Nightincode": [
-        "java",
-        "-jar",
-        "/Users/pedro/Developer/Nightincode/nightincode.jar",
-    ],
-}
+import sublime  # pyright: ignore
 
 logger = logging.getLogger("LSC")
+
+STG_SERVERS = "servers"
+
+
+def settings():
+    return sublime.load_settings("LanguageServerClient.sublime-settings")
 
 
 class LanguageServerClient:
@@ -145,7 +144,7 @@ class ServerInputHandler(sublime_plugin.ListInputHandler):
         # The returned value may be a list of item,
         # or a 2-element tuple containing a list of items,
         # and an int index of the item to pre-select.
-        return sorted(SERVERS.keys())
+        return sorted(settings().get(STG_SERVERS).keys())
 
 
 class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
@@ -160,13 +159,11 @@ class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
             return ServerInputHandler()
 
     def run(self, server):
+        server_config = settings().get(STG_SERVERS).get(server)
+
         self.window._lsc_client = LanguageServerClient(
-            server_name="Nightincode",
-            server_process_args=[
-                "java",
-                "-jar",
-                "/Users/pedro/Developer/Nightincode/nightincode.jar",
-            ],
+            server_name=server,
+            server_process_args=server_config["args"],
         )
 
         rootPath = self.window.folders()[0] if self.window.folders() else None
