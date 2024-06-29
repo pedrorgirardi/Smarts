@@ -59,7 +59,7 @@ class LanguageServerClient:
 
         logger.debug("Stop reading")
 
-    def initialize(self):
+    def initialize(self, rootPath):
         logger.debug(f"Initialize {self.server_name} {self.server_process_args}")
 
         self.server_process = subprocess.Popen(
@@ -74,6 +74,32 @@ class LanguageServerClient:
 
         self.server_reader = threading.Thread(name="Reader", target=self.read)
         self.server_reader.start()
+
+        rootUri = Path(rootPath).as_uri()
+
+        message = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "processId": os.getpid(),
+                "clientInfo": {
+                    "name": "Sublime Text Language Server Client",
+                    "version": "0.1.0",
+                },
+                "rootPath": rootPath,
+                "rootUri": rootUri,
+                "capabilities": {},
+            },
+        }
+
+        body = json.dumps(message)
+
+        header = f"Content-Length: {len(body)}\r\n\r\n"
+
+        self.server_process.stdin.write(header.encode("ascii"))
+        self.server_process.stdin.write(body.encode("utf-8"))
+        self.server_process.stdin.flush()
 
     def shutdown(self):
         if p := self.server_process:
@@ -143,60 +169,9 @@ class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
             ],
         )
 
-        self.window._lsc_client.initialize()
+        rootPath = self.window.folders()[0] if self.window.folders() else None
 
-        # server_process = subprocess.Popen(
-        #     ["java", "-jar", "/Users/pedro/Developer/Nightincode/nightincode.jar"],
-        #     stdin=subprocess.PIPE,
-        #     stdout=subprocess.PIPE,
-        #     stderr=subprocess.PIPE,
-        #     bufsize=0,
-        # )
-
-        # self.window._lsc_server_process = server_process
-
-        # print("Started Server")
-
-        # lsc_reader_thread = threading.Thread(
-        #     target=lambda: lsp_reader(server_process.stdout)
-        # )
-
-        # self.window._lsc_reader_thread = lsc_reader_thread
-
-        # lsc_reader_thread.start()
-
-        # print("Started Reader")
-
-        # rootPath = self.window.folders()[0] if self.window.folders() else None
-        # rootUri = (
-        #     Path(self.window.folders()[0]).as_uri() if self.window.folders() else None
-        # )
-
-        # message = {
-        #     "jsonrpc": "2.0",
-        #     "id": 1,
-        #     "method": "initialize",
-        #     "params": {
-        #         "processId": os.getpid(),
-        #         "clientInfo": {
-        #             "name": "Sublime Text Language Server Client",
-        #             "version": "0.1.0",
-        #         },
-        #         "rootPath": rootPath,
-        #         "rootUri": rootUri,
-        #         "capabilities": {},
-        #     },
-        # }
-
-        # body = json.dumps(message)
-
-        # header = f"Content-Length: {len(body)}\r\n\r\n"
-
-        # server_process.stdin.write(header.encode("ascii"))
-        # server_process.stdin.write(body.encode("utf-8"))
-        # server_process.stdin.flush()
-
-        # print("Flush")
+        self.window._lsc_client.initialize(rootPath)
 
 
 class LanguageServerClientShutdownCommand(sublime_plugin.WindowCommand):
@@ -210,6 +185,7 @@ class LanguageServerClientShutdownCommand(sublime_plugin.WindowCommand):
     def run(self):
         if c := self.window._lsc_client:
             c.shutdown()
+
 
 class LanguageServerClientExitCommand(sublime_plugin.WindowCommand):
     # The shutdown request is sent from the client to the server.
