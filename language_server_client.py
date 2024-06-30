@@ -18,6 +18,9 @@ def settings():
     return sublime.load_settings("LanguageServerClient.sublime-settings")
 
 
+# -- LSP
+
+
 class LanguageServerClient:
     def __init__(self, server_name, server_process_args):
         self.server_name = server_name
@@ -104,7 +107,7 @@ class LanguageServerClient:
     def handle(self):
         logger.debug("Receive Worker is ready")
 
-        while (message := self.receive_queue.get()) is not None: #noqa
+        while (message := self.receive_queue.get()) is not None:  # noqa
             logger.debug("Handle")
 
             self.receive_queue.task_done()
@@ -115,6 +118,12 @@ class LanguageServerClient:
         logger.debug("Receive Worker is done")
 
     def initialize(self, rootPath):
+        # The initialize request is sent as the first request from the client to the server.
+        # Until the server has responded to the initialize request with an InitializeResult,
+        # the client must not send any additional requests or notifications to the server.
+        #
+        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
+
         logger.debug(f"Initialize {self.server_name} {self.server_process_args}")
 
         self.server_process = subprocess.Popen(
@@ -189,6 +198,11 @@ class LanguageServerClient:
         )
 
     def exit(self):
+        # A notification to ask the server to exit its process.
+        # The server should exit with success code 0 if the shutdown request has been received before;
+        # otherwise with error code 1.
+        #
+        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#exit
         self.send_queue.put(
             {
                 "method": "exit",
@@ -209,6 +223,9 @@ class LanguageServerClient:
             logger.error("Server didn't terminate within timeout")
 
 
+# -- INPUT HANDLERS
+
+
 class ServerInputHandler(sublime_plugin.ListInputHandler):
     def placeholder(self):
         return "Server"
@@ -223,13 +240,10 @@ class ServerInputHandler(sublime_plugin.ListInputHandler):
         return sorted(settings().get(STG_SERVERS).keys())
 
 
-class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
-    # The initialize request is sent as the first request from the client to the server.
-    # Until the server has responded to the initialize request with an InitializeResult,
-    # the client must not send any additional requests or notifications to the server.
-    #
-    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
+# -- COMMANDS
 
+
+class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "server" not in args:
             return ServerInputHandler()
@@ -248,29 +262,18 @@ class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
 
 
 class LanguageServerClientShutdownCommand(sublime_plugin.WindowCommand):
-    # The shutdown request is sent from the client to the server.
-    # It asks the server to shut down,
-    # but to not exit (otherwise the response might not be delivered correctly to the client).
-    # There is a separate exit notification that asks the server to exit.
-    #
-    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
-
     def run(self):
         if c := self.window._lsc_client:
             c.shutdown()
 
 
 class LanguageServerClientExitCommand(sublime_plugin.WindowCommand):
-    # The shutdown request is sent from the client to the server.
-    # It asks the server to shut down,
-    # but to not exit (otherwise the response might not be delivered correctly to the client).
-    # There is a separate exit notification that asks the server to exit.
-    #
-    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
-
     def run(self):
         if c := self.window._lsc_client:
             c.exit()
+
+
+# -- PLUGIN LIFECYLE
 
 
 def plugin_loaded():
