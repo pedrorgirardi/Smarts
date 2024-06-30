@@ -79,6 +79,8 @@ class LanguageServerClient:
         logger.debug("Send Worker is ready")
 
         while (message := self.send_queue.get()) is not None:
+            logger.debug(f"> {message}")
+
             try:
                 self.server_request_count += 1
 
@@ -86,11 +88,13 @@ class LanguageServerClient:
 
                 header = f"Content-Length: {len(content)}\r\n\r\n"
 
-                self.server_process.stdin.write(header.encode("ascii"))
-                self.server_process.stdin.write(content.encode("utf-8"))
-                self.server_process.stdin.flush()
+                try:
+                    self.server_process.stdin.write(header.encode("ascii"))
+                    self.server_process.stdin.write(content.encode("utf-8"))
+                    self.server_process.stdin.flush()
+                except BrokenPipeError as e:
+                    logger.error(f"Can't write to server's stdin: {e}")
 
-                logger.debug(f"> {content}")
             finally:
                 self.send_queue.task_done()
 
