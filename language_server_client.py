@@ -38,6 +38,11 @@ class LanguageServerClient:
         while not self.server_shutdown.is_set():
             out = self.server_process.stdout
 
+            # The base protocol consists of a header and a content part (comparable to HTTP).
+            # The header and content part are separated by a ‘\r\n’.
+            #
+            # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#baseProtocol
+
             # -- HEADER
 
             headers = {}
@@ -52,16 +57,16 @@ class LanguageServerClient:
 
                 headers[k] = v
 
-            # -- BODY
+            # -- CONTENT
 
-            body = None
+            content = None
 
             if content_length := headers.get("Content-Length"):
-                body = out.read(int(content_length)).decode("utf-8").strip()
+                content = out.read(int(content_length)).decode("utf-8").strip()
 
                 # Enqueue message (header & body).
                 # Blocks if queue is full.
-                self.receive_queue.put((headers, body))
+                self.receive_queue.put((headers, content))
 
         logger.debug("Reader is done")
 
