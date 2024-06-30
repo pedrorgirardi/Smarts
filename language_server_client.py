@@ -131,15 +131,27 @@ class LanguageServerClient:
         )
 
         # Start Receive Worker - responsible for handling received messages.
-        self.receive_worker = threading.Thread(name="ReceiveWorker", target=self.handle)
+        self.receive_worker = threading.Thread(
+            name="ReceiveWorker",
+            target=self.handle,
+            daemon=True,
+        )
         self.receive_worker.start()
 
         # Start Send Worker - responsible for sending messages.
-        self.send_worker = threading.Thread(name="SendWorker", target=self.send)
+        self.send_worker = threading.Thread(
+            name="SendWorker",
+            target=self.send,
+            daemon=True,
+        )
         self.send_worker.start()
 
         # Start Reader - responsible for reading messages from sever's stdout.
-        self.server_reader = threading.Thread(name="Reader", target=self.read)
+        self.server_reader = threading.Thread(
+            name="Reader",
+            target=self.read,
+            daemon=True,
+        )
         self.server_reader.start()
 
         rootUri = Path(rootPath).as_uri()
