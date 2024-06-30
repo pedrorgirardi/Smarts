@@ -35,7 +35,7 @@ class LanguageServerClient:
         self.receive_queue = Queue(maxsize=1)
         self.receive_worker = None
 
-    def read(self):
+    def _read(self):
         logger.debug("Reader is ready")
 
         while not self.server_shutdown.is_set():
@@ -74,7 +74,7 @@ class LanguageServerClient:
 
         logger.debug("Reader is done")
 
-    def send(self):
+    def _send(self):
         logger.debug("Send Worker is ready")
 
         while (message := self.send_queue.get()) is not None:
@@ -104,7 +104,7 @@ class LanguageServerClient:
 
         logger.debug("Send Worker is done")
 
-    def handle(self):
+    def _handle(self):
         logger.debug("Receive Worker is ready")
 
         while (message := self.receive_queue.get()) is not None:  # noqa
@@ -141,7 +141,7 @@ class LanguageServerClient:
         # Start Receive Worker - responsible for handling received messages.
         self.receive_worker = threading.Thread(
             name="ReceiveWorker",
-            target=self.handle,
+            target=self._handle,
             daemon=True,
         )
         self.receive_worker.start()
@@ -149,7 +149,7 @@ class LanguageServerClient:
         # Start Send Worker - responsible for sending messages.
         self.send_worker = threading.Thread(
             name="SendWorker",
-            target=self.send,
+            target=self._send,
             daemon=True,
         )
         self.send_worker.start()
@@ -157,7 +157,7 @@ class LanguageServerClient:
         # Start Reader - responsible for reading messages from sever's stdout.
         self.server_reader = threading.Thread(
             name="Reader",
-            target=self.read,
+            target=self._read,
             daemon=True,
         )
         self.server_reader.start()
