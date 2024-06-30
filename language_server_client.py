@@ -59,14 +59,15 @@ class LanguageServerClient:
 
             # -- CONTENT
 
-            content = None
-
             if content_length := headers.get("Content-Length"):
                 content = out.read(int(content_length)).decode("utf-8").strip()
 
-                # Enqueue message (header & body).
-                # Blocks if queue is full.
-                self.receive_queue.put((headers, content))
+                logger.debug(f"< {content}")
+
+                message = json.loads(content)
+
+                # Enqueue message; Blocks if queue is full.
+                self.receive_queue.put(message)
 
         logger.debug("Reader is done")
 
@@ -77,7 +78,7 @@ class LanguageServerClient:
             try:
                 self.server_request_count += 1
 
-                body = json.dumps(
+                content = json.dumps(
                     {
                         "jsonrpc": "2.0",
                         "id": self.server_request_count,
@@ -85,13 +86,13 @@ class LanguageServerClient:
                     }
                 )
 
-                header = f"Content-Length: {len(body)}\r\n\r\n"
+                header = f"Content-Length: {len(content)}\r\n\r\n"
 
                 self.server_process.stdin.write(header.encode("ascii"))
-                self.server_process.stdin.write(body.encode("utf-8"))
+                self.server_process.stdin.write(content.encode("utf-8"))
                 self.server_process.stdin.flush()
 
-                logger.debug(f"Sent {body}")
+                logger.debug(f"> {content}")
             finally:
                 self.send_queue.task_done()
 
@@ -103,10 +104,8 @@ class LanguageServerClient:
     def handle(self):
         logger.debug("Receive Worker is ready")
 
-        while (message := self.receive_queue.get()) is not None:
-            _, body = message
-
-            logger.debug(f"Handle {body}")
+        while (message := self.receive_queue.get()) is not None: #noqa
+            logger.debug("Handle")
 
             self.receive_queue.task_done()
 
