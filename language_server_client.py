@@ -179,44 +179,39 @@ class LanguageServerClient:
         )
 
     def shutdown(self):
-        if p := self.server_process:
-            self.server_shutdown.set()
-
-            try:
-                p.terminate()
-                p.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                logger.debug("Timeout")
+        # The shutdown request is sent from the client to the server.
+        # It asks the server to shut down,
+        # but to not exit (otherwise the response might not be delivered correctly to the client).
+        # There is a separate exit notification that asks the server to exit.
+        #
+        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
+        self.send_queue.put(
+            {
+                "method": "shutdown",
+                "params": {},
+            }
+        )
 
     def exit(self):
-        if p := self.server_process:
-            self.server_shutdown.set()
+        self.send_queue.put(
+            {
+                "method": "exit",
+                "params": {},
+            }
+        )
 
-            def _exit():
-                logger.debug("Exiting")
+        self.server_shutdown.set()
 
-                try:
-                    o, e = p.communicate(timeout=10)
+        # Enqueue `None` to signal that workers must stop:
+        self.send_queue.put(None)
+        self.receive_queue.put(None)
 
-                    logger.debug(f"Out: {o}, Error: {e}")
-                except subprocess.TimeoutExpired:
-                    p.kill()
-
-                    o, e = p.communicate()
-
-                    logger.debug(f"Out: {o}, Error: {e}")
-
-                # Enqueue `None` to signal that workers must stop:
-
-                logger.debug("Stop Receive Worker")
-
-                self.receive_queue.put(None)
-
-                logger.debug("Stop Send Worker")
-
-                self.send_queue.put(None)
-
-            threading.Thread(name="ServerExit", target=_exit).start()
+        try:
+            logger.debug(
+                f"Waiting for server's process to terminate... {self.server_process.wait(15)}"
+            )
+        except subprocess.TimeoutExpired:
+            logger.error("Server didn't terminate within timeout")
 
 
 class ServerInputHandler(sublime_plugin.ListInputHandler):
