@@ -51,7 +51,11 @@ class LanguageServerClient:
             headers = {}
 
             while True:
+                logger.debug("readline")
+
                 line = out.readline().decode("ascii").strip()
+
+                logger.debug(f"line {line}")
 
                 if line == "":
                     break
@@ -220,11 +224,17 @@ class LanguageServerClient:
         self.send_queue.put(None)
         self.receive_queue.put(None)
 
+        returncode = None
+
         try:
             returncode = self.server_process.wait(15)
-            logger.debug(f"Server terminated with returncode {returncode}")
         except subprocess.TimeoutExpired:
-            logger.error("Server didn't terminate within timeout")
+            # Explicitly kill the process if it did not terminate.
+            self.server_process.kill()
+
+            returncode = self.server_process.wait()
+
+        logger.debug(f"Server terminated with returncode {returncode}")
 
 
 # -- INPUT HANDLERS
