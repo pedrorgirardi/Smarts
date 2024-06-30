@@ -197,6 +197,10 @@ class LanguageServerClient:
             }
         )
 
+        # TODO
+        # Handle shutdown response.
+        # Stop reader and workers after shutdown response is received.
+
     def exit(self):
         # A notification to ask the server to exit its process.
         # The server should exit with success code 0 if the shutdown request has been received before;
