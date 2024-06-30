@@ -68,17 +68,7 @@ class LanguageServerClient:
     def send(self):
         logger.debug("Send Worker is ready")
 
-        def rec():
-            logger.debug("send - Waiting for message...")
-
-            message = self.send_queue.get()
-
-            if message is None:
-                logger.debug("send - Received None")
-
-            return message
-
-        while (message := rec()) is not None:
+        while (message := self.send_queue.get()) is not None:
             try:
                 self.server_request_count += 1
 
@@ -108,17 +98,7 @@ class LanguageServerClient:
     def handle(self):
         logger.debug("Receive Worker is ready")
 
-        def rec():
-            logger.debug("rec - Waiting for message...")
-
-            message = self.receive_queue.get()
-
-            if message is None:
-                logger.debug("rec - Received None")
-
-            return message
-
-        while (message := rec()) is not None:
+        while (message := self.receive_queue.get()) is not None:
             _, body = message
 
             logger.debug(f"Handle {body}")
@@ -207,9 +187,8 @@ class LanguageServerClient:
         self.receive_queue.put(None)
 
         try:
-            logger.debug(
-                f"Waiting for server's process to terminate... {self.server_process.wait(15)}"
-            )
+            returncode = self.server_process.wait(15)
+            logger.debug(f"Server terminated with returncode {returncode}")
         except subprocess.TimeoutExpired:
             logger.error("Server didn't terminate within timeout")
 
