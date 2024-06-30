@@ -51,11 +51,7 @@ class LanguageServerClient:
             headers = {}
 
             while True:
-                logger.debug("readline")
-
                 line = out.readline().decode("ascii").strip()
-
-                logger.debug(f"line {line}")
 
                 if line == "":
                     break
@@ -85,13 +81,7 @@ class LanguageServerClient:
             try:
                 self.server_request_count += 1
 
-                content = json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": self.server_request_count,
-                        **message,
-                    }
-                )
+                content = json.dumps(message)
 
                 header = f"Content-Length: {len(content)}\r\n\r\n"
 
@@ -168,11 +158,15 @@ class LanguageServerClient:
 
         rootUri = Path(rootPath).as_uri()
 
+        self.server_request_count += 1
+
         # Enqueue 'initialize' message.
         # Message must contain "method" and "params";
         # Keys "id" and "jsonrpc" are added by the worker.
         self.send_queue.put(
             {
+                "jsonrpc": "2.0",
+                "id": self.server_request_count,
                 "method": "initialize",
                 "params": {
                     "processId": os.getpid(),
@@ -194,8 +188,13 @@ class LanguageServerClient:
         # There is a separate exit notification that asks the server to exit.
         #
         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
+
+        self.server_request_count += 1
+
         self.send_queue.put(
             {
+                "jsonrpc": "2.0",
+                "id": self.server_request_count,
                 "method": "shutdown",
                 "params": {},
             }
@@ -227,7 +226,7 @@ class LanguageServerClient:
         returncode = None
 
         try:
-            returncode = self.server_process.wait(15)
+            returncode = self.server_process.wait(30)
         except subprocess.TimeoutExpired:
             # Explicitly kill the process if it did not terminate.
             self.server_process.kill()
@@ -284,7 +283,7 @@ class LanguageServerClientShutdownCommand(sublime_plugin.WindowCommand):
 class LanguageServerClientExitCommand(sublime_plugin.WindowCommand):
     def run(self):
         if c := self.window._lsc_client:
-            c.exit()
+            threading.Thread(target=c.exit, daemon=True).start()
 
 
 # -- PLUGIN LIFECYLE
