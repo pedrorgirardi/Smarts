@@ -67,10 +67,11 @@ class LanguageServerClient:
 
                 logger.debug(f"< {content}")
 
-                message = json.loads(content)
-
-                # Enqueue message; Blocks if queue is full.
-                self.receive_queue.put(message)
+                try:
+                    # Enqueue message; Blocks if queue is full.
+                    self.receive_queue.put(json.loads(content))
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to decode message: {content}")
 
         logger.debug("Reader is done")
 
@@ -102,8 +103,6 @@ class LanguageServerClient:
         logger.debug("Receive Worker is ready")
 
         while (message := self.receive_queue.get()) is not None:  # noqa
-            logger.debug("Handle")
-
             self.receive_queue.task_done()
 
         # 'None Task' is complete.
@@ -212,6 +211,7 @@ class LanguageServerClient:
         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#exit
         self.send_queue.put(
             {
+                "jsonrpc": "2.0",
                 "method": "exit",
                 "params": {},
             }
