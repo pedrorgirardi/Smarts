@@ -28,6 +28,8 @@ class LanguageServerClient:
         self.server_writer_lock = threading.Lock()
         self.server_request_count = 0
         self.server_initialized = False
+        self.send_queue = Queue(maxsize=1)
+        self.send_worker = None
         self.receive_queue = Queue(maxsize=1)
         self.receive_worker = None
 
@@ -70,16 +72,46 @@ class LanguageServerClient:
 
         logger.debug("Reader is done")
 
-    def handle(self):
-        logger.debug("Worker is ready")
+    def send(self):
+        logger.debug("Send Worker is ready")
 
         def rec():
-            logger.debug("Waiting for message...")
+            logger.debug("send - Waiting for message...")
+
+            message = self.send_queue.get()
+
+            if message is None:
+                logger.debug("send - Received None")
+
+            return message
+
+        while (message := rec()) is not None:
+            try:
+                header, body = message
+
+                self.server_process.stdin.write(header.encode("ascii"))
+                self.server_process.stdin.write(body.encode("utf-8"))
+                self.server_process.stdin.flush()
+
+                logger.debug(f"Sent {body}")
+            finally:
+                self.send_queue.task_done()
+
+        # 'None Task' is complete.
+        self.send_queue.task_done()
+
+        logger.debug("Send Worker is done")
+
+    def handle(self):
+        logger.debug("Receive Worker is ready")
+
+        def rec():
+            logger.debug("rec - Waiting for message...")
 
             message = self.receive_queue.get()
 
             if message is None:
-                logger.debug("Received None")
+                logger.debug("rec - Received None")
 
             return message
 
@@ -93,7 +125,7 @@ class LanguageServerClient:
         # 'None Task' is complete.
         self.receive_queue.task_done()
 
-        logger.debug("Worker is done")
+        logger.debug("Receive Worker is done")
 
     def initialize(self, rootPath):
         logger.debug(f"Initialize {self.server_name} {self.server_process_args}")
@@ -110,9 +142,13 @@ class LanguageServerClient:
             f"{self.server_name} is up and running; PID {self.server_process.pid}"
         )
 
-        # Start Worker - responsible for handling messages.
-        self.receive_worker = threading.Thread(name="Worker", target=self.handle)
+        # Start Receive Worker - responsible for handling received messages.
+        self.receive_worker = threading.Thread(name="ReceiveWorker", target=self.handle)
         self.receive_worker.start()
+
+        # Start Send Worker - responsible for sending messages.
+        self.send_worker = threading.Thread(name="SendWorker", target=self.send)
+        self.send_worker.start()
 
         # Start Reader - responsible for reading messages from sever's stdout.
         self.server_reader = threading.Thread(name="Reader", target=self.read)
@@ -142,7 +178,8 @@ class LanguageServerClient:
 
         header = f"Content-Length: {len(body)}\r\n\r\n"
 
-        self.write(header, body)
+        # Enqueue 'initialize' message.
+        self.send_queue.put((header, body))
 
     def shutdown(self):
         if p := self.server_process:
@@ -172,10 +209,15 @@ class LanguageServerClient:
 
                     logger.debug(f"Out: {o}, Error: {e}")
 
-                # Enqueue `None` to signal that handler must stop.
-                logger.debug("Stop Worker")
+                # Enqueue `None` to signal that workers must stop:
+
+                logger.debug("Stop Receive Worker")
 
                 self.receive_queue.put(None)
+
+                logger.debug("Stop Send Worker")
+
+                self.send_queue.put(None)
 
             threading.Thread(name="ServerExit", target=_exit).start()
 
