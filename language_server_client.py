@@ -25,19 +25,12 @@ class LanguageServerClient:
         self.server_process = None
         self.server_shutdown = threading.Event()
         self.server_reader = None
-        self.server_writer_lock = threading.Lock()
         self.server_request_count = 0
         self.server_initialized = False
         self.send_queue = Queue(maxsize=1)
         self.send_worker = None
         self.receive_queue = Queue(maxsize=1)
         self.receive_worker = None
-
-    def write(self, header, body):
-        with self.server_writer_lock:
-            self.server_process.stdin.write(header.encode("ascii"))
-            self.server_process.stdin.write(body.encode("utf-8"))
-            self.server_process.stdin.flush()
 
     def read(self):
         logger.debug("Reader is ready")
@@ -87,7 +80,17 @@ class LanguageServerClient:
 
         while (message := rec()) is not None:
             try:
-                header, body = message
+                self.server_request_count += 1
+
+                body = json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": self.server_request_count,
+                        **message,
+                    }
+                )
+
+                header = f"Content-Length: {len(body)}\r\n\r\n"
 
                 self.server_process.stdin.write(header.encode("ascii"))
                 self.server_process.stdin.write(body.encode("utf-8"))
@@ -156,30 +159,24 @@ class LanguageServerClient:
 
         rootUri = Path(rootPath).as_uri()
 
-        self.server_request_count += 1
-
-        message = {
-            "jsonrpc": "2.0",
-            "id": self.server_request_count,
-            "method": "initialize",
-            "params": {
-                "processId": os.getpid(),
-                "clientInfo": {
-                    "name": "Sublime Text Language Server Client",
-                    "version": "0.1.0",
-                },
-                "rootPath": rootPath,
-                "rootUri": rootUri,
-                "capabilities": {},
-            },
-        }
-
-        body = json.dumps(message)
-
-        header = f"Content-Length: {len(body)}\r\n\r\n"
-
         # Enqueue 'initialize' message.
-        self.send_queue.put((header, body))
+        # Message must contain "method" and "params";
+        # Keys "id" and "jsonrpc" are added by the worker.
+        self.send_queue.put(
+            {
+                "method": "initialize",
+                "params": {
+                    "processId": os.getpid(),
+                    "clientInfo": {
+                        "name": "Sublime Text Language Server Client",
+                        "version": "0.1.0",
+                    },
+                    "rootPath": rootPath,
+                    "rootUri": rootUri,
+                    "capabilities": {},
+                },
+            },
+        )
 
     def shutdown(self):
         if p := self.server_process:
