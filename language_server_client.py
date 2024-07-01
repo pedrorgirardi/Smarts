@@ -71,6 +71,8 @@ class LanguageServerClient:
                     # Enqueue message; Blocks if queue is full.
                     self.receive_queue.put(json.loads(content))
                 except json.JSONDecodeError:
+                    # The effect of not being able to decode a message,
+                    # is that an 'in-flight' request won't have its callback called.
                     logger.error(f"Failed to decode message: {content}")
 
         logger.debug("Reader is done")
