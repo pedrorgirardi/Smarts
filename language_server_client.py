@@ -193,7 +193,24 @@ class LanguageServerClient:
                     },
                     "rootPath": rootPath,
                     "rootUri": rootUri,
-                    "capabilities": {},
+                    "capabilities": {
+                        # Client support for textDocument/didOpen, textDocument/didChange
+                        # and textDocument/didClose notifications is mandatory in the protocol
+                        # and clients can not opt out supporting them.
+                        #
+                        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_synchronization
+                        "textDocument": {
+                            "synchronization": {
+                                # Whether text document synchronization supports dynamic registration.
+                                "dynamicRegistration": False,
+                                # Documents are synced by always sending the full content of the document.
+                                "change": 1,
+                            },
+                            "hover": {
+                                "contentFormat": ["plaintext"],
+                            },
+                        }
+                    },
                 },
             },
         )
