@@ -40,12 +40,13 @@ class LanguageServerClient:
         self.server_process = None
         self.server_shutdown = threading.Event()
         self.server_reader = None
-        self.server_request_count = 0
+        self.server_request_count = 1
         self.server_initialized = False
         self.send_queue = Queue(maxsize=1)
         self.send_worker = None
         self.receive_queue = Queue(maxsize=1)
         self.receive_worker = None
+        self.request_callback = {}
 
     def _read(self):
         logger.debug("Reader is ready")
@@ -121,12 +122,32 @@ class LanguageServerClient:
         logger.debug("Receive Worker is ready")
 
         while (message := self.receive_queue.get()) is not None:  # noqa
+            if request_id := message.get("id"):
+                if callback := self.request_callback.get(request_id):
+                    try:
+                        callback(message)
+                    except Exception as e:
+                        logger.error(f"Request callback error: {e}")
+                    finally:
+                        del self.request_callback[request_id]
+
             self.receive_queue.task_done()
 
         # 'None Task' is complete.
         self.receive_queue.task_done()
 
         logger.debug("Receive Worker is done")
+
+    def _request(self, message, callback=None):
+        self.send_queue.put(message)
+
+        # A mapping of request ID to callback.
+        #
+        # callback will be called once the response for the request is received.
+        #
+        # callback might not be called if there's an error reading the response,
+        # or the server never returns a response.
+        self.request_callback[message["id"]] = callback
 
     def initialize(self, rootPath):
         # The initialize request is sent as the first request from the client to the server.
@@ -175,12 +196,21 @@ class LanguageServerClient:
 
         rootUri = Path(rootPath).as_uri()
 
-        self.server_request_count += 1
+        def initialize_callback(response):
+            self.server_initialized = True
+
+            self.send_queue.put(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "initialized",
+                    "params": {},
+                }
+            )
 
         # Enqueue 'initialize' message.
         # Message must contain "method" and "params";
         # Keys "id" and "jsonrpc" are added by the worker.
-        self.send_queue.put(
+        self._request(
             {
                 "jsonrpc": "2.0",
                 "id": self.server_request_count,
@@ -213,6 +243,7 @@ class LanguageServerClient:
                     },
                 },
             },
+            initialize_callback,
         )
 
     def shutdown(self):
@@ -223,15 +254,14 @@ class LanguageServerClient:
         #
         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
 
-        self.server_request_count += 1
-
-        self.send_queue.put(
+        self._request(
             {
                 "jsonrpc": "2.0",
                 "id": self.server_request_count,
                 "method": "shutdown",
                 "params": {},
-            }
+            },
+            lambda _: self.exit(),
         )
 
         # TODO
