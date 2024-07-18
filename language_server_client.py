@@ -36,6 +36,32 @@ def settings():
 # -- LSP
 
 
+def syntax_languageId(syntax):
+    """
+    Args:
+        syntax:
+
+    Returns:
+        the text document's language identifier.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentItem
+    """
+    if syntax == "Packages/Python/Python.sublime-syntax":
+        return "python"
+    elif (
+        syntax == "Packages/Clojure/Clojure.sublime-syntax"
+        or "Packages/Clojure/ClojureScript.sublime-syntax"
+        or "Packages/Tutkain/EDN (Tutkain).sublime-syntax"
+        or "Packages/Tutkain/Clojure (Tutkain).sublime-syntax"
+        or "Packages/Tutkain/ClojureScript (Tutkain).sublime-syntax"
+        or "Packages/Tutkain/Clojure Common (Tutkain).sublime-syntax"
+        or "Packages/Clojure Sublimed/Clojure (Sublimed).sublime-syntax"
+    ):
+        return "clojure"
+    elif syntax == "Packages/Go/Go.sublime-syntax":
+        return "go"
+
+
 class LanguageServerClient:
     def __init__(self, window, server_name, server_process_args):
         self.window = window
@@ -384,7 +410,7 @@ class LanguageServerClient:
                 "params": {
                     "textDocument": {
                         "uri": Path(view.file_name()).as_uri(),
-                        "languageId": "python",
+                        "languageId": syntax_languageId(view.settings().get("syntax")),
                         "version": view.change_count(),
                         "text": view.substr(sublime.Region(0, view.size())),
                     },
