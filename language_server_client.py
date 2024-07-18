@@ -9,7 +9,19 @@ from queue import Queue
 import sublime  # pyright: ignore
 import sublime_plugin  # pyright: ignore
 
-logger = logging.getLogger("LSC")
+# -- Logging
+
+logging_formatter = logging.Formatter(fmt="[{name}] {levelname}: {message}", style="{")
+
+logging_handler = logging.StreamHandler()
+logging_handler.setFormatter(logging_formatter)
+
+logger = logging.getLogger(__package__)
+logger.propagate = False
+logger.addHandler(logging_handler)
+logger.setLevel("DEBUG")
+
+# --
 
 STG_SERVERS = "servers"
 
@@ -296,14 +308,10 @@ class LanguageServerClientExitCommand(sublime_plugin.WindowCommand):
 
 
 def plugin_loaded():
-    logging_level = "DEBUG"
-
-    logging_format = "%(asctime)s %(name)s %(levelname)s %(message)s"
-
-    logging.basicConfig(level=logging_level, format=logging_format)
-
     logger.debug("loaded plugin")
 
 
 def plugin_unloaded():
     logger.debug("unloaded plugin")
+
+    logger.removeHandler(logging_handler)
