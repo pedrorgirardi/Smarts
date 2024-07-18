@@ -5,6 +5,7 @@ import subprocess
 import threading
 from pathlib import Path
 from queue import Queue
+from urllib.parse import unquote, urlparse
 
 import sublime  # pyright: ignore
 import sublime_plugin  # pyright: ignore
@@ -24,6 +25,8 @@ logger.setLevel("DEBUG")
 # --
 
 STG_SERVERS = "servers"
+STG_DIAGNOSTICS = "pg_lsc_diagnostics"
+STATUS_DIAGNOSTICS = "pg_lsc_diagnostics"
 
 
 def settings():
@@ -34,7 +37,8 @@ def settings():
 
 
 class LanguageServerClient:
-    def __init__(self, server_name, server_process_args):
+    def __init__(self, window, server_name, server_process_args):
+        self.window = window
         self.server_name = server_name
         self.server_process_args = server_process_args
         self.server_process = None
@@ -94,7 +98,7 @@ class LanguageServerClient:
         logger.debug("Send Worker is ready")
 
         while (message := self.send_queue.get()) is not None:
-            if request_id := message.get('id'):
+            if request_id := message.get("id"):
                 logger.debug(f"> REQUEST {request_id} {message['method']}")
             else:
                 logger.debug(f"> NOTIFICATION {message['method']}")
@@ -133,6 +137,55 @@ class LanguageServerClient:
                         logger.error(f"Request callback error: {e}")
                     finally:
                         del self.request_callback[request_id]
+            else:
+                if message["method"] == "textDocument/publishDiagnostics":
+                    try:
+                        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#publishDiagnosticsParams
+                        params = message["params"]
+
+                        fname = unquote(urlparse(params["uri"]).path)
+
+                        if view := self.window.find_open_file(fname):
+                            diagnostics = params["diagnostics"]
+
+                            view.settings().set(STG_DIAGNOSTICS, diagnostics)
+
+                            # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnosticSeverity
+                            severity_count = {
+                                1: 0,
+                                2: 0,
+                                3: 0,
+                                4: 0,
+                            }
+
+                            # Represents a diagnostic, such as a compiler error or warning.
+                            # Diagnostic objects are only valid in the scope of a resource.
+                            #
+                            # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic
+                            for diagnostic in diagnostics:
+                                severity_count[diagnostic["severity"]] += 1
+
+                            diagnostics_status = []
+
+                            severity_name = {
+                                1: "Error",
+                                2: "Warning",
+                                3: "Info",
+                                4: "Hint",
+                            }
+
+                            for severity, count in severity_count.items():
+                                if count > 0:
+                                    diagnostics_status.append(
+                                        f"{severity_name[severity]}: {count}"
+                                    )
+
+                            view.set_status(
+                                STATUS_DIAGNOSTICS, ", ".join(diagnostics_status)
+                            )
+
+                    except Exception as e:
+                        logger.error(e)
 
             self.receive_queue.task_done()
 
@@ -152,14 +205,20 @@ class LanguageServerClient:
         # or the server never returns a response.
         self.request_callback[message["id"]] = callback
 
-    def initialize(self, rootPath):
+    def initialize(self, window):
         # The initialize request is sent as the first request from the client to the server.
         # Until the server has responded to the initialize request with an InitializeResult,
         # the client must not send any additional requests or notifications to the server.
         #
         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
 
-        logger.debug(f"Initialize {self.server_name} {self.server_process_args}")
+        rootPath = window.folders()[0] if window.folders() else None
+
+        rootUri = Path(rootPath).as_uri() if rootPath else None
+
+        logger.debug(
+            f"Initialize {self.server_name} {self.server_process_args}; rootPath='{rootPath}'"
+        )
 
         self.server_process = subprocess.Popen(
             self.server_process_args,
@@ -197,8 +256,6 @@ class LanguageServerClient:
         )
         self.server_reader.start()
 
-        rootUri = Path(rootPath).as_uri()
-
         def initialize_callback(response):
             self.server_initialized = True
 
@@ -210,7 +267,8 @@ class LanguageServerClient:
                 }
             )
 
-            # TODO: Send textDocument/didOpen
+            for v in window.views():
+                self.text_document_did_open(v)
 
         # Enqueue 'initialize' message.
         # Message must contain "method" and "params";
@@ -305,7 +363,7 @@ class LanguageServerClient:
 
         logger.debug(f"Server terminated with returncode {returncode}")
 
-    def text_document_did_open(self):
+    def text_document_did_open(self, view):
         # The document open notification is sent from the client to the server
         # to signal newly opened text documents.
         #
@@ -325,10 +383,10 @@ class LanguageServerClient:
                 "method": "textDocument/didOpen",
                 "params": {
                     "textDocument": {
-                        "uri": "",
-                        "languageId": "",
-                        "version": "",
-                        "text": "",
+                        "uri": Path(view.file_name()).as_uri(),
+                        "languageId": "python",
+                        "version": view.change_count(),
+                        "text": view.substr(sublime.Region(0, view.size())),
                     },
                 },
             }
@@ -364,13 +422,12 @@ class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
         server_config = settings().get(STG_SERVERS).get(server)
 
         self.window._lsc_client = LanguageServerClient(
+            window=self.window,
             server_name=server,
             server_process_args=server_config["args"],
         )
 
-        rootPath = self.window.folders()[0] if self.window.folders() else None
-
-        self.window._lsc_client.initialize(rootPath)
+        self.window._lsc_client.initialize(self.window)
 
 
 class LanguageServerClientShutdownCommand(sublime_plugin.WindowCommand):
