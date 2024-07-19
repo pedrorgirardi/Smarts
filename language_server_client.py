@@ -423,6 +423,9 @@ class LanguageServerClient:
 
 
 class ServerInputHandler(sublime_plugin.ListInputHandler):
+    def __init__(self, items):
+        self.items = items
+
     def placeholder(self):
         return "Server"
 
@@ -430,10 +433,7 @@ class ServerInputHandler(sublime_plugin.ListInputHandler):
         return "server"
 
     def list_items(self):
-        # The returned value may be a list of item,
-        # or a 2-element tuple containing a list of items,
-        # and an int index of the item to pre-select.
-        return sorted(settings().get(STG_SERVERS).keys())
+        return self.items
 
 
 # -- COMMANDS
@@ -442,30 +442,74 @@ class ServerInputHandler(sublime_plugin.ListInputHandler):
 class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "server" not in args:
-            return ServerInputHandler()
+            available_servers = settings().get(STG_SERVERS).keys()
+
+            return ServerInputHandler(sorted(available_servers))
 
     def run(self, server):
         server_config = settings().get(STG_SERVERS).get(server)
 
-        self.window._lsc_client = LanguageServerClient(
+        client = LanguageServerClient(
             window=self.window,
             server_name=server,
             server_process_args=server_config["args"],
         )
 
-        self.window._lsc_client.initialize(self.window)
+        if hasattr(self.window, "pg_lsc_servers"):
+            self.window.pg_lsc_servers[server] = {
+                "name": server,
+                "config": server_config,
+                "client": client,
+            }
+        else:
+            self.window.pg_lsc_servers = {
+                server: {
+                    "name": server,
+                    "config": server_config,
+                    "client": client,
+                }
+            }
+
+        client.initialize(self.window)
 
 
 class LanguageServerClientShutdownCommand(sublime_plugin.WindowCommand):
-    def run(self):
-        if c := self.window._lsc_client:
-            c.shutdown()
+    def input(self, args):
+        if "server" not in args:
+            started_servers = getattr(self.window, "pg_lsc_servers", {})
+
+            return ServerInputHandler(sorted(started_servers))
+
+    def run(self, server):
+        started_servers = getattr(self.window, "pg_lsc_servers", {})
+
+        if client := started_servers.get(server, {}).get("client"):
+            client.shutdown()
+
+            del self.window.pg_lsc_servers[server]
 
 
 class LanguageServerClientExitCommand(sublime_plugin.WindowCommand):
     def run(self):
         if c := self.window._lsc_client:
             threading.Thread(target=c.exit, daemon=True).start()
+
+
+class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
+    @classmethod
+    def is_applicable(cls, settings):
+        # return settings.get("syntax") in set()
+
+        return True
+
+    def on_load(self):
+        pass
+
+    def on_modified(self):
+        pass
+
+    def on_close(self):
+        pass
 
 
 # -- PLUGIN LIFECYLE
