@@ -442,7 +442,7 @@ class ServerInputHandler(sublime_plugin.ListInputHandler):
 class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "server" not in args:
-            available_servers = settings().get(STG_SERVERS).keys()
+            available_servers = [config["name"] for config in settings().get(STG_SERVERS)]
 
             return ServerInputHandler(sorted(available_servers))
 
