@@ -22,15 +22,36 @@ logger.propagate = False
 logger.addHandler(logging_handler)
 logger.setLevel("DEBUG")
 
-# --
+
+# -- CONSTANTS
 
 STG_SERVERS = "servers"
 STG_DIAGNOSTICS = "pg_lsc_diagnostics"
 STATUS_DIAGNOSTICS = "pg_lsc_diagnostics"
 
 
+# -- Global Variables
+
+_STARTED_SERVERS = {}
+
+
+## -- API
+
+
 def settings():
     return sublime.load_settings("LanguageServerClient.sublime-settings")
+
+
+def available_servers():
+    return settings().get(STG_SERVERS, [])
+
+
+def started_servers() -> dict:
+    return _STARTED_SERVERS
+
+
+def started_server(server):
+    return started_servers().get(server)
 
 
 # -- LSP
@@ -439,64 +460,46 @@ class ServerInputHandler(sublime_plugin.ListInputHandler):
 # -- COMMANDS
 
 
-def available_servers():
-    return settings().get(STG_SERVERS, [])
-
-
-def started_servers(window) -> dict:
-    return getattr(window, "pg_lsc_servers", {})
-
-
-def started_server(window, server):
-    return started_servers(window).get(server)
-
-
 class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "server" not in args:
-            available_servers_name = [config["name"] for config in available_servers()]
+            available_servers_names = [config["name"] for config in available_servers()]
 
-            return ServerInputHandler(sorted(available_servers_name))
+            return ServerInputHandler(sorted(available_servers_names))
 
     def run(self, server):
         available_servers_indexed = {
             config["name"]: config for config in available_servers()
         }
 
-        server_config = available_servers_indexed.get(server)
+        config = available_servers_indexed.get(server)
 
         client = LanguageServerClient(
             window=self.window,
             server_name=server,
-            server_process_args=server_config["start"],
+            server_process_args=config["start"],
         )
 
-        if hasattr(self.window, "pg_lsc_servers"):
-            self.window.pg_lsc_servers[server] = {
-                "config": server_config,
-                "client": client,
-            }
-        else:
-            self.window.pg_lsc_servers = {
-                server: {
-                    "config": server_config,
-                    "client": client,
-                }
-            }
-
         client.initialize()
+
+        global _STARTED_SERVERS
+        _STARTED_SERVERS[server] = {
+            "config": config,
+            "client": client,
+        }
 
 
 class LanguageServerClientShutdownCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "server" not in args:
-            return ServerInputHandler(sorted(started_servers(self.window).keys()))
+            return ServerInputHandler(sorted(started_servers().keys()))
 
     def run(self, server):
-        if started_server_ := started_server(self.window, server):
+        if started_server_ := started_server(server):
             started_server_["client"].shutdown()
 
-            del self.window.pg_lsc_servers[server]
+            global _STARTED_SERVERS
+            del _STARTED_SERVERS[server]
 
 
 class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
@@ -514,6 +517,22 @@ class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
 
     def on_close(self):
         pass
+
+
+class LanguageServerClientListener(sublime_plugin.EventListener):
+    def on_pre_close_window(self, window):
+        def shutdown_servers(started_servers):
+            for started_server in started_servers.values():
+                started_server["client"].shutdown()
+
+        if started_servers_ := started_servers():
+            logger.debug("Shutdown Servers...")
+
+            threading.Thread(
+                name="ShutdownServers",
+                target=lambda: shutdown_servers(started_servers_),
+                daemon=True,
+            ).start()
 
 
 # -- PLUGIN LIFECYLE
