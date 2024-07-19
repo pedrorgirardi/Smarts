@@ -231,14 +231,14 @@ class LanguageServerClient:
         # or the server never returns a response.
         self.request_callback[message["id"]] = callback
 
-    def initialize(self, window):
+    def initialize(self):
         # The initialize request is sent as the first request from the client to the server.
         # Until the server has responded to the initialize request with an InitializeResult,
         # the client must not send any additional requests or notifications to the server.
         #
         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
 
-        rootPath = window.folders()[0] if window.folders() else None
+        rootPath = self.window.folders()[0] if self.window.folders() else None
 
         rootUri = Path(rootPath).as_uri() if rootPath else None
 
@@ -293,7 +293,7 @@ class LanguageServerClient:
                 }
             )
 
-            for v in window.views():
+            for v in self.window.views():
                 self.text_document_did_open(v)
 
         # Enqueue 'initialize' message.
@@ -452,7 +452,7 @@ class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
         client = LanguageServerClient(
             window=self.window,
             server_name=server,
-            server_process_args=server_config["args"],
+            server_process_args=server_config["start"],
         )
 
         if hasattr(self.window, "pg_lsc_servers"):
@@ -470,7 +470,7 @@ class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
                 }
             }
 
-        client.initialize(self.window)
+        client.initialize()
 
 
 class LanguageServerClientShutdownCommand(sublime_plugin.WindowCommand):
