@@ -62,6 +62,11 @@ def started_server(rootPath, server):
 def view_syntax(view):
     return view.settings().get("syntax")
 
+
+def view_applicable(config, view):
+    return view_syntax(view) in set(config.get("applicable_to", []))
+
+
 # -- LSP
 
 
@@ -334,7 +339,7 @@ class LanguageServerClient:
             # Notify the server about current views.
             # (Check if a view's syntax is valid for the server.)
             for view in self.window.views():
-                if view_syntax(view) in set(self.config["applicable_to"]):
+                if view_applicable(self.config, view):
                     self.text_document_did_open(view)
 
         # Enqueue 'initialize' message.
@@ -547,8 +552,17 @@ class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
 
         return True
 
-    def on_load(self):
-        pass
+    def on_load_async(self):
+        rootPath = window_rootPath(self.view.window())
+
+        if started_servers_ := started_servers(rootPath):
+            for started_server in started_servers_.values():
+                config = started_server["config"]
+                client = started_server["client"]
+
+                if view_applicable(config, self.view):
+                    client.text_document_did_open(self.view)
+
 
     def on_modified(self):
         pass
