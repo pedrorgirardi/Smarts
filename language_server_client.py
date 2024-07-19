@@ -84,10 +84,9 @@ def syntax_languageId(syntax):
 
 
 class LanguageServerClient:
-    def __init__(self, window, server_name, server_process_args):
+    def __init__(self, window, config):
         self.window = window
-        self.server_name = server_name
-        self.server_process_args = server_process_args
+        self.config = config
         self.server_process = None
         self.server_shutdown = threading.Event()
         self.server_reader = None
@@ -264,11 +263,11 @@ class LanguageServerClient:
         rootUri = Path(rootPath).as_uri() if rootPath else None
 
         logger.debug(
-            f"Initialize {self.server_name} {self.server_process_args}; rootPath='{rootPath}'"
+            f"Initialize {self.config['name']} {self.config['start']}; rootPath='{rootPath}'"
         )
 
         self.server_process = subprocess.Popen(
-            self.server_process_args,
+            self.config["start"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -276,7 +275,7 @@ class LanguageServerClient:
         )
 
         logger.debug(
-            f"{self.server_name} is up and running; PID {self.server_process.pid}"
+            f"{self.config['name']} is up and running; PID {self.server_process.pid}"
         )
 
         # Start Receive Worker - responsible for handling received messages.
@@ -474,11 +473,7 @@ class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
 
         config = available_servers_indexed.get(server)
 
-        client = LanguageServerClient(
-            window=self.window,
-            server_name=server,
-            server_process_args=config["start"],
-        )
+        client = LanguageServerClient(window=self.window, config=config)
 
         client.initialize()
 
