@@ -110,6 +110,16 @@ class LanguageServerClient:
         self.receive_queue = Queue(maxsize=1)
         self.receive_worker = None
         self.request_callback = {}
+        self.open_documents = set()
+
+    def __str__(self):
+        return json.dumps(
+            {
+                "server_initialized": self.server_initialized,
+                "server_request_count": self.server_request_count,
+                "open_documents": self.open_documents,
+            }
+        )
 
     def _read(self):
         logger.debug("Reader is ready")
@@ -450,6 +460,10 @@ class LanguageServerClient:
         # This means open and close notification must be balanced and the max open count for a particular textDocument is one.
         #
         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didOpen
+
+        if view.file_name() in self.open_documents:
+            return
+
         self.send_queue.put(
             {
                 "jsonrpc": "2.0",
@@ -464,6 +478,39 @@ class LanguageServerClient:
                 },
             }
         )
+
+        self.open_documents.add(view.file_name())
+
+    def text_document_did_close(self, view):
+        # The document close notification is sent from the client to the server
+        # when the document got closed in the client.
+        #
+        # The document’s master now exists where
+        # the document’s Uri points to (e.g. if the document’s Uri is a file Uri the master now exists on disk).
+        #
+        # As with the open notification the close notification
+        # is about managing the document’s content.
+        # Receiving a close notification doesn’t mean that the document was open in an editor before.
+        #
+        # A close notification requires a previous open notification to be sent.
+        #
+        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didClose
+        if view.file_name() not in self.open_documents:
+            return
+
+        self.send_queue.put(
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/didClose",
+                "params": {
+                    "textDocument": {
+                        "uri": Path(view.file_name()).as_uri(),
+                    },
+                },
+            }
+        )
+
+        self.open_documents.remove(view.file_name())
 
 
 # -- INPUT HANDLERS
@@ -563,15 +610,22 @@ class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
                 if view_applicable(config, self.view):
                     client.text_document_did_open(self.view)
 
-
     def on_modified(self):
-        pass
-
-    def on_close(self):
         pass
 
 
 class LanguageServerClientListener(sublime_plugin.EventListener):
+    def on_pre_close(self, view):
+        if not view.window():
+            return
+
+        rootPath = window_rootPath(view.window())
+
+        if started_servers_ := started_servers(rootPath):
+            for started_server in started_servers_.values():
+                client = started_server["client"]
+                client.text_document_did_close(view)
+
     def on_pre_close_window(self, window):
         def shutdown_servers(started_servers):
             for started_server in started_servers.values():
