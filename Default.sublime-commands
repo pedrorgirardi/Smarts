@@ -16,7 +16,7 @@
         "command": "language_server_client_shutdown"
     },
     {
-        "caption": "Language Server Client: Status",
-        "command": "language_server_client_status"
+        "caption": "Language Server Client: Debug",
+        "command": "language_server_client_debug"
     }
 ]

@@ -526,7 +526,7 @@ class LanguageServerClientShutdownCommand(sublime_plugin.WindowCommand):
             del _STARTED_SERVERS[rootPath][server]
 
 
-class LanguageServerClientStatusCommand(sublime_plugin.WindowCommand):
+class LanguageServerClientDebugCommand(sublime_plugin.WindowCommand):
     def run(self):
         logger.debug(_STARTED_SERVERS)
 
