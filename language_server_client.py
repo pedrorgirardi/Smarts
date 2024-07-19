@@ -59,6 +59,9 @@ def started_server(rootPath, server):
         return started_servers_.get(server)
 
 
+def view_syntax(view):
+    return view.settings().get("syntax")
+
 # -- LSP
 
 
@@ -328,8 +331,11 @@ class LanguageServerClient:
                 }
             )
 
-            for v in self.window.views():
-                self.text_document_did_open(v)
+            # Notify the server about current views.
+            # (Check if a view's syntax is valid for the server.)
+            for view in self.window.views():
+                if view_syntax(view) in set(self.config["applicable_to"]):
+                    self.text_document_did_open(view)
 
         # Enqueue 'initialize' message.
         # Message must contain "method" and "params";
