@@ -439,15 +439,31 @@ class ServerInputHandler(sublime_plugin.ListInputHandler):
 # -- COMMANDS
 
 
+def available_servers():
+    return settings().get(STG_SERVERS, [])
+
+
+def started_servers(window) -> dict:
+    return getattr(window, "pg_lsc_servers", {})
+
+
+def started_server(window, server):
+    return started_servers(window).get(server)
+
+
 class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "server" not in args:
-            available_servers = [config["name"] for config in settings().get(STG_SERVERS)]
+            available_servers_name = [config["name"] for config in available_servers()]
 
-            return ServerInputHandler(sorted(available_servers))
+            return ServerInputHandler(sorted(available_servers_name))
 
     def run(self, server):
-        server_config = settings().get(STG_SERVERS).get(server)
+        available_servers_indexed = {
+            config["name"]: config for config in available_servers()
+        }
+
+        server_config = available_servers_indexed.get(server)
 
         client = LanguageServerClient(
             window=self.window,
@@ -457,14 +473,12 @@ class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
 
         if hasattr(self.window, "pg_lsc_servers"):
             self.window.pg_lsc_servers[server] = {
-                "name": server,
                 "config": server_config,
                 "client": client,
             }
         else:
             self.window.pg_lsc_servers = {
                 server: {
-                    "name": server,
                     "config": server_config,
                     "client": client,
                 }
@@ -476,15 +490,11 @@ class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
 class LanguageServerClientShutdownCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "server" not in args:
-            started_servers = getattr(self.window, "pg_lsc_servers", {})
-
-            return ServerInputHandler(sorted(started_servers))
+            return ServerInputHandler(sorted(started_servers(self.window).keys()))
 
     def run(self, server):
-        started_servers = getattr(self.window, "pg_lsc_servers", {})
-
-        if client := started_servers.get(server, {}).get("client"):
-            client.shutdown()
+        if started_server_ := started_server(self.window, server):
+            started_server_["client"].shutdown()
 
             del self.window.pg_lsc_servers[server]
 
