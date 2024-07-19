@@ -489,12 +489,6 @@ class LanguageServerClientShutdownCommand(sublime_plugin.WindowCommand):
             del self.window.pg_lsc_servers[server]
 
 
-class LanguageServerClientExitCommand(sublime_plugin.WindowCommand):
-    def run(self):
-        if c := self.window._lsc_client:
-            threading.Thread(target=c.exit, daemon=True).start()
-
-
 class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
     @classmethod
     def is_applicable(cls, settings):
