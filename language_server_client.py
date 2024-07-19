@@ -42,16 +42,21 @@ def settings():
     return sublime.load_settings("LanguageServerClient.sublime-settings")
 
 
+def window_rootPath(window):
+    return window.folders()[0] if window.folders() else None
+
+
 def available_servers():
     return settings().get(STG_SERVERS, [])
 
 
-def started_servers() -> dict:
-    return _STARTED_SERVERS
+def started_servers(rootPath):
+    return _STARTED_SERVERS.get(rootPath)
 
 
-def started_server(server):
-    return started_servers().get(server)
+def started_server(rootPath, server):
+    if started_servers_ := started_servers(rootPath):
+        return started_servers_.get(server)
 
 
 # -- LSP
@@ -487,24 +492,46 @@ class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
         client = LanguageServerClient(window=self.window, config=config)
         client.initialize()
 
-        global _STARTED_SERVERS
-        _STARTED_SERVERS[server] = {
-            "config": config,
-            "client": client,
-        }
+        rootPath = window_rootPath(self.window)
+
+        if started_servers_ := started_servers(rootPath):
+            started_servers_[server] = {
+                "config": config,
+                "client": client,
+            }
+        else:
+            global _STARTED_SERVERS
+            _STARTED_SERVERS[rootPath] = {
+                server: {
+                    "config": config,
+                    "client": client,
+                }
+            }
 
 
 class LanguageServerClientShutdownCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "server" not in args:
-            return ServerInputHandler(sorted(started_servers().keys()))
+            rootPath = window_rootPath(self.window)
+
+            return ServerInputHandler(sorted(started_servers(rootPath).keys()))
 
     def run(self, server):
-        if started_server_ := started_server(server):
+        rootPath = window_rootPath(self.window)
+
+        if started_server_ := started_server(rootPath, server):
             started_server_["client"].shutdown()
 
             global _STARTED_SERVERS
-            del _STARTED_SERVERS[server]
+            del _STARTED_SERVERS[rootPath][server]
+
+
+class LanguageServerClientStatusCommand(sublime_plugin.WindowCommand):
+    def run(self):
+        logger.debug(_STARTED_SERVERS)
+
+
+## -- Listeners
 
 
 class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
@@ -526,13 +553,11 @@ class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
 
 class LanguageServerClientListener(sublime_plugin.EventListener):
     def on_pre_close_window(self, window):
-        logger.debug(window.folders())
-
         def shutdown_servers(started_servers):
             for started_server in started_servers.values():
                 started_server["client"].shutdown()
 
-        if started_servers_ := started_servers():
+        if started_servers_ := started_servers(window_rootPath(window)):
             logger.debug("Shutdown Servers...")
 
             threading.Thread(

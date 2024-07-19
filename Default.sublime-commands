@@ -14,5 +14,9 @@
     {
         "caption": "Language Server Client: Shutdown",
         "command": "language_server_client_shutdown"
+    },
+    {
+        "caption": "Language Server Client: Status",
+        "command": "language_server_client_status"
     }
 ]
