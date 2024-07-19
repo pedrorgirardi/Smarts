@@ -258,9 +258,19 @@ class LanguageServerClient:
         #
         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
 
+        # The rootPath of the workspace. Is null if no folder is open.
+        # Deprecated in favour of rootUri.
         rootPath = self.window.folders()[0] if self.window.folders() else None
 
+        # The rootUri of the workspace. Is null if no folder is open.
+        # If both rootPath and rootUri are set rootUri wins.
+        # Deprecated in favour of workspaceFolders.
         rootUri = Path(rootPath).as_uri() if rootPath else None
+
+        # The workspace folders configured in the client when the server starts.
+        workspaceFolders = (
+            [{"name": Path(rootPath).name, "uri": rootUri}] if rootPath else None
+        )
 
         logger.debug(
             f"Initialize {self.config['name']} {self.config['start']}; rootPath='{rootPath}'"
@@ -332,6 +342,7 @@ class LanguageServerClient:
                     },
                     "rootPath": rootPath,
                     "rootUri": rootUri,
+                    "workspaceFolders": workspaceFolders,
                     "capabilities": {
                         # Client support for textDocument/didOpen, textDocument/didChange
                         # and textDocument/didClose notifications is mandatory in the protocol
@@ -474,7 +485,6 @@ class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
         config = available_servers_indexed.get(server)
 
         client = LanguageServerClient(window=self.window, config=config)
-
         client.initialize()
 
         global _STARTED_SERVERS
@@ -516,6 +526,8 @@ class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
 
 class LanguageServerClientListener(sublime_plugin.EventListener):
     def on_pre_close_window(self, window):
+        logger.debug(window.folders())
+
         def shutdown_servers(started_servers):
             for started_server in started_servers.values():
                 started_server["client"].shutdown()
