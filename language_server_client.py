@@ -209,7 +209,28 @@ class LanguageServerClient:
                     finally:
                         del self.request_callback[request_id]
             else:
-                if message["method"] == "textDocument/publishDiagnostics":
+                if message["method"] == "window/logMessage":
+                    # The log message notification is sent from the server to the client
+                    # to ask the client to log a particular message.
+                    #
+                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_logMessage
+                    #
+                    # Message Type:
+                    #
+                    # Error   = 1
+                    # Warning = 2
+                    # Info    = 3
+                    # Log     = 4
+                    #
+                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#messageType
+
+                    log_type = message["params"]["type"]
+
+                    log_message = message["params"]["message"]
+
+                    logger.debug(f"{log_type} {log_message}")
+
+                elif message["method"] == "textDocument/publishDiagnostics":
                     try:
                         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#publishDiagnosticsParams
                         params = message["params"]
