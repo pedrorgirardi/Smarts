@@ -3,6 +3,7 @@ import logging
 import os
 import subprocess
 import threading
+import uuid
 from pathlib import Path
 from queue import Queue
 from urllib.parse import unquote, urlparse
@@ -103,7 +104,6 @@ class LanguageServerClient:
         self.server_process = None
         self.server_shutdown = threading.Event()
         self.server_reader = None
-        self.server_request_count = 1
         self.server_initialized = False
         self.send_queue = Queue(maxsize=1)
         self.send_worker = None
@@ -116,7 +116,6 @@ class LanguageServerClient:
         return json.dumps(
             {
                 "server_initialized": self.server_initialized,
-                "server_request_count": self.server_request_count,
                 "open_documents": self.open_documents,
             }
         )
@@ -185,10 +184,6 @@ class LanguageServerClient:
                     logger.error(f"Can't write to server's stdin: {e}")
 
             finally:
-                # Increase counter for requests only.
-                if message.get("id"):
-                    self.server_request_count += 1
-
                 self.send_queue.task_done()
 
         # 'None Task' is complete.
@@ -386,7 +381,7 @@ class LanguageServerClient:
         self._request(
             {
                 "jsonrpc": "2.0",
-                "id": self.server_request_count,
+                "id": str(uuid.uuid4()),
                 "method": "initialize",
                 "params": {
                     "processId": os.getpid(),
@@ -433,7 +428,7 @@ class LanguageServerClient:
         self._request(
             {
                 "jsonrpc": "2.0",
-                "id": self.server_request_count,
+                "id": str(uuid.uuid4()),
                 "method": "shutdown",
                 "params": {},
             },
