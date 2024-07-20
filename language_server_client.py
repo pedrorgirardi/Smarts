@@ -103,12 +103,12 @@ class LanguageServerClient:
         self.config = config
         self.server_process = None
         self.server_shutdown = threading.Event()
-        self.server_reader = None
         self.server_initialized = False
         self.send_queue = Queue(maxsize=1)
-        self.send_worker = None
         self.receive_queue = Queue(maxsize=1)
-        self.receive_worker = None
+        self.reader = None
+        self.writer = None
+        self.handler = None
         self.request_callback = {}
         self.open_documents = set()
 
@@ -335,28 +335,28 @@ class LanguageServerClient:
         )
 
         # Thread responsible for handling received messages.
-        self.receive_worker = threading.Thread(
+        self.handler = threading.Thread(
             name="Handler",
             target=self._start_handler,
             daemon=True,
         )
-        self.receive_worker.start()
+        self.handler.start()
 
         # Thread responsible for sending/writing messages.
-        self.send_worker = threading.Thread(
+        self.writer = threading.Thread(
             name="Writer",
             target=self._start_writer,
             daemon=True,
         )
-        self.send_worker.start()
+        self.writer.start()
 
         # Thread responsible for reading messages.
-        self.server_reader = threading.Thread(
+        self.reader = threading.Thread(
             name="Reader",
             target=self._start_reader,
             daemon=True,
         )
-        self.server_reader.start()
+        self.reader.start()
 
         def initialize_callback(response):
             self.server_initialized = True
