@@ -185,7 +185,9 @@ class LanguageServerClient:
                     logger.error(f"Can't write to server's stdin: {e}")
 
             finally:
-                self.server_request_count += 1
+                # Increase counter for requests only.
+                if message.get("id"):
+                    self.server_request_count += 1
 
                 self.send_queue.task_done()
 
