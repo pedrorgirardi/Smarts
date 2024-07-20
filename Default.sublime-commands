@@ -1,6 +1,6 @@
 [
     {
-        "caption": "BB: Settings",
+        "caption": "Smarts: Settings",
         "command": "edit_settings",
         "args": {
             "base_file": "${packages}/LanguageServerClient/LanguageServerClient.sublime-settings",
@@ -8,15 +8,15 @@
         }
     },
     {
-        "caption": "BB: Initialize",
+        "caption": "Smarts: Initialize",
         "command": "language_server_client_initialize"
     },
     {
-        "caption": "BB: Shutdown",
+        "caption": "Smarts: Shutdown",
         "command": "language_server_client_shutdown"
     },
     {
-        "caption": "BB: Debug",
+        "caption": "Smarts: Debug",
         "command": "language_server_client_debug"
     }
 ]
