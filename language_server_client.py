@@ -350,7 +350,7 @@ class LanguageServerClient:
             # (Check if a view's syntax is valid for the server.)
             for view in self.window.views():
                 if view_applicable(self.config, view):
-                    self.text_document_did_open(view)
+                    self.textDocument_didOpen(view)
 
         # Enqueue 'initialize' message.
         # Message must contain "method" and "params";
@@ -446,17 +446,19 @@ class LanguageServerClient:
 
         logger.debug(f"Server terminated with returncode {returncode}")
 
-    def text_document_did_open(self, view):
-        # The document open notification is sent from the client to the server
-        # to signal newly opened text documents.
-        #
-        # The document’s content is now managed by the client
-        # and the server must not try to read the document’s content using the document’s Uri.
-        #
-        # Open in this sense means it is managed by the client.
-        # It doesn’t necessarily mean that its content is presented in an editor.
-        #
-        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didOpen
+    def textDocument_didOpen(self, view):
+        """
+        The document open notification is sent from the client to the server
+        to signal newly opened text documents.
+
+        The document’s content is now managed by the client
+        and the server must not try to read the document’s content using the document’s Uri.
+
+        Open in this sense means it is managed by the client.
+        It doesn’t necessarily mean that its content is presented in an editor.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didOpen
+        """
 
         # An open notification must not be sent more than once without a corresponding close notification send before.
         # This means open and close notification must be balanced and the max open count for a particular textDocument is one.
@@ -480,18 +482,20 @@ class LanguageServerClient:
 
         self.open_documents.add(view.file_name())
 
-    def text_document_did_close(self, view):
-        # The document close notification is sent from the client to the server
-        # when the document got closed in the client.
-        #
-        # The document’s master now exists where
-        # the document’s Uri points to (e.g. if the document’s Uri is a file Uri the master now exists on disk).
-        #
-        # As with the open notification the close notification
-        # is about managing the document’s content.
-        # Receiving a close notification doesn’t mean that the document was open in an editor before.
-        #
-        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didClose
+    def textDocument_didClose(self, view):
+        """
+        The document close notification is sent from the client to the server
+        when the document got closed in the client.
+
+        The document’s master now exists where
+        the document’s Uri points to (e.g. if the document’s Uri is a file Uri the master now exists on disk).
+
+        As with the open notification the close notification
+        is about managing the document’s content.
+        Receiving a close notification doesn’t mean that the document was open in an editor before.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didClose
+        """
 
         # A close notification requires a previous open notification to be sent.
         if view.file_name() not in self.open_documents:
