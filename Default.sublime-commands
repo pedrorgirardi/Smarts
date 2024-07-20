@@ -1,6 +1,6 @@
 [
     {
-        "caption": "Language Server Client: Settings",
+        "caption": "BB: Settings",
         "command": "edit_settings",
         "args": {
             "base_file": "${packages}/LanguageServerClient/LanguageServerClient.sublime-settings",
@@ -8,15 +8,15 @@
         }
     },
     {
-        "caption": "Language Server Client: Initialize",
+        "caption": "BB: Initialize",
         "command": "language_server_client_initialize"
     },
     {
-        "caption": "Language Server Client: Shutdown",
+        "caption": "BB: Shutdown",
         "command": "language_server_client_shutdown"
     },
     {
-        "caption": "Language Server Client: Debug",
+        "caption": "BB: Debug",
         "command": "language_server_client_debug"
     }
 ]
