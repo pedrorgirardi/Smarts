@@ -121,7 +121,7 @@ class LanguageServerClient:
             }
         )
 
-    def _read(self):
+    def _start_reader(self):
         logger.debug("Reader is ready")
 
         while not self.server_shutdown.is_set():
@@ -163,8 +163,8 @@ class LanguageServerClient:
 
         logger.debug("Reader is done")
 
-    def _send(self):
-        logger.debug("Send Worker is ready")
+    def _start_writer(self):
+        logger.debug("Writer is ready")
 
         while (message := self.send_queue.get()) is not None:
             if request_id := message.get("id"):
@@ -194,9 +194,9 @@ class LanguageServerClient:
         # 'None Task' is complete.
         self.send_queue.task_done()
 
-        logger.debug("Send Worker is done")
+        logger.debug("Writer is done")
 
-    def _handle(self):
+    def _start_handler(self):
         logger.debug("Handler is ready")
 
         while (message := self.receive_queue.get()) is not None:  # noqa
@@ -285,6 +285,9 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
         """
 
+        if self.server_initialized:
+            return
+
         # The rootPath of the workspace. Is null if no folder is open.
         # Deprecated in favour of rootUri.
         rootPath = self.window.folders()[0] if self.window.folders() else None
@@ -315,26 +318,26 @@ class LanguageServerClient:
             f"{self.config['name']} is up and running; PID {self.server_process.pid}"
         )
 
-        # Start Receive Worker - responsible for handling received messages.
+        # Thread responsible for handling received messages.
         self.receive_worker = threading.Thread(
-            name="ReceiveWorker",
-            target=self._handle,
+            name="Handler",
+            target=self._start_handler,
             daemon=True,
         )
         self.receive_worker.start()
 
-        # Start Send Worker - responsible for sending messages.
+        # Thread responsible for sending/writing messages.
         self.send_worker = threading.Thread(
-            name="SendWorker",
-            target=self._send,
+            name="Writer",
+            target=self._start_writer,
             daemon=True,
         )
         self.send_worker.start()
 
-        # Start Reader - responsible for reading messages from sever's stdout.
+        # Thread responsible for reading messages.
         self.server_reader = threading.Thread(
             name="Reader",
-            target=self._read,
+            target=self._start_reader,
             daemon=True,
         )
         self.server_reader.start()
