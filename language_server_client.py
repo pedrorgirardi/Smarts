@@ -610,7 +610,7 @@ class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
                 client = started_server["client"]
 
                 if view_applicable(config, self.view):
-                    client.text_document_did_open(self.view)
+                    client.textDocument_didOpen(self.view)
 
     def on_pre_close(self):
         # When the window is closed, there's no window 'attached' to view.
@@ -622,7 +622,7 @@ class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
         if started_servers_ := started_servers(rootPath):
             for started_server in started_servers_.values():
                 client = started_server["client"]
-                client.text_document_did_close(view)
+                client.textDocument_didClose(self.view)
 
 
 class LanguageServerClientListener(sublime_plugin.EventListener):
