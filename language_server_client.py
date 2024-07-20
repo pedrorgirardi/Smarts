@@ -456,11 +456,10 @@ class LanguageServerClient:
         # Open in this sense means it is managed by the client.
         # It doesn’t necessarily mean that its content is presented in an editor.
         #
-        # An open notification must not be sent more than once without a corresponding close notification send before.
-        # This means open and close notification must be balanced and the max open count for a particular textDocument is one.
-        #
         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didOpen
 
+        # An open notification must not be sent more than once without a corresponding close notification send before.
+        # This means open and close notification must be balanced and the max open count for a particular textDocument is one.
         if view.file_name() in self.open_documents:
             return
 
@@ -492,9 +491,9 @@ class LanguageServerClient:
         # is about managing the document’s content.
         # Receiving a close notification doesn’t mean that the document was open in an editor before.
         #
-        # A close notification requires a previous open notification to be sent.
-        #
         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didClose
+
+        # A close notification requires a previous open notification to be sent.
         if view.file_name() not in self.open_documents:
             return
 
@@ -593,12 +592,6 @@ class LanguageServerClientDebugCommand(sublime_plugin.WindowCommand):
 
 
 class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
-    @classmethod
-    def is_applicable(cls, settings):
-        # return settings.get("syntax") in set()
-
-        return True
-
     def on_load_async(self):
         rootPath = window_rootPath(self.view.window())
 
@@ -610,22 +603,20 @@ class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
                 if view_applicable(config, self.view):
                     client.text_document_did_open(self.view)
 
-    def on_modified(self):
-        pass
-
-
-class LanguageServerClientListener(sublime_plugin.EventListener):
-    def on_pre_close(self, view):
-        if not view.window():
+    def on_pre_close(self):
+        # When the window is closed, there's no window 'attached' to view.
+        if not self.view.window():
             return
 
-        rootPath = window_rootPath(view.window())
+        rootPath = window_rootPath(self.view.window())
 
         if started_servers_ := started_servers(rootPath):
             for started_server in started_servers_.values():
                 client = started_server["client"]
                 client.text_document_did_close(view)
 
+
+class LanguageServerClientListener(sublime_plugin.EventListener):
     def on_pre_close_window(self, window):
         def shutdown_servers(started_servers):
             for started_server in started_servers.values():
