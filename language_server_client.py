@@ -167,9 +167,9 @@ class LanguageServerClient:
 
         while (message := self.send_queue.get()) is not None:
             if request_id := message.get("id"):
-                logger.debug(f"> REQUEST {request_id} {message['method']}")
+                logger.debug(f"> {message['method']} ({request_id})")
             else:
-                logger.debug(f"> NOTIFICATION {message['method']}")
+                logger.debug(f"> {message['method']}")
 
             try:
                 content = json.dumps(message)
