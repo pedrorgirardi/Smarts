@@ -197,7 +197,7 @@ class LanguageServerClient:
         logger.debug("Send Worker is done")
 
     def _handle(self):
-        logger.debug("Receive Worker is ready")
+        logger.debug("Handler is ready")
 
         while (message := self.receive_queue.get()) is not None:  # noqa
             if request_id := message.get("id"):
@@ -263,7 +263,7 @@ class LanguageServerClient:
         # 'None Task' is complete.
         self.receive_queue.task_done()
 
-        logger.debug("Receive Worker is done")
+        logger.debug("Handler is done")
 
     def _request(self, message, callback=None):
         self.send_queue.put(message)
@@ -277,11 +277,13 @@ class LanguageServerClient:
         self.request_callback[message["id"]] = callback
 
     def initialize(self):
-        # The initialize request is sent as the first request from the client to the server.
-        # Until the server has responded to the initialize request with an InitializeResult,
-        # the client must not send any additional requests or notifications to the server.
-        #
-        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
+        """
+        The initialize request is sent as the first request from the client to the server.
+        Until the server has responded to the initialize request with an InitializeResult,
+        the client must not send any additional requests or notifications to the server.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
+        """
 
         # The rootPath of the workspace. Is null if no folder is open.
         # Deprecated in favour of rootUri.
@@ -395,12 +397,14 @@ class LanguageServerClient:
         )
 
     def shutdown(self):
-        # The shutdown request is sent from the client to the server.
-        # It asks the server to shut down,
-        # but to not exit (otherwise the response might not be delivered correctly to the client).
-        # There is a separate exit notification that asks the server to exit.
-        #
-        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
+        """
+        The shutdown request is sent from the client to the server.
+        It asks the server to shut down,
+        but to not exit (otherwise the response might not be delivered correctly to the client).
+        There is a separate exit notification that asks the server to exit.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
+        """
 
         self._request(
             {
@@ -412,16 +416,15 @@ class LanguageServerClient:
             lambda _: self.exit(),
         )
 
-        # TODO
-        # Handle shutdown response.
-        # Stop reader and workers after shutdown response is received.
-
     def exit(self):
-        # A notification to ask the server to exit its process.
-        # The server should exit with success code 0 if the shutdown request has been received before;
-        # otherwise with error code 1.
-        #
-        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#exit
+        """
+        A notification to ask the server to exit its process.
+        The server should exit with success code 0 if the shutdown request has been received before;
+        otherwise with error code 1.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#exit
+        """
+
         self.send_queue.put(
             {
                 "jsonrpc": "2.0",
