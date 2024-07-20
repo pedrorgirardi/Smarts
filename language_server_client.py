@@ -102,6 +102,8 @@ def syntax_languageId(syntax):
         return "clojure"
     elif syntax == "Packages/Go/Go.sublime-syntax":
         return "go"
+    else:
+        return ""
 
 
 class LanguageServerClient:
