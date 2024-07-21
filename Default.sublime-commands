@@ -18,5 +18,9 @@
     {
         "caption": "Smarts: Debug",
         "command": "language_server_client_debug"
+    },
+    {
+        "caption": "Smarts: Goto Document Diagnostic",
+        "command": "pg_smarts_goto_document_diagnostic"
     }
 ]

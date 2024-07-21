@@ -70,9 +70,70 @@ def view_applicable(config, view):
     applicable = view_syntax(view) in applicable_to
 
     if not applicable:
-        logger.debug(f"Not-applicable View; Syntax '{view_syntax(view)}' not in {applicable_to}")
+        logger.debug(
+            f"Not-applicable View; Syntax '{view_syntax(view)}' not in {applicable_to}"
+        )
 
     return applicable
+
+
+def severity_name(severity):
+    if severity == 1:
+        return "Error"
+    elif severity == 2:
+        return "Warning"
+    elif severity == 3:
+        return "Info"
+    elif severity == 4:
+        return "Hint"
+    else:
+        return f"Unknown {severity}"
+
+
+def severity_kind(severity):
+    if severity == 1:
+        return (sublime.KIND_ID_COLOR_REDISH, "E", "E")
+    elif severity == 2:
+        return (sublime.KIND_ID_COLOR_ORANGISH, "W", "W")
+    elif severity == 3:
+        return (sublime.KIND_ID_COLOR_BLUISH, "I", "I")
+    elif severity == 4:
+        return (sublime.KIND_ID_COLOR_PURPLISH, "H", "H")
+    else:
+        return sublime.KIND_ID_AMBIGUOUS
+
+
+def diagnostic_start_text_point(view, diagnostic):
+    return view.text_point(
+        diagnostic["range"]["start"]["line"],
+        diagnostic["range"]["start"]["character"],
+    )
+
+
+def diagnostic_end_text_point(view, diagnostic):
+    return view.text_point(
+        diagnostic["range"]["end"]["line"],
+        diagnostic["range"]["end"]["character"],
+    )
+
+
+def diagnostic_region(view, diagnostic) -> sublime.Region:
+    return sublime.Region(
+        diagnostic_start_text_point(view, diagnostic),
+        diagnostic_end_text_point(view, diagnostic),
+    )
+
+
+def document_diagnostic_quick_panel_item(diagnostic_item) -> sublime.QuickPanelItem:
+    line = diagnostic_item["range"]["start"]["line"] + 1
+    character = diagnostic_item["range"]["start"]["character"] + 1
+
+    return sublime.QuickPanelItem(
+        f"{diagnostic_item['message']}",
+        details=f"{line}:{character}",
+        annotation=f"{diagnostic_item['code']}",
+        kind=severity_kind(diagnostic_item["severity"]),
+    )
 
 
 # -- LSP
@@ -263,17 +324,10 @@ class LanguageServerClient:
 
                             diagnostics_status = []
 
-                            severity_name = {
-                                1: "Error",
-                                2: "Warning",
-                                3: "Info",
-                                4: "Hint",
-                            }
-
                             for severity, count in severity_count.items():
                                 if count > 0:
                                     diagnostics_status.append(
-                                        f"{severity_name[severity]}: {count}"
+                                        f"{severity_name(severity)}: {count}"
                                     )
 
                             view.set_status(
@@ -623,6 +677,44 @@ class LanguageServerClientShutdownCommand(sublime_plugin.WindowCommand):
 class LanguageServerClientDebugCommand(sublime_plugin.WindowCommand):
     def run(self):
         logger.debug(_STARTED_SERVERS)
+
+
+class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
+    def run(self, _):
+        initial_viewport_position = self.view.viewport_position()
+
+        diagnostics = sorted(
+            self.view.settings().get(STG_DIAGNOSTICS, []),
+            key=lambda diagnostic: [
+                diagnostic["range"]["start"]["line"],
+                diagnostic["range"]["start"]["character"],
+            ],
+        )
+
+        def on_highlight(index):
+            self.view.show_at_center(diagnostic_region(self.view, diagnostics[index]))
+
+        def on_select(index):
+            if index == -1:
+                self.view.set_viewport_position(initial_viewport_position, True)
+
+            else:
+                region = diagnostic_region(self.view, diagnostics[index])
+
+                self.view.show_at_center(region)
+                self.view.sel().clear()
+                self.view.sel().add(region)
+
+        quick_panel_items = [
+            document_diagnostic_quick_panel_item(diagnostic)
+            for diagnostic in diagnostics
+        ]
+
+        self.view.window().show_quick_panel(
+            quick_panel_items,
+            on_select,
+            on_highlight=on_highlight,
+        )
 
 
 ## -- Listeners
