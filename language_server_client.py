@@ -692,7 +692,11 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
         )
 
         def on_highlight(index):
-            self.view.show_at_center(diagnostic_region(self.view, diagnostics[index]))
+            diagnostic = diagnostics[index]
+
+            logger.debug(diagnostic)
+
+            self.view.show_at_center(diagnostic_region(self.view, diagnostic))
 
         def on_select(index):
             if index == -1:
