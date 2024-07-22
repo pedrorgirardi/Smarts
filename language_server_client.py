@@ -14,7 +14,7 @@ import sublime_plugin  # pyright: ignore
 
 # -- Logging
 
-logging_formatter = logging.Formatter(fmt="[{name}] {levelname}: {message}", style="{")
+logging_formatter = logging.Formatter(fmt="[{name}] {levelname} {message}", style="{")
 
 logging_handler = logging.StreamHandler()
 logging_handler.setFormatter(logging_formatter)
@@ -215,7 +215,7 @@ class LanguageServerClient:
         )
 
     def _start_reader(self):
-        logger.debug("Reader is ready")
+        logger.debug(f"[{self.config['name']}] Reader is ready")
 
         while not self.server_shutdown.is_set():
             out = self.server_process.stdout
@@ -244,7 +244,7 @@ class LanguageServerClient:
             if content_length := headers.get("Content-Length"):
                 content = out.read(int(content_length)).decode("utf-8").strip()
 
-                logger.debug(f"< {content}")
+                logger.debug(f"[{self.config['name']}] < {content}")
 
                 try:
                     # Enqueue message; Blocks if queue is full.
@@ -254,16 +254,16 @@ class LanguageServerClient:
                     # is that an 'in-flight' request won't have its callback called.
                     logger.error(f"Failed to decode message: {content}")
 
-        logger.debug("Reader is done")
+        logger.debug(f"[{self.config['name']}] Reader is done")
 
     def _start_writer(self):
-        logger.debug("Writer is ready")
+        logger.debug(f"[{self.config['name']}] Writer is ready")
 
         while (message := self.send_queue.get()) is not None:
             if request_id := message.get("id"):
-                logger.debug(f"> {message['method']} ({request_id})")
+                logger.debug(f"[{self.config['name']}] > {message['method']} ({request_id})")
             else:
-                logger.debug(f"> {message['method']}")
+                logger.debug(f"[{self.config['name']}] > {message['method']}")
 
             try:
                 content = json.dumps(message)
@@ -275,7 +275,7 @@ class LanguageServerClient:
                     self.server_process.stdin.write(content.encode("utf-8"))
                     self.server_process.stdin.flush()
                 except BrokenPipeError as e:
-                    logger.error(f"Can't write to server's stdin: {e}")
+                    logger.error(f"{self.config['name']} - Can't write to server's stdin: {e}")
 
             finally:
                 self.send_queue.task_done()
@@ -283,10 +283,10 @@ class LanguageServerClient:
         # 'None Task' is complete.
         self.send_queue.task_done()
 
-        logger.debug("Writer is done")
+        logger.debug(f"[{self.config['name']}] Writer is done")
 
     def _start_handler(self):
-        logger.debug("Handler is ready")
+        logger.debug(f"[{self.config['name']}] Handler is ready")
 
         while (message := self.receive_queue.get()) is not None:  # noqa
             if request_id := message.get("id"):
@@ -294,7 +294,7 @@ class LanguageServerClient:
                     try:
                         callback(message)
                     except Exception as e:
-                        logger.error(f"Request callback error: {e}")
+                        logger.error(f"{self.config['name']} - Request callback error: {e}")
                     finally:
                         del self.request_callback[request_id]
             else:
@@ -366,7 +366,7 @@ class LanguageServerClient:
         # 'None Task' is complete.
         self.receive_queue.task_done()
 
-        logger.debug("Handler is done")
+        logger.debug(f"[{self.config['name']}] Handler is done")
 
     def _request(self, message, callback=None):
         self.send_queue.put(message)
@@ -417,7 +417,7 @@ class LanguageServerClient:
             bufsize=0,
         )
 
-        logger.debug(
+        logger.info(
             f"{self.config['name']} is up and running; PID {self.server_process.pid}"
         )
 
@@ -555,7 +555,7 @@ class LanguageServerClient:
 
             returncode = self.server_process.wait()
 
-        logger.debug(f"Server terminated with returncode {returncode}")
+        logger.debug(f"[{self.config['name']}] Server terminated with returncode {returncode}")
 
     def textDocument_didOpen(self, view):
         """
