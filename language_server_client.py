@@ -32,6 +32,7 @@ logger.setLevel("DEBUG")
 STG_SERVERS = "servers"
 STG_DIAGNOSTICS = "pg_lsc_diagnostics"
 STATUS_DIAGNOSTICS = "pg_lsc_diagnostics"
+kSMARTS_HIGHLIGHTED_REGIONS = "PG_SMARTS_HIGHLIGHTED_REGIONS"
 
 
 # -- Global Variables
@@ -82,6 +83,16 @@ def view_applicable(config, view):
         )
 
     return applicable
+
+
+def applicable_servers(view):
+    servers = []
+
+    for started_server in started_servers_values(window_rootPath(view.window())):
+        if view_applicable(started_server["config"], view):
+            servers.append(started_server)
+
+    return servers
 
 
 def severity_name(severity):
@@ -794,6 +805,25 @@ class LanguageServerClient:
             callback,
         )
 
+    def textDocument_documentHighlight(self, params, callback):
+        """
+        The document highlight request is sent from the client to
+        the server to resolve document highlights for a given text document position.
+
+        For programming languages this usually highlights all references to the symbol scoped to this file.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentHighlight
+        """
+        self._request(
+            {
+                "jsonrpc": "2.0",
+                "id": str(uuid.uuid4()),
+                "method": "textDocument/documentHighlight",
+                "params": params,
+            },
+            callback,
+        )
+
 
 # -- INPUT HANDLERS
 
@@ -996,6 +1026,46 @@ class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
             for started_server in started_servers_.values():
                 client = started_server["client"]
                 client.textDocument_didClose(self.view)
+
+    def highlight(self):
+        applicable_servers_ = applicable_servers(self.view)
+
+        client = applicable_servers_[0]["client"] if applicable_servers_ else None
+
+        if not client:
+            return
+
+        def callback(response):
+            self.view.erase_regions(kSMARTS_HIGHLIGHTED_REGIONS)
+
+            result = response.get("result")
+
+            if not result:
+                return
+
+            regions = [location_region(self.view, location) for location in result]
+
+            self.view.add_regions(
+                kSMARTS_HIGHLIGHTED_REGIONS,
+                regions,
+                scope="region.cyanish",
+                icon="",
+                flags=sublime.DRAW_NO_FILL,
+            )
+
+        point = self.view.sel()[0].begin()
+
+        client.textDocument_documentHighlight(
+            view_textDocumentPositionParams(self.view, point),
+            callback,
+        )
+
+    def on_selection_modified_async(self):
+        if highlighter := getattr(self, "pg_smarts_highlighter", None):
+            highlighter.cancel()
+
+        self.pg_smarts_highlighter = threading.Timer(0.3, self.highlight)
+        self.pg_smarts_highlighter.start()
 
     def on_hover(self, point, hover_zone):
         if hover_zone == sublime.HOVER_TEXT:
