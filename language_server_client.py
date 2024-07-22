@@ -188,15 +188,15 @@ def open_location_jar(window, location, flags):
 
 
 def open_location(window, location, flags=sublime.ENCODED_POSITION):
-    row = location["range"]["start"]["line"] + 1
-    col = location["range"]["start"]["character"] + 1
-
     fname = uri_to_path(location["uri"])
 
     if ".jar:" in fname:
         open_location_jar(window, location, flags)
     else:
-        window.open_file(f'{uri_to_path(location["uri"])}:{row}:{col}', flags)
+        row = location["range"]["start"]["line"] + 1
+        col = location["range"]["start"]["character"] + 1
+
+        window.open_file(f'{fname}:{row}:{col}', flags)
 
 
 # -- LSP
