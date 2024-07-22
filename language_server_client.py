@@ -799,18 +799,48 @@ class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
 
                 def show_contents_popup(response):
                     if result := response["result"]:
-                        contents_value = result["contents"]["value"]
+                        # The result of a hover request.
+                        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#hover
 
-                        content = re.sub(r"\n", "<br/>", contents_value)
-                        content = re.sub(r"\t", "&nbsp;&nbsp;&nbsp;&nbsp;", content)
+                        result_contents = result["contents"]
 
-                        location = self.view.text_point(
-                            result["range"]["start"]["line"],
-                            result["range"]["start"]["character"],
-                        )
+                        popup_content = ""
+
+                        if isinstance(result_contents, str):
+                            popup_content = re.sub(r"\n", "<br/>", result_contents)
+                            popup_content = re.sub(
+                                r"\t", "&nbsp;&nbsp;&nbsp;&nbsp;", popup_content
+                            )
+
+                        elif isinstance(result_contents, dict):
+                            popup_content = re.sub(
+                                r"\n", "<br/>", result_contents["value"]
+                            )
+                            popup_content = re.sub(
+                                r"\t", "&nbsp;&nbsp;&nbsp;&nbsp;", popup_content
+                            )
+
+                        elif isinstance(result_contents, list):
+                            for x in result_contents:
+                                if isinstance(x, str):
+                                    popup_content += re.sub(r"\n", "<br/>", x)
+
+                                elif isinstance(x, dict):
+                                    popup_content += re.sub(r"\n", "<br/>", x["value"])
+
+                        # The popup is shown at the current postion of the caret.
+                        location = -1
+
+                        # An optional range is a range inside a text document
+                        # that is used to visualize a hover, e.g. by changing the background color.
+                        if result_range := result["range"]:
+                            location = self.view.text_point(
+                                result_range["start"]["line"],
+                                result_range["start"]["character"],
+                            )
 
                         self.view.show_popup(
-                            content,
+                            popup_content,
                             location=location,
                             max_width=860,
                         )
