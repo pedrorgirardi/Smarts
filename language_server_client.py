@@ -129,28 +129,7 @@ def location_region(view, location) -> sublime.Region:
     )
 
 
-def diagnostic_start_text_point(view, diagnostic):
-    return view.text_point(
-        diagnostic["range"]["start"]["line"],
-        diagnostic["range"]["start"]["character"],
-    )
-
-
-def diagnostic_end_text_point(view, diagnostic):
-    return view.text_point(
-        diagnostic["range"]["end"]["line"],
-        diagnostic["range"]["end"]["character"],
-    )
-
-
-def diagnostic_region(view, diagnostic) -> sublime.Region:
-    return sublime.Region(
-        diagnostic_start_text_point(view, diagnostic),
-        diagnostic_end_text_point(view, diagnostic),
-    )
-
-
-def document_diagnostic_quick_panel_item(diagnostic_item) -> sublime.QuickPanelItem:
+def diagnostic_quick_panel_item(diagnostic_item) -> sublime.QuickPanelItem:
     line = diagnostic_item["range"]["start"]["line"] + 1
     character = diagnostic_item["range"]["start"]["character"] + 1
 
@@ -868,22 +847,21 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
 
             logger.debug(diagnostic)
 
-            self.view.show_at_center(diagnostic_region(self.view, diagnostic))
+            self.view.show_at_center(location_region(self.view, diagnostic))
 
         def on_select(index):
             if index == -1:
                 self.view.set_viewport_position(initial_viewport_position, True)
 
             else:
-                region = diagnostic_region(self.view, diagnostics[index])
+                region = location_region(self.view, diagnostics[index])
 
                 self.view.show_at_center(region)
                 self.view.sel().clear()
                 self.view.sel().add(region)
 
         quick_panel_items = [
-            document_diagnostic_quick_panel_item(diagnostic)
-            for diagnostic in diagnostics
+            diagnostic_quick_panel_item(diagnostic) for diagnostic in diagnostics
         ]
 
         self.view.window().show_quick_panel(
