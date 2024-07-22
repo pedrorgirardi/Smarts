@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import subprocess
 import threading
 import uuid
@@ -53,6 +54,10 @@ def available_servers():
 
 def started_servers(rootPath):
     return _STARTED_SERVERS.get(rootPath)
+
+
+def started_servers_values(rootPath):
+    return _STARTED_SERVERS.get(rootPath, {}).values()
 
 
 def started_server(rootPath, server):
@@ -137,6 +142,25 @@ def document_diagnostic_quick_panel_item(diagnostic_item) -> sublime.QuickPanelI
 
 
 # -- LSP
+
+
+def view_textDocumentPositionParams(view, point):
+    """
+    A parameter literal used in requests to pass a text document and a position inside that document.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentPositionParams
+    """
+    line, character = view.rowcol(point)
+
+    return {
+        "textDocument": {
+            "uri": Path(view.file_name()).as_uri(),
+        },
+        "position": {
+            "line": line,
+            "character": character,
+        },
+    }
 
 
 def syntax_languageId(syntax):
@@ -602,6 +626,23 @@ class LanguageServerClient:
 
         self.open_documents.remove(view.file_name())
 
+    def textDocument_hover(self, params, callback):
+        """
+        The hover request is sent from the client to the server to request
+        hover information at a given text document position.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_hover
+        """
+        self._request(
+            {
+                "jsonrpc": "2.0",
+                "id": str(uuid.uuid4()),
+                "method": "textDocument/hover",
+                "params": params,
+            },
+            callback,
+        )
+
 
 # -- INPUT HANDLERS
 
@@ -747,6 +788,38 @@ class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
             for started_server in started_servers_.values():
                 client = started_server["client"]
                 client.textDocument_didClose(self.view)
+
+    def on_hover(self, point, hover_zone):
+        if hover_zone == sublime.HOVER_TEXT:
+            for started_server in started_servers_values(
+                window_rootPath(self.view.window())
+            ):
+                config = started_server["config"]
+                client = started_server["client"]
+
+                def show_contents_popup(response):
+                    if result := response["result"]:
+                        contents_value = result["contents"]["value"]
+
+                        content = re.sub(r"\n", "<br/>", contents_value)
+                        content = re.sub(r"\t", "&nbsp;&nbsp;&nbsp;&nbsp;", content)
+
+                        location = self.view.text_point(
+                            result["range"]["start"]["line"],
+                            result["range"]["start"]["character"],
+                        )
+
+                        self.view.show_popup(
+                            content,
+                            location=location,
+                            max_width=860,
+                        )
+
+                if view_applicable(config, self.view):
+                    client.textDocument_hover(
+                        view_textDocumentPositionParams(self.view, point),
+                        show_contents_popup,
+                    )
 
 
 class LanguageServerClientListener(sublime_plugin.EventListener):
