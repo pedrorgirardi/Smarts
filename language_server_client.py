@@ -199,7 +199,7 @@ def open_location(window, location, flags=sublime.ENCODED_POSITION):
         window.open_file(f"{fname}:{row}:{col}", flags)
 
 
-def capture_view_position(view):
+def capture_view(view):
     regions = [region for region in view.sel()]
 
     viewport_position = view.viewport_position()
@@ -889,14 +889,11 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
                     if not result:
                         return
 
-                    restore_view = capture_view_position(self.view)
-
-                    def on_cancel():
-                        restore_view()
+                    restore_view = capture_view(self.view)
 
                     locations = [result] if isinstance(result, dict) else result
 
-                    goto_location(self.view.window(), locations, on_cancel=on_cancel)
+                    goto_location(self.view.window(), locations, on_cancel=restore_view)
 
                 client.textDocument_definition(
                     view_textDocumentPositionParams(self.view, point),
@@ -920,12 +917,9 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
                     if not result:
                         return
 
-                    restore_view = capture_view_position(self.view)
+                    restore_view = capture_view(self.view)
 
-                    def on_cancel():
-                        restore_view()
-
-                    goto_location(self.view.window(), result, on_cancel=on_cancel)
+                    goto_location(self.view.window(), result, on_cancel=restore_view)
 
                 point = self.view.sel()[0].begin()
 
