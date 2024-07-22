@@ -196,7 +196,7 @@ def open_location(window, location, flags=sublime.ENCODED_POSITION):
         row = location["range"]["start"]["line"] + 1
         col = location["range"]["start"]["character"] + 1
 
-        window.open_file(f'{fname}:{row}:{col}', flags)
+        window.open_file(f"{fname}:{row}:{col}", flags)
 
 
 # -- LSP
@@ -726,6 +726,23 @@ class LanguageServerClient:
             callback,
         )
 
+    def textDocument_references(self, params, callback):
+        """
+        The references request is sent from the client to the server
+        to resolve project-wide references for the symbol denoted by the given text document position.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_references
+        """
+        self._request(
+            {
+                "jsonrpc": "2.0",
+                "id": str(uuid.uuid4()),
+                "method": "textDocument/references",
+                "params": params,
+            },
+            callback,
+        )
+
 
 # -- INPUT HANDLERS
 
@@ -862,6 +879,86 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
                         )
 
                 client.textDocument_definition(
+                    view_textDocumentPositionParams(self.view, point),
+                    callback,
+                )
+
+
+class PgSmartsGotoReference(sublime_plugin.TextCommand):
+    def run(self, _):
+        for started_server in started_servers_values(
+            window_rootPath(self.view.window())
+        ):
+            config = started_server["config"]
+            client = started_server["client"]
+
+            point = self.view.sel()[0].begin()
+
+            if view_applicable(config, self.view):
+
+                def callback(response):
+                    result = response.get("result")
+
+                    if not result:
+                        return
+
+                    locations = sorted(
+                        result,
+                        key=lambda location: [
+                            location["range"]["start"]["line"],
+                            location["range"]["start"]["character"],
+                        ],
+                    )
+
+                    if len(locations) == 1:
+                        open_location(self.view.window(), locations[0])
+                    else:
+                        initial_view = self.view
+
+                        initial_viewport_position = self.view.viewport_position()
+
+                        initial_regions = (
+                            [region for region in initial_view.sel()]
+                            if initial_view
+                            else []
+                        )
+
+                        def on_highlight(index):
+                            open_location(
+                                self.view.window(),
+                                locations[index],
+                                flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
+                            )
+
+                        def on_select(index):
+                            if index == -1:
+                                initial_view.sel().clear()
+
+                                for region in initial_regions:
+                                    initial_view.sel().add(region)
+
+                                initial_view.window().focus_view(initial_view)
+
+                                initial_view.set_viewport_position(
+                                    initial_viewport_position,
+                                    True,
+                                )
+
+                            else:
+                                open_location(self.view.window(), locations[index])
+
+                        quick_panel_items = [
+                            location_quick_panel_item(location)
+                            for location in locations
+                        ]
+
+                        self.view.window().show_quick_panel(
+                            quick_panel_items,
+                            on_select,
+                            on_highlight=on_highlight,
+                        )
+
+                client.textDocument_references(
                     view_textDocumentPositionParams(self.view, point),
                     callback,
                 )
