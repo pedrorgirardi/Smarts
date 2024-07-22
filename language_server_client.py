@@ -108,6 +108,27 @@ def severity_kind(severity):
         return sublime.KIND_ID_AMBIGUOUS
 
 
+def location_start_text_point(view, location):
+    return view.text_point(
+        location["range"]["start"]["line"],
+        location["range"]["start"]["character"],
+    )
+
+
+def location_end_text_point(view, location):
+    return view.text_point(
+        location["range"]["end"]["line"],
+        location["range"]["end"]["character"],
+    )
+
+
+def location_region(view, location) -> sublime.Region:
+    return sublime.Region(
+        location_start_text_point(view, location),
+        location_end_text_point(view, location),
+    )
+
+
 def diagnostic_start_text_point(view, diagnostic):
     return view.text_point(
         diagnostic["range"]["start"]["line"],
@@ -139,6 +160,27 @@ def document_diagnostic_quick_panel_item(diagnostic_item) -> sublime.QuickPanelI
         annotation=f"{diagnostic_item['code']}",
         kind=severity_kind(diagnostic_item["severity"]),
     )
+
+
+def location_quick_panel_item(location):
+    start_line = location["range"]["start"]["line"] + 1
+    start_character = location["range"]["start"]["character"] + 1
+
+    return sublime.QuickPanelItem(
+        f"{start_line}:{start_character}",
+        details=location["uri"],
+    )
+
+
+def uri_to_path(uri: str) -> str:
+    return unquote(urlparse(uri).path)
+
+
+def open_location(window, location, flags=sublime.ENCODED_POSITION):
+    row = location["range"]["start"]["line"] + 1
+    col = location["range"]["start"]["character"] + 1
+
+    window.open_file(f'{uri_to_path(location["uri"])}:{row}:{col}', flags)
 
 
 # -- LSP
@@ -261,7 +303,9 @@ class LanguageServerClient:
 
         while (message := self.send_queue.get()) is not None:
             if request_id := message.get("id"):
-                logger.debug(f"[{self.config['name']}] > {message['method']} ({request_id})")
+                logger.debug(
+                    f"[{self.config['name']}] > {message['method']} ({request_id})"
+                )
             else:
                 logger.debug(f"[{self.config['name']}] > {message['method']}")
 
@@ -275,7 +319,9 @@ class LanguageServerClient:
                     self.server_process.stdin.write(content.encode("utf-8"))
                     self.server_process.stdin.flush()
                 except BrokenPipeError as e:
-                    logger.error(f"{self.config['name']} - Can't write to server's stdin: {e}")
+                    logger.error(
+                        f"{self.config['name']} - Can't write to server's stdin: {e}"
+                    )
 
             finally:
                 self.send_queue.task_done()
@@ -294,7 +340,9 @@ class LanguageServerClient:
                     try:
                         callback(message)
                     except Exception as e:
-                        logger.error(f"{self.config['name']} - Request callback error: {e}")
+                        logger.error(
+                            f"{self.config['name']} - Request callback error: {e}"
+                        )
                     finally:
                         del self.request_callback[request_id]
             else:
@@ -555,7 +603,9 @@ class LanguageServerClient:
 
             returncode = self.server_process.wait()
 
-        logger.debug(f"[{self.config['name']}] Server terminated with returncode {returncode}")
+        logger.debug(
+            f"[{self.config['name']}] Server terminated with returncode {returncode}"
+        )
 
     def textDocument_didOpen(self, view):
         """
@@ -643,6 +693,23 @@ class LanguageServerClient:
             callback,
         )
 
+    def textDocument_definition(self, params, callback):
+        """
+        The go to definition request is sent from the client to the server
+        to resolve the definition location of a symbol at a given text document position.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_definition
+        """
+        self._request(
+            {
+                "jsonrpc": "2.0",
+                "id": str(uuid.uuid4()),
+                "method": "textDocument/definition",
+                "params": params,
+            },
+            callback,
+        )
+
 
 # -- INPUT HANDLERS
 
@@ -718,6 +785,70 @@ class LanguageServerClientShutdownCommand(sublime_plugin.WindowCommand):
 class LanguageServerClientDebugCommand(sublime_plugin.WindowCommand):
     def run(self):
         logger.debug(_STARTED_SERVERS)
+
+
+class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
+    def run(self, _):
+        for started_server in started_servers_values(
+            window_rootPath(self.view.window())
+        ):
+            config = started_server["config"]
+            client = started_server["client"]
+
+            point = self.view.sel()[0].begin()
+
+            if view_applicable(config, self.view):
+
+                def callback(response):
+                    result = response.get("result")
+
+                    if not result:
+                        return
+
+                    locations = sorted(
+                        [result] if isinstance(result, dict) else result,
+                        key=lambda location: [
+                            location["range"]["start"]["line"],
+                            location["range"]["start"]["character"],
+                        ],
+                    )
+
+                    if len(locations) == 1:
+                        open_location(self.view.window(), locations[0])
+                    else:
+                        initial_viewport_position = self.view.viewport_position()
+
+                        def on_highlight(index):
+                            open_location(
+                                self.view.window(),
+                                locations[index],
+                                flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
+                            )
+
+                        def on_select(index):
+                            if index == -1:
+                                self.view.set_viewport_position(
+                                    initial_viewport_position, True
+                                )
+
+                            else:
+                                open_location(self.view.window(), locations[index])
+
+                        quick_panel_items = [
+                            location_quick_panel_item(location)
+                            for location in locations
+                        ]
+
+                        self.view.window().show_quick_panel(
+                            quick_panel_items,
+                            on_select,
+                            on_highlight=on_highlight,
+                        )
+
+                client.textDocument_definition(
+                    view_textDocumentPositionParams(self.view, point),
+                    callback,
+                )
 
 
 class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
