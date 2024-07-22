@@ -3,11 +3,13 @@ import logging
 import os
 import re
 import subprocess
+import tempfile
 import threading
 import uuid
 from pathlib import Path
 from queue import Queue
 from urllib.parse import unquote, urlparse
+from zipfile import ZipFile
 
 import sublime  # pyright: ignore
 import sublime_plugin  # pyright: ignore
@@ -151,15 +153,50 @@ def location_quick_panel_item(location):
     )
 
 
+def path_to_uri(path: str) -> str:
+    return Path(path).as_uri()
+
+
 def uri_to_path(uri: str) -> str:
     return unquote(urlparse(uri).path)
+
+
+def open_location_jar(window, location, flags):
+    """
+    Open JAR `fname` and call `f` with the path of the temporary file.
+    """
+    fname = uri_to_path(location["uri"])
+
+    dep_jar, dep_filepath = fname.split("::")
+
+    with ZipFile(dep_jar) as jar:
+        with jar.open(dep_filepath) as jar_file:
+            tmp_path = os.path.join(tempfile.gettempdir(), dep_filepath)
+
+            # Create all parent directories of the temporary file:
+            os.makedirs(os.path.dirname(tmp_path), exist_ok=True)
+
+            with open(tmp_path, "w") as tmp_file:
+                tmp_file.write(jar_file.read().decode())
+
+            new_location = {
+                "uri": path_to_uri(tmp_file.name),
+                "range": location["range"],
+            }
+
+            open_location(window, new_location, flags)
 
 
 def open_location(window, location, flags=sublime.ENCODED_POSITION):
     row = location["range"]["start"]["line"] + 1
     col = location["range"]["start"]["character"] + 1
 
-    window.open_file(f'{uri_to_path(location["uri"])}:{row}:{col}', flags)
+    fname = uri_to_path(location["uri"])
+
+    if ".jar:" in fname:
+        open_location_jar(window, location, flags)
+    else:
+        window.open_file(f'{uri_to_path(location["uri"])}:{row}:{col}', flags)
 
 
 # -- LSP
