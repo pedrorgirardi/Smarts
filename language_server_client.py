@@ -199,6 +199,57 @@ def open_location(window, location, flags=sublime.ENCODED_POSITION):
         window.open_file(f"{fname}:{row}:{col}", flags)
 
 
+def capture_view_position(view):
+    regions = [region for region in view.sel()]
+
+    viewport_position = view.viewport_position()
+
+    def restore():
+        view.sel().clear()
+
+        for region in regions:
+            view.sel().add(region)
+
+        view.window().focus_view(view)
+
+        view.set_viewport_position(viewport_position, True)
+
+    return restore
+
+
+def goto_location(window, locations, on_cancel=None):
+    if len(locations) == 1:
+        open_location(window, locations[0])
+    else:
+        locations = sorted(
+            locations,
+            key=lambda location: [
+                location["range"]["start"]["line"],
+                location["range"]["start"]["character"],
+            ],
+        )
+
+        def on_highlight(index):
+            open_location(
+                window,
+                locations[index],
+                flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
+            )
+
+        def on_select(index):
+            if index == -1:
+                if on_cancel:
+                    on_cancel()
+            else:
+                open_location(window, locations[index])
+
+        window.show_quick_panel(
+            [location_quick_panel_item(location) for location in locations],
+            on_select=on_select,
+            on_highlight=on_highlight,
+        )
+
+
 # -- LSP
 
 
@@ -838,45 +889,14 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
                     if not result:
                         return
 
-                    locations = sorted(
-                        [result] if isinstance(result, dict) else result,
-                        key=lambda location: [
-                            location["range"]["start"]["line"],
-                            location["range"]["start"]["character"],
-                        ],
-                    )
+                    restore_view = capture_view_position(self.view)
 
-                    if len(locations) == 1:
-                        open_location(self.view.window(), locations[0])
-                    else:
-                        initial_viewport_position = self.view.viewport_position()
+                    def on_cancel():
+                        restore_view()
 
-                        def on_highlight(index):
-                            open_location(
-                                self.view.window(),
-                                locations[index],
-                                flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
-                            )
+                    locations = [result] if isinstance(result, dict) else result
 
-                        def on_select(index):
-                            if index == -1:
-                                self.view.set_viewport_position(
-                                    initial_viewport_position, True
-                                )
-
-                            else:
-                                open_location(self.view.window(), locations[index])
-
-                        quick_panel_items = [
-                            location_quick_panel_item(location)
-                            for location in locations
-                        ]
-
-                        self.view.window().show_quick_panel(
-                            quick_panel_items,
-                            on_select,
-                            on_highlight=on_highlight,
-                        )
+                    goto_location(self.view.window(), locations, on_cancel=on_cancel)
 
                 client.textDocument_definition(
                     view_textDocumentPositionParams(self.view, point),
@@ -892,8 +912,6 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
             config = started_server["config"]
             client = started_server["client"]
 
-            point = self.view.sel()[0].begin()
-
             if view_applicable(config, self.view):
 
                 def callback(response):
@@ -902,61 +920,14 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
                     if not result:
                         return
 
-                    locations = sorted(
-                        result,
-                        key=lambda location: [
-                            location["range"]["start"]["line"],
-                            location["range"]["start"]["character"],
-                        ],
-                    )
+                    restore_view = capture_view_position(self.view)
 
-                    if len(locations) == 1:
-                        open_location(self.view.window(), locations[0])
-                    else:
-                        initial_view = self.view
+                    def on_cancel():
+                        restore_view()
 
-                        initial_viewport_position = self.view.viewport_position()
+                    goto_location(self.view.window(), result, on_cancel=on_cancel)
 
-                        initial_regions = (
-                            [region for region in initial_view.sel()]
-                            if initial_view
-                            else []
-                        )
-
-                        def on_highlight(index):
-                            open_location(
-                                self.view.window(),
-                                locations[index],
-                                flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
-                            )
-
-                        def on_select(index):
-                            if index == -1:
-                                initial_view.sel().clear()
-
-                                for region in initial_regions:
-                                    initial_view.sel().add(region)
-
-                                initial_view.window().focus_view(initial_view)
-
-                                initial_view.set_viewport_position(
-                                    initial_viewport_position,
-                                    True,
-                                )
-
-                            else:
-                                open_location(self.view.window(), locations[index])
-
-                        quick_panel_items = [
-                            location_quick_panel_item(location)
-                            for location in locations
-                        ]
-
-                        self.view.window().show_quick_panel(
-                            quick_panel_items,
-                            on_select,
-                            on_highlight=on_highlight,
-                        )
+                point = self.view.sel()[0].begin()
 
                 client.textDocument_references(
                     view_textDocumentPositionParams(self.view, point),
