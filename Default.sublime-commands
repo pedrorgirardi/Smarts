@@ -3,21 +3,21 @@
         "caption": "Smarts: Settings",
         "command": "edit_settings",
         "args": {
-            "base_file": "${packages}/LanguageServerClient/LanguageServerClient.sublime-settings",
-            "user_file": "${packages}/User/LanguageServerClient.sublime-settings"
+            "base_file": "${packages}/Smarts/Smarts.sublime-settings",
+            "user_file": "${packages}/User/Smarts.sublime-settings"
         }
     },
     {
         "caption": "Smarts: Initialize",
-        "command": "language_server_client_initialize"
+        "command": "pg_smarts_initialize"
     },
     {
         "caption": "Smarts: Shutdown",
-        "command": "language_server_client_shutdown"
+        "command": "pg_smarts_shutdown"
     },
     {
         "caption": "Smarts: Debug",
-        "command": "language_server_client_debug"
+        "command": "pg_smarts_debug"
     },
     {
         "caption": "Smarts: Goto Document Diagnostic",

@@ -44,7 +44,7 @@ _STARTED_SERVERS = {}
 
 
 def settings():
-    return sublime.load_settings("LanguageServerClient.sublime-settings")
+    return sublime.load_settings("Smarts.sublime-settings")
 
 
 def window_rootPath(window):
@@ -847,7 +847,7 @@ class ServerInputHandler(sublime_plugin.ListInputHandler):
 # -- COMMANDS
 
 
-class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
+class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "server" not in args:
             available_servers_names = [config["name"] for config in available_servers()]
@@ -881,7 +881,7 @@ class LanguageServerClientInitializeCommand(sublime_plugin.WindowCommand):
             }
 
 
-class LanguageServerClientShutdownCommand(sublime_plugin.WindowCommand):
+class PgSmartsShutdownCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "server" not in args:
             rootPath = window_rootPath(self.window)
@@ -902,7 +902,7 @@ class LanguageServerClientShutdownCommand(sublime_plugin.WindowCommand):
             del _STARTED_SERVERS[rootPath][server]
 
 
-class LanguageServerClientDebugCommand(sublime_plugin.WindowCommand):
+class PgSmartsDebugCommand(sublime_plugin.WindowCommand):
     def run(self):
         logger.debug(_STARTED_SERVERS)
 
@@ -1011,7 +1011,7 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
 ## -- Listeners
 
 
-class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
+class PgSmartsViewListener(sublime_plugin.ViewEventListener):
     def on_load_async(self):
         rootPath = window_rootPath(self.view.window())
 
@@ -1138,7 +1138,7 @@ class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
                     )
 
 
-class LanguageServerClientListener(sublime_plugin.EventListener):
+class PgSmartsListener(sublime_plugin.EventListener):
     def on_pre_close_window(self, window):
         def shutdown_servers(started_servers):
             for started_server in started_servers.values():
