@@ -854,6 +854,36 @@ class LanguageServerClient:
 
         self.open_documents.remove(view.file_name())
 
+    def textDocument_didChange(self, view):
+        """
+        The document change notification is sent from the client to the server to signal changes to a text document.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didChange
+        """
+
+        # Before a client can change a text document it must claim
+        # ownership of its content using the textDocument/didOpen notification.
+        if view.file_name() not in self.open_documents:
+            return
+
+        self.send_queue.put(
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/didChange",
+                "params": {
+                    "textDocument": {
+                        "uri": Path(view.file_name()).as_uri(),
+                    },
+                    "contentChanges": [
+                        {
+                            # If only a text is provided it is considered to be the full content of the document.
+                            "text": view.substr(sublime.Region(0, view.size())),
+                        }
+                    ],
+                },
+            }
+        )
+
     def textDocument_hover(self, params, callback):
         """
         The hover request is sent from the client to the server to request
@@ -1238,6 +1268,16 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         params = view_textDocumentPositionParams(self.view)
 
         client.textDocument_documentHighlight(params, callback)
+
+    def on_modified_async(self):
+        applicable_servers_ = applicable_servers(self.view)
+
+        client = applicable_servers_[0]["client"] if applicable_servers_ else None
+
+        if not client:
+            return
+
+        client.textDocument_didChange(self.view)
 
     def on_selection_modified_async(self):
         if highlighter := getattr(self, "pg_smarts_highlighter", None):
