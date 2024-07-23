@@ -8,6 +8,10 @@
         }
     },
     {
+        "caption": "Smarts: Debug",
+        "command": "pg_smarts_debug"
+    },
+    {
         "caption": "Smarts: Initialize",
         "command": "pg_smarts_initialize"
     },
@@ -16,11 +20,11 @@
         "command": "pg_smarts_shutdown"
     },
     {
-        "caption": "Smarts: Debug",
-        "command": "pg_smarts_debug"
-    },
-    {
         "caption": "Smarts: Goto Document Diagnostic",
         "command": "pg_smarts_goto_document_diagnostic"
+    },
+    {
+        "caption": "Smarts: Goto Document Symbol",
+        "command": "pg_smarts_goto_document_symbol"
     }
 ]

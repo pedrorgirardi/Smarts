@@ -46,6 +46,7 @@ _STARTED_SERVERS = {}
 def settings():
     return sublime.load_settings("Smarts.sublime-settings")
 
+
 def stg_capabilities():
     return settings().get("capabilities", {})
 
@@ -121,8 +122,63 @@ def severity_kind(severity):
     elif severity == 4:
         return (sublime.KIND_ID_COLOR_PURPLISH, "H", "H")
     else:
-        return sublime.KIND_ID_AMBIGUOUS
+        return (sublime.KIND_ID_AMBIGUOUS, "", "")
 
+def symbol_kind_name(kind):
+    if kind == 1:
+        return "File"
+    elif kind == 2:
+        return "Module"
+    elif kind == 3:
+        return "Namespace"
+    elif kind == 4:
+        return "Package"
+    elif kind == 5:
+        return "Class"
+    elif kind == 6:
+        return "Method"
+    elif kind == 7:
+        return "Property"
+    elif kind == 8:
+        return "Field"
+    elif kind == 9:
+        return "Constructor"
+    elif kind == 10:
+        return "Enum"
+    elif kind == 11:
+        return "Interface"
+    elif kind == 12:
+        return "Function"
+    elif kind == 13:
+        return "Variable"
+    elif kind == 14:
+        return "Constant"
+    elif kind == 15:
+        return "String"
+    elif kind == 16:
+        return "Number"
+    elif kind == 17:
+        return "Boolean"
+    elif kind == 18:
+        return "Array"
+    elif kind == 19:
+        return "Object"
+    elif kind == 20:
+        return "Key"
+    elif kind == 21:
+        return "Null"
+    elif kind == 22:
+        return "EnumMember"
+    elif kind == 23:
+        return "Struct"
+    elif kind == 24:
+        return "Event"
+    elif kind == 25:
+        return "Operator"
+    elif kind == 26:
+        return "Type Parameter"
+    else:
+        return f"{kind}"
 
 def location_start_text_point(view, location):
     return view.text_point(
@@ -154,6 +210,17 @@ def diagnostic_quick_panel_item(diagnostic_item) -> sublime.QuickPanelItem:
         details=f"{line}:{character}",
         annotation=f"{diagnostic_item['code']}",
         kind=severity_kind(diagnostic_item["severity"]),
+    )
+
+
+def symbol_information_quick_panel_item(symbol_information) -> sublime.QuickPanelItem:
+    line = symbol_information["location"]["range"]["start"]["line"] + 1
+    character = symbol_information["location"]["range"]["start"]["character"] + 1
+
+    return sublime.QuickPanelItem(
+        f"{symbol_information['name']}",
+        details=symbol_kind_name(symbol_information["kind"]),
+        annotation=f"{line}:{character}"
     )
 
 
@@ -265,6 +332,14 @@ def goto_location(window, locations, on_cancel=None):
 
 
 # -- LSP
+
+
+def view_textDocumentParams(view):
+    return {
+        "textDocument": {
+            "uri": Path(view.file_name()).as_uri(),
+        }
+    }
 
 
 def view_textDocumentPositionParams(view, point=None):
@@ -829,6 +904,22 @@ class LanguageServerClient:
             callback,
         )
 
+    def textDocument_documentSymbol(self, params, callback):
+        """
+        The document symbol request is sent from the client to the server.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
+        """
+        self._request(
+            {
+                "jsonrpc": "2.0",
+                "id": str(uuid.uuid4()),
+                "method": "textDocument/documentSymbol",
+                "params": params,
+            },
+            callback,
+        )
+
 
 # -- INPUT HANDLERS
 
@@ -1009,6 +1100,63 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
             on_select,
             on_highlight=on_highlight,
         )
+
+
+class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
+    def run(self, _):
+        applicable_servers_ = applicable_servers(self.view)
+
+        client = applicable_servers_[0]["client"] if applicable_servers_ else None
+
+        if not client:
+            return
+
+        def callback(response):
+            if result := response.get("result"):
+                initial_viewport_position = self.view.viewport_position()
+
+                symbols = sorted(
+                    result,
+                    key=lambda symbol_information: [
+                        symbol_information["location"]["range"]["start"]["line"],
+                        symbol_information["location"]["range"]["start"]["character"],
+                    ],
+                )
+
+                def on_highlight(index):
+                    symbol_information = symbols[index]
+
+                    logger.debug(symbol_information)
+
+                    self.view.show_at_center(
+                        location_region(self.view, symbol_information["location"])
+                    )
+
+                def on_select(index):
+                    if index == -1:
+                        self.view.set_viewport_position(initial_viewport_position, True)
+
+                    else:
+                        region = location_region(self.view, symbols[index]["location"])
+
+                        self.view.show_at_center(region)
+                        self.view.sel().clear()
+                        self.view.sel().add(region)
+
+                quick_panel_items = [
+                    symbol_information_quick_panel_item(symbol_information)
+                    for symbol_information in symbols
+                ]
+
+                self.view.window().show_quick_panel(
+                    quick_panel_items,
+                    on_select,
+                    on_highlight=on_highlight,
+                )
+
+        params = view_textDocumentParams(self.view)
+
+        client.textDocument_documentSymbol(params, callback)
 
 
 ## -- Listeners
