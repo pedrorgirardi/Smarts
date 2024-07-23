@@ -124,6 +124,7 @@ def severity_kind(severity):
     else:
         return (sublime.KIND_ID_AMBIGUOUS, "", "")
 
+
 def symbol_kind_name(kind):
     if kind == 1:
         return "File"
@@ -180,6 +181,7 @@ def symbol_kind_name(kind):
     else:
         return f"{kind}"
 
+
 def location_start_text_point(view, location):
     return view.text_point(
         location["range"]["start"]["line"],
@@ -220,7 +222,7 @@ def symbol_information_quick_panel_item(symbol_information) -> sublime.QuickPane
     return sublime.QuickPanelItem(
         f"{symbol_information['name']}",
         details=symbol_kind_name(symbol_information["kind"]),
-        annotation=f"{line}:{character}"
+        annotation=f"{line}:{character}",
     )
 
 
@@ -414,6 +416,24 @@ class LanguageServerClient:
             }
         )
 
+    def _read(self, out, n):
+        remaining = n
+
+        chunks = []
+
+        while remaining > 0:
+            chunk = out.read(remaining)
+
+            # End of file or stream
+            if not chunk:
+                break
+
+            chunks.append(chunk)
+
+            remaining -= len(chunk)
+
+        return b"".join(chunks)
+
     def _start_reader(self):
         logger.debug(f"[{self.config['name']}] Reader is ready")
 
@@ -442,7 +462,7 @@ class LanguageServerClient:
             # -- CONTENT
 
             if content_length := headers.get("Content-Length"):
-                content = out.read(int(content_length)).decode("utf-8").strip()
+                content = self._read(out, int(content_length)).decode("utf-8").strip()
 
                 logger.debug(f"[{self.config['name']}] < {content}")
 
