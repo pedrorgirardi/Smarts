@@ -886,7 +886,11 @@ class LanguageServerClientShutdownCommand(sublime_plugin.WindowCommand):
         if "server" not in args:
             rootPath = window_rootPath(self.window)
 
-            return ServerInputHandler(sorted(started_servers(rootPath).keys()))
+            started_servers_ = started_servers(rootPath)
+
+            return ServerInputHandler(
+                sorted(started_servers_.keys()) if started_servers_ else []
+            )
 
     def run(self, server):
         rootPath = window_rootPath(self.window)
