@@ -221,7 +221,6 @@ def symbol_information_quick_panel_item(symbol_information) -> sublime.QuickPane
 
     return sublime.QuickPanelItem(
         f"{symbol_information['name']}",
-        details=symbol_kind_name(symbol_information["kind"]),
         annotation=f"{line}:{character}",
     )
 
