@@ -865,6 +865,8 @@ class LanguageServerClient:
         if view.file_name() not in self.open_documents:
             return
 
+        last_row, last_col = view.rowcol(view.size())
+
         self.send_queue.put(
             {
                 "jsonrpc": "2.0",
@@ -875,7 +877,16 @@ class LanguageServerClient:
                     },
                     "contentChanges": [
                         {
-                            # If only a text is provided it is considered to be the full content of the document.
+                            "range": {
+                                "start": {
+                                    "line": 0,
+                                    "character": 0,
+                                },
+                                "end": {
+                                    "line": last_row,
+                                    "character": last_col,
+                                },
+                            },
                             "text": view.substr(sublime.Region(0, view.size())),
                         }
                     ],
