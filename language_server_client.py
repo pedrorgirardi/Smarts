@@ -264,13 +264,15 @@ def goto_location(window, locations, on_cancel=None):
 # -- LSP
 
 
-def view_textDocumentPositionParams(view, point):
+def view_textDocumentPositionParams(view, point=None):
     """
     A parameter literal used in requests to pass a text document and a position inside that document.
 
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentPositionParams
     """
-    line, character = view.rowcol(point)
+    default_point = view.sel()[0].begin()
+
+    line, character = view.rowcol(point or default_point)
 
     return {
         "textDocument": {
@@ -909,8 +911,6 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
             config = started_server["config"]
             client = started_server["client"]
 
-            point = self.view.sel()[0].begin()
-
             if view_applicable(config, self.view):
 
                 def callback(response):
@@ -926,7 +926,7 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
                     goto_location(self.view.window(), locations, on_cancel=restore_view)
 
                 client.textDocument_definition(
-                    view_textDocumentPositionParams(self.view, point),
+                    view_textDocumentPositionParams(self.view),
                     callback,
                 )
 
@@ -951,10 +951,8 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
 
                     goto_location(self.view.window(), result, on_cancel=restore_view)
 
-                point = self.view.sel()[0].begin()
-
                 client.textDocument_references(
-                    view_textDocumentPositionParams(self.view, point),
+                    view_textDocumentPositionParams(self.view),
                     callback,
                 )
 
@@ -1053,10 +1051,8 @@ class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
                 flags=sublime.DRAW_NO_FILL,
             )
 
-        point = self.view.sel()[0].begin()
-
         client.textDocument_documentHighlight(
-            view_textDocumentPositionParams(self.view, point),
+            view_textDocumentPositionParams(self.view),
             callback,
         )
 
