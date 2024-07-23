@@ -1083,6 +1083,13 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 config = started_server["config"]
                 client = started_server["client"]
 
+                def text_to_html(s: str):
+                    html = re.sub(r"\n", "<br/>", s)
+                    html = re.sub(r"\t", "&nbsp;&nbsp;&nbsp;&nbsp;", html)
+                    html = re.sub(r" ", "&nbsp;", html)
+
+                    return html
+
                 def show_contents_popup(response):
                     if result := response["result"]:
                         # The result of a hover request.
@@ -1090,29 +1097,21 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
                         result_contents = result["contents"]
 
-                        popup_content = ""
+                        popup_content = []
 
                         if isinstance(result_contents, str):
-                            popup_content = re.sub(r"\n", "<br/>", result_contents)
-                            popup_content = re.sub(
-                                r"\t", "&nbsp;&nbsp;&nbsp;&nbsp;", popup_content
-                            )
+                            popup_content.append(text_to_html(result_contents))
 
                         elif isinstance(result_contents, dict):
-                            popup_content = re.sub(
-                                r"\n", "<br/>", result_contents["value"]
-                            )
-                            popup_content = re.sub(
-                                r"\t", "&nbsp;&nbsp;&nbsp;&nbsp;", popup_content
-                            )
+                            popup_content.append(text_to_html(result_contents["value"]))
 
                         elif isinstance(result_contents, list):
                             for x in result_contents:
                                 if isinstance(x, str):
-                                    popup_content += re.sub(r"\n", "<br/>", x)
+                                    popup_content.append(text_to_html(x))
 
                                 elif isinstance(x, dict):
-                                    popup_content += re.sub(r"\n", "<br/>", x["value"])
+                                    popup_content.append(text_to_html(x["value"]))
 
                         # The popup is shown at the current postion of the caret.
                         location = -1
@@ -1126,7 +1125,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                             )
 
                         self.view.show_popup(
-                            popup_content,
+                            "<br /><br />".join(popup_content),
                             location=location,
                             max_width=860,
                         )
