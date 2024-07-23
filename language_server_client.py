@@ -951,10 +951,16 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
 
                     goto_location(self.view.window(), result, on_cancel=restore_view)
 
-                client.textDocument_references(
-                    view_textDocumentPositionParams(self.view),
-                    callback,
-                )
+                params = {
+                    **view_textDocumentPositionParams(self.view),
+                    **{
+                        "context": {
+                            "includeDeclaration": False,
+                        },
+                    },
+                }
+
+                client.textDocument_references(params, callback)
 
 
 class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
