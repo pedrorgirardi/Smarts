@@ -182,6 +182,27 @@ def symbol_kind_name(kind):
         return f"{kind}"
 
 
+def range_start_text_point(view, r):
+    return view.text_point(
+        r["start"]["line"],
+        r["start"]["character"],
+    )
+
+
+def range_end_text_point(view, r):
+    return view.text_point(
+        r["end"]["line"],
+        r["end"]["character"],
+    )
+
+
+def range_region(view, r) -> sublime.Region:
+    return sublime.Region(
+        range_start_text_point(view, r),
+        range_end_text_point(view, r),
+    )
+
+
 def location_start_text_point(view, location):
     return view.text_point(
         location["range"]["start"]["line"],
@@ -215,12 +236,19 @@ def diagnostic_quick_panel_item(diagnostic_item) -> sublime.QuickPanelItem:
     )
 
 
-def symbol_information_quick_panel_item(symbol_information) -> sublime.QuickPanelItem:
-    line = symbol_information["location"]["range"]["start"]["line"] + 1
-    character = symbol_information["location"]["range"]["start"]["character"] + 1
+def document_symbol_quick_panel_item(data) -> sublime.QuickPanelItem:
+    line = None
+    character = None
+
+    if location := data.get("location"):
+        line = location["range"]["start"]["line"] + 1
+        character = location["range"]["start"]["character"] + 1
+    else:
+        line = data["selectionRange"]["start"]["line"] + 1
+        character = data["selectionRange"]["start"]["character"] + 1
 
     return sublime.QuickPanelItem(
-        f"{symbol_information['name']}",
+        f"{data['name']}",
         annotation=f"{line}:{character}",
     )
 
@@ -294,6 +322,15 @@ def capture_view(view):
 
         view.window().focus_view(view)
 
+        view.set_viewport_position(viewport_position, True)
+
+    return restore
+
+
+def capture_viewport_position(view):
+    viewport_position = view.viewport_position()
+
+    def restore():
         view.set_viewport_position(viewport_position, True)
 
     return restore
@@ -1124,7 +1161,7 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
 
 class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
     def run(self, _):
-        initial_viewport_position = self.view.viewport_position()
+        restore_viewport_position = capture_viewport_position(self.view)
 
         diagnostics = sorted(
             self.view.settings().get(STG_DIAGNOSTICS, []),
@@ -1143,7 +1180,7 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
 
         def on_select(index):
             if index == -1:
-                self.view.set_viewport_position(initial_viewport_position, True)
+                restore_viewport_position()
 
             else:
                 region = location_region(self.view, diagnostics[index])
@@ -1174,39 +1211,49 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
 
         def callback(response):
             if result := response.get("result"):
-                initial_viewport_position = self.view.viewport_position()
-
-                symbols = sorted(
-                    result,
-                    key=lambda symbol_information: [
-                        symbol_information["location"]["range"]["start"]["line"],
-                        symbol_information["location"]["range"]["start"]["character"],
-                    ],
-                )
+                restore_viewport_position = capture_viewport_position(self.view)
 
                 def on_highlight(index):
-                    symbol_information = symbols[index]
+                    data = result[index]
 
-                    logger.debug(symbol_information)
+                    logger.debug(data)
+
+                    show_at_center_range = None
+
+                    if location := data.get("location"):
+                        show_at_center_range = location["range"]
+                    else:
+                        show_at_center_range = data["selectionRange"]
 
                     self.view.show_at_center(
-                        location_region(self.view, symbol_information["location"])
+                        range_region(self.view, show_at_center_range)
                     )
 
                 def on_select(index):
                     if index == -1:
-                        self.view.set_viewport_position(initial_viewport_position, True)
+                        restore_viewport_position()
 
                     else:
-                        region = location_region(self.view, symbols[index]["location"])
+                        data = result[index]
 
-                        self.view.show_at_center(region)
+                        show_at_center_range = None
+
+                        if location := data.get("location"):
+                            show_at_center_range = location["range"]
+                        else:
+                            show_at_center_range = data["selectionRange"]
+
+                        show_at_center_region = range_region(
+                            self.view, show_at_center_range
+                        )
+
                         self.view.sel().clear()
-                        self.view.sel().add(region)
+                        self.view.sel().add(show_at_center_region)
+
+                        self.view.show_at_center(show_at_center_region)
 
                 quick_panel_items = [
-                    symbol_information_quick_panel_item(symbol_information)
-                    for symbol_information in symbols
+                    document_symbol_quick_panel_item(data) for data in result
                 ]
 
                 self.view.window().show_quick_panel(
