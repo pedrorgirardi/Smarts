@@ -874,6 +874,7 @@ class LanguageServerClient:
                 "params": {
                     "textDocument": {
                         "uri": Path(view.file_name()).as_uri(),
+                        "version": view.change_count(),
                     },
                     "contentChanges": [
                         {
