@@ -1044,27 +1044,29 @@ class LanguageServerClientViewListener(sublime_plugin.ViewEventListener):
             return
 
         def callback(response):
-            self.view.erase_regions(kSMARTS_HIGHLIGHTED_REGIONS)
+            if result := response.get("result"):
+                regions = [location_region(self.view, location) for location in result]
 
-            result = response.get("result")
+                # Do nothing if result regions are the same as view regions.
+                if regions_ := self.view.get_regions(kSMARTS_HIGHLIGHTED_REGIONS):
+                    if regions == regions_:
+                        return
 
-            if not result:
-                return
+                self.view.erase_regions(kSMARTS_HIGHLIGHTED_REGIONS)
 
-            regions = [location_region(self.view, location) for location in result]
+                self.view.add_regions(
+                    kSMARTS_HIGHLIGHTED_REGIONS,
+                    regions,
+                    scope="region.cyanish",
+                    icon="",
+                    flags=sublime.DRAW_NO_FILL,
+                )
+            else:
+                self.view.erase_regions(kSMARTS_HIGHLIGHTED_REGIONS)
 
-            self.view.add_regions(
-                kSMARTS_HIGHLIGHTED_REGIONS,
-                regions,
-                scope="region.cyanish",
-                icon="",
-                flags=sublime.DRAW_NO_FILL,
-            )
+        params = view_textDocumentPositionParams(self.view)
 
-        client.textDocument_documentHighlight(
-            view_textDocumentPositionParams(self.view),
-            callback,
-        )
+        client.textDocument_documentHighlight(params, callback)
 
     def on_selection_modified_async(self):
         if highlighter := getattr(self, "pg_smarts_highlighter", None):
