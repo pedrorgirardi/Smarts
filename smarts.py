@@ -613,7 +613,7 @@ class LanguageServerClient:
 
         logger.debug(f"[{self.config['name']}] Handler is done")
 
-    def _request(self, message, callback=None):
+    def _put(self, message, callback=None):
         # Drop message if server is not ready - unless it's an initization message.
         if not self.server_initialized and not message["method"] == "initialize":
             return
@@ -697,7 +697,7 @@ class LanguageServerClient:
         def initialize_callback(response):
             self.server_initialized = True
 
-            self.send_queue.put(
+            self._put(
                 {
                     "jsonrpc": "2.0",
                     "method": "initialized",
@@ -714,7 +714,7 @@ class LanguageServerClient:
         # Enqueue 'initialize' message.
         # Message must contain "method" and "params";
         # Keys "id" and "jsonrpc" are added by the worker.
-        self._request(
+        self._put(
             {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
@@ -761,7 +761,7 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
         """
 
-        self._request(
+        self._put(
             {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
@@ -780,7 +780,7 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#exit
         """
 
-        self.send_queue.put(
+        self._put(
             {
                 "jsonrpc": "2.0",
                 "method": "exit",
@@ -827,7 +827,7 @@ class LanguageServerClient:
         if view.file_name() in self.open_documents:
             return
 
-        self.send_queue.put(
+        self._put(
             {
                 "jsonrpc": "2.0",
                 "method": "textDocument/didOpen",
@@ -863,7 +863,7 @@ class LanguageServerClient:
         if view.file_name() not in self.open_documents:
             return
 
-        self.send_queue.put(
+        self._put(
             {
                 "jsonrpc": "2.0",
                 "method": "textDocument/didClose",
@@ -891,7 +891,7 @@ class LanguageServerClient:
 
         last_row, last_col = view.rowcol(view.size())
 
-        self.send_queue.put(
+        self._put(
             {
                 "jsonrpc": "2.0",
                 "method": "textDocument/didChange",
@@ -926,7 +926,7 @@ class LanguageServerClient:
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_hover
         """
-        self._request(
+        self._put(
             {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
@@ -943,7 +943,7 @@ class LanguageServerClient:
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_definition
         """
-        self._request(
+        self._put(
             {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
@@ -960,7 +960,7 @@ class LanguageServerClient:
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_references
         """
-        self._request(
+        self._put(
             {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
@@ -979,7 +979,7 @@ class LanguageServerClient:
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentHighlight
         """
-        self._request(
+        self._put(
             {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
@@ -995,7 +995,7 @@ class LanguageServerClient:
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
         """
-        self._request(
+        self._put(
             {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
