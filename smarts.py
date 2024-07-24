@@ -1349,6 +1349,11 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 client = started_server["client"]
                 client.textDocument_didClose(self.view)
 
+    def erase_highlights(self):
+        self.view.erase_regions(kSMARTS_HIGHLIGHTS)
+
+        self.view.settings().erase(kSMARTS_HIGHLIGHTS)
+
     def highlight(self):
         applicable_servers_ = applicable_servers(self.view)
 
@@ -1358,33 +1363,37 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             return
 
         def callback(response):
-            if result := response.get("result"):
-                regions = [location_region(self.view, location) for location in result]
+            result = response.get("result")
 
-                # Do nothing if result regions are the same as view regions.
-                if regions_ := self.view.get_regions(kSMARTS_HIGHLIGHTS):
-                    if regions == regions_:
-                        return
+            if not result:
+                self.erase_highlights()
+                return
 
-                self.view.erase_regions(kSMARTS_HIGHLIGHTS)
+            regions = [location_region(self.view, location) for location in result]
 
-                self.view.add_regions(
-                    kSMARTS_HIGHLIGHTS,
-                    regions,
-                    scope="region.cyanish",
-                    icon="",
-                    flags=sublime.DRAW_NO_FILL,
-                )
+            # Do nothing if result regions are the same as view regions.
+            if regions_ := self.view.get_regions(kSMARTS_HIGHLIGHTS):
+                if regions == regions_:
+                    return
 
-                self.view.settings().set(kSMARTS_HIGHLIGHTS, result)
-            else:
-                self.view.erase_regions(kSMARTS_HIGHLIGHTS)
+            self.view.add_regions(
+                kSMARTS_HIGHLIGHTS,
+                regions,
+                scope="region.cyanish",
+                icon="",
+                flags=sublime.DRAW_NO_FILL,
+            )
 
-                self.view.settings().erase(kSMARTS_HIGHLIGHTS)
+            self.view.settings().set(kSMARTS_HIGHLIGHTS, result)
 
         params = view_textDocumentPositionParams(self.view)
 
         client.textDocument_documentHighlight(params, callback)
+
+    def on_modified(self):
+        self.view.erase_regions(kSMARTS_HIGHLIGHTS)
+
+        self.view.settings().erase(kSMARTS_HIGHLIGHTS)
 
     def on_modified_async(self):
         applicable_servers_ = applicable_servers(self.view)
