@@ -243,8 +243,8 @@ def location_quick_panel_item(location):
     start_character = location["range"]["start"]["character"] + 1
 
     return sublime.QuickPanelItem(
-        f"{start_line}:{start_character}",
-        details=location["uri"],
+        uri_to_path(location["uri"]),
+        annotation=f"{start_line}:{start_character}",
     )
 
 
