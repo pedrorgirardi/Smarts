@@ -203,25 +203,8 @@ def range_region(view, r) -> sublime.Region:
     )
 
 
-def location_start_text_point(view, location):
-    return view.text_point(
-        location["range"]["start"]["line"],
-        location["range"]["start"]["character"],
-    )
-
-
-def location_end_text_point(view, location):
-    return view.text_point(
-        location["range"]["end"]["line"],
-        location["range"]["end"]["character"],
-    )
-
-
 def location_region(view, location) -> sublime.Region:
-    return sublime.Region(
-        location_start_text_point(view, location),
-        location_end_text_point(view, location),
-    )
+    return range_region(view, location["range"])
 
 
 def diagnostic_quick_panel_item(diagnostic_item) -> sublime.QuickPanelItem:
@@ -1265,6 +1248,37 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
         params = view_textDocumentParams(self.view)
 
         client.textDocument_documentSymbol(params, callback)
+
+
+class PgSmartsSelectRanges(sublime_plugin.TextCommand):
+    def run(self, _, ranges):
+        self.view.sel().clear()
+
+        for r in ranges:
+            self.view.sel().add(range_region(self.view, r))
+
+
+class PgSmartsSelectCommand(sublime_plugin.TextCommand):
+    def run(self, _):
+        applicable_servers_ = applicable_servers(self.view)
+
+        client = applicable_servers_[0]["client"] if applicable_servers_ else None
+
+        if not client:
+            return
+
+        def callback(response):
+            if result := response.get("result"):
+                self.view.run_command(
+                    "pg_smarts_select_ranges",
+                    {
+                        "ranges": [location["range"] for location in result],
+                    },
+                )
+
+        params = view_textDocumentPositionParams(self.view)
+
+        client.textDocument_documentHighlight(params, callback)
 
 
 ## -- Listeners
