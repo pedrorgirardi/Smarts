@@ -614,15 +614,20 @@ class LanguageServerClient:
         logger.debug(f"[{self.config['name']}] Handler is done")
 
     def _request(self, message, callback=None):
+        # Drop message if server is not ready - unless it's an initization message.
+        if not self.server_initialized and not message["method"] == "initialize":
+            return
+
         self.send_queue.put(message)
 
-        # A mapping of request ID to callback.
-        #
-        # callback will be called once the response for the request is received.
-        #
-        # callback might not be called if there's an error reading the response,
-        # or the server never returns a response.
-        self.request_callback[message["id"]] = callback
+        if message_id := message.get("id"):
+            # A mapping of request ID to callback.
+            #
+            # callback will be called once the response for the request is received.
+            #
+            # callback might not be called if there's an error reading the response,
+            # or the server never returns a response.
+            self.request_callback[message_id] = callback
 
     def initialize(self):
         """
