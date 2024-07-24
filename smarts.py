@@ -662,7 +662,6 @@ class LanguageServerClient:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            bufsize=0,
         )
 
         logger.info(
