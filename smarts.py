@@ -1257,6 +1257,8 @@ class PgSmartsSelectRanges(sublime_plugin.TextCommand):
         for r in ranges:
             self.view.sel().add(range_region(self.view, r))
 
+        self.view.show(self.view.sel())
+
 
 class PgSmartsSelectCommand(sublime_plugin.TextCommand):
     def run(self, _):
@@ -1275,6 +1277,53 @@ class PgSmartsSelectCommand(sublime_plugin.TextCommand):
                         "ranges": [location["range"] for location in result],
                     },
                 )
+
+        params = view_textDocumentPositionParams(self.view)
+
+        client.textDocument_documentHighlight(params, callback)
+
+
+class PgSmartsJumpCommand(sublime_plugin.TextCommand):
+    def run(self, _, movement):
+        applicable_servers_ = applicable_servers(self.view)
+
+        client = applicable_servers_[0]["client"] if applicable_servers_ else None
+
+        if not client:
+            return
+
+        def callback(response):
+            if result := response.get("result"):
+                locations = sorted(
+                    result,
+                    key=lambda location: [
+                        location["range"]["start"]["line"],
+                        location["range"]["start"]["character"],
+                    ],
+                )
+
+                trampoline = self.view.sel()[0]
+
+                jump_loc_index = None
+
+                for index, loc in enumerate(locations):
+                    r = location_region(self.view, loc)
+
+                    if r.contains(trampoline.begin()) or r.contains(trampoline.end()):
+                        if movement == "back":
+                            jump_loc_index = max([0, index - 1])
+                        elif movement == "forward":
+                            jump_loc_index = min([index + 1, len(locations) - 1])
+
+                        break
+
+                if jump_loc_index is not None:
+                    self.view.run_command(
+                        "pg_smarts_select_ranges",
+                        {
+                            "ranges": [locations[jump_loc_index]["range"]],
+                        },
+                    )
 
         params = view_textDocumentPositionParams(self.view)
 
