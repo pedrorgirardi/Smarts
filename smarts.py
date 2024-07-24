@@ -1509,11 +1509,12 @@ def plugin_unloaded():
         def shutdown_servers():
             for rootPath, servers in _STARTED_SERVERS.items():
                 for server_name, started_server in servers.items():
-                    logger.debug(f"Shutdown {server_name}")
+                    logger.debug(f"[{server_name}] Shutdown")
+
                     started_server["client"].shutdown()
 
         threading.Thread(
-            name="ShutdownServers",
+            name="Unloaded",
             target=lambda: shutdown_servers(),
             daemon=True,
         ).start()
