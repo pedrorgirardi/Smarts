@@ -209,6 +209,22 @@ def location_region(view, location) -> sublime.Region:
     return range_region(view, location["range"])
 
 
+def region_range_utf16(view, region):
+    begin_row, begin_col = view.rowcol_utf16(region.begin())
+    end_row, end_col = view.rowcol_utf16(region.end())
+
+    return {
+        "start": {
+            "line": int(begin_row),
+            "character": int(begin_col),
+        },
+        "end": {
+            "line": int(end_row),
+            "character": int(end_col),
+        },
+    }
+
+
 def diagnostic_quick_panel_item(diagnostic_item) -> sublime.QuickPanelItem:
     line = diagnostic_item["range"]["start"]["line"] + 1
     character = diagnostic_item["range"]["start"]["character"] + 1
@@ -889,7 +905,7 @@ class LanguageServerClient:
         if view.file_name() not in self.open_documents:
             return
 
-        last_row, last_col = view.rowcol(view.size())
+        text_region = sublime.Region(0, view.size())
 
         self._put(
             {
@@ -902,17 +918,8 @@ class LanguageServerClient:
                     },
                     "contentChanges": [
                         {
-                            "range": {
-                                "start": {
-                                    "line": 0,
-                                    "character": 0,
-                                },
-                                "end": {
-                                    "line": last_row,
-                                    "character": last_col,
-                                },
-                            },
-                            "text": view.substr(sublime.Region(0, view.size())),
+                            "range": region_range_utf16(text_region),
+                            "text": view.substr(text_region),
                         }
                     ],
                 },
