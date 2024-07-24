@@ -1505,6 +1505,20 @@ def plugin_loaded():
 
 
 def plugin_unloaded():
+    if _STARTED_SERVERS:
+
+        def shutdown_servers():
+            for rootPath, servers in _STARTED_SERVERS.items():
+                for server_name, started_server in servers.items():
+                    logger.debug(f"Shutdown {server_name}")
+                    started_server["client"].shutdown()
+
+        threading.Thread(
+            name="ShutdownServers",
+            target=lambda: shutdown_servers(),
+            daemon=True,
+        ).start()
+
     logger.debug("unloaded plugin")
 
     logger.removeHandler(logging_handler)
