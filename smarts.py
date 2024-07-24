@@ -501,12 +501,10 @@ class LanguageServerClient:
         logger.debug(f"[{self.config['name']}] Writer is ready")
 
         while (message := self.send_queue.get()) is not None:
-            if request_id := message.get("id"):
-                logger.debug(
-                    f"[{self.config['name']}] > {message['method']} ({request_id})"
-                )
-            else:
-                logger.debug(f"[{self.config['name']}] > {message['method']}")
+            # Note: Notification Message doesn't have `id`.
+            logger.debug(
+                f"[{self.config['name']}] > {message['method']} {message.get('id', '')}"
+            )
 
             try:
                 content = json.dumps(message)
@@ -514,9 +512,8 @@ class LanguageServerClient:
                 header = f"Content-Length: {len(content)}\r\n\r\n"
 
                 try:
-                    message_encoded = header.encode("ascii") + content.encode("utf-8")
-
-                    self.server_process.stdin.write(message_encoded)
+                    encoded = header.encode("ascii") + content.encode("utf-8")
+                    self.server_process.stdin.write(encoded)
                     self.server_process.stdin.flush()
                 except BrokenPipeError as e:
                     logger.error(
@@ -539,9 +536,9 @@ class LanguageServerClient:
                 if callback := self.request_callback.get(request_id):
                     try:
                         callback(message)
-                    except Exception as e:
-                        logger.error(
-                            f"{self.config['name']} - Request callback error: {e}"
+                    except Exception:
+                        logger.exception(
+                            f"{self.config['name']} - Request callback error"
                         )
                     finally:
                         del self.request_callback[request_id]
