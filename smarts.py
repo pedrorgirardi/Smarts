@@ -184,32 +184,26 @@ def symbol_kind_name(kind):
         return f"{kind}"
 
 
-def range_start_text_point(view, r):
-    return view.text_point(
-        r["start"]["line"],
-        r["start"]["character"],
-    )
-
-
-def range_end_text_point(view, r):
-    return view.text_point(
-        r["end"]["line"],
-        r["end"]["character"],
-    )
-
-
-def range_region(view, r) -> sublime.Region:
+def range16_to_region(view, range16) -> sublime.Region:
     return sublime.Region(
-        range_start_text_point(view, r),
-        range_end_text_point(view, r),
+        view.text_point_utf16(
+            range16["start"]["line"],
+            range16["start"]["character"],
+            clamp_column=True,
+        ),
+        view.text_point_utf16(
+            range16["end"]["line"],
+            range16["end"]["character"],
+            clamp_column=True,
+        ),
     )
 
 
 def location_region(view, location) -> sublime.Region:
-    return range_region(view, location["range"])
+    return range16_to_region(view, location["range"])
 
 
-def region_range_utf16(view, region):
+def region_to_range16(view, region):
     begin_row, begin_col = view.rowcol_utf16(region.begin())
     end_row, end_col = view.rowcol_utf16(region.end())
 
@@ -918,7 +912,7 @@ class LanguageServerClient:
                     },
                     "contentChanges": [
                         {
-                            "range": region_range_utf16(text_region),
+                            "range": region_to_range16(view, text_region),
                             "text": view.substr(text_region),
                         }
                     ],
@@ -1226,7 +1220,10 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                         show_at_center_range = data["selectionRange"]
 
                     self.view.show_at_center(
-                        range_region(self.view, show_at_center_range)
+                        range16_to_region(
+                            self.view,
+                            show_at_center_range,
+                        )
                     )
 
                 def on_select(index):
@@ -1243,8 +1240,9 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                         else:
                             show_at_center_range = data["selectionRange"]
 
-                        show_at_center_region = range_region(
-                            self.view, show_at_center_range
+                        show_at_center_region = range16_to_region(
+                            self.view,
+                            show_at_center_range,
                         )
 
                         self.view.sel().clear()
@@ -1272,7 +1270,7 @@ class PgSmartsSelectRanges(sublime_plugin.TextCommand):
         self.view.sel().clear()
 
         for r in ranges:
-            self.view.sel().add(range_region(self.view, r))
+            self.view.sel().add(range16_to_region(self.view, r))
 
         self.view.show(self.view.sel())
 
@@ -1323,7 +1321,9 @@ class PgSmartsJumpCommand(sublime_plugin.TextCommand):
                 break
 
         if jump_loc_index is not None:
-            jump_region = range_region(self.view, locations[jump_loc_index]["range"])
+            jump_region = range16_to_region(
+                self.view, locations[jump_loc_index]["range"]
+            )
 
             self.view.sel().clear()
             self.view.sel().add(jump_region)
