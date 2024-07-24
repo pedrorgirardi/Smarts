@@ -1161,7 +1161,12 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
 
             logger.debug(diagnostic)
 
-            self.view.show_at_center(location_region(self.view, diagnostic))
+            diagnostic_region = location_region(self.view, diagnostic)
+
+            self.view.sel().clear()
+            self.view.sel().add(diagnostic_region)
+
+            self.view.show_at_center(diagnostic_region)
 
         def on_select(index):
             if index == -1:
@@ -1170,9 +1175,10 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
             else:
                 region = location_region(self.view, diagnostics[index])
 
-                self.view.show_at_center(region)
                 self.view.sel().clear()
                 self.view.sel().add(region)
+
+                self.view.show_at_center(region)
 
         quick_panel_items = [
             diagnostic_quick_panel_item(diagnostic) for diagnostic in diagnostics
