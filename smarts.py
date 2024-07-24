@@ -1264,25 +1264,17 @@ class PgSmartsSelectRanges(sublime_plugin.TextCommand):
 
 class PgSmartsSelectCommand(sublime_plugin.TextCommand):
     def run(self, _):
-        applicable_servers_ = applicable_servers(self.view)
+        locations = self.view.settings().get(kSMARTS_HIGHLIGHTS)
 
-        client = applicable_servers_[0]["client"] if applicable_servers_ else None
-
-        if not client:
+        if not locations:
             return
 
-        def callback(response):
-            if result := response.get("result"):
-                self.view.run_command(
-                    "pg_smarts_select_ranges",
-                    {
-                        "ranges": [location["range"] for location in result],
-                    },
-                )
+        self.view.sel().clear()
 
-        params = view_textDocumentPositionParams(self.view)
+        for loc in locations:
+            self.view.sel().add(location_region(self.view, loc))
 
-        client.textDocument_documentHighlight(params, callback)
+        self.view.show(self.view.sel())
 
 
 class PgSmartsJumpCommand(sublime_plugin.TextCommand):
