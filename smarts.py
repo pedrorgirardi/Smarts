@@ -722,7 +722,7 @@ class LanguageServerClient:
                 "params": {
                     "processId": os.getpid(),
                     "clientInfo": {
-                        "name": "Sublime Text Language Server Client",
+                        "name": "Smarts",
                         "version": "0.1.0",
                     },
                     "rootPath": rootPath,
