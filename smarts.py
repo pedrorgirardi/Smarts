@@ -32,6 +32,8 @@ logger.setLevel("DEBUG")
 STG_SERVERS = "servers"
 STG_DIAGNOSTICS = "pg_lsc_diagnostics"
 STATUS_DIAGNOSTICS = "pg_lsc_diagnostics"
+
+kSMARTS_HIGHLIGHTS = "PG_SMARTS_HIGHLIGHTS"
 kSMARTS_HIGHLIGHTED_REGIONS = "PG_SMARTS_HIGHLIGHTED_REGIONS"
 
 
@@ -1285,49 +1287,41 @@ class PgSmartsSelectCommand(sublime_plugin.TextCommand):
 
 class PgSmartsJumpCommand(sublime_plugin.TextCommand):
     def run(self, _, movement):
-        applicable_servers_ = applicable_servers(self.view)
+        locations = self.view.settings().get(kSMARTS_HIGHLIGHTS)
 
-        client = applicable_servers_[0]["client"] if applicable_servers_ else None
-
-        if not client:
+        if not locations:
             return
 
-        def callback(response):
-            if result := response.get("result"):
-                locations = sorted(
-                    result,
-                    key=lambda location: [
-                        location["range"]["start"]["line"],
-                        location["range"]["start"]["character"],
-                    ],
-                )
+        locations = sorted(
+            locations,
+            key=lambda location: [
+                location["range"]["start"]["line"],
+                location["range"]["start"]["character"],
+            ],
+        )
 
-                trampoline = self.view.sel()[0]
+        trampoline = self.view.sel()[0]
 
-                jump_loc_index = None
+        jump_loc_index = None
 
-                for index, loc in enumerate(locations):
-                    r = location_region(self.view, loc)
+        for index, loc in enumerate(locations):
+            r = location_region(self.view, loc)
 
-                    if r.contains(trampoline.begin()) or r.contains(trampoline.end()):
-                        if movement == "back":
-                            jump_loc_index = max([0, index - 1])
-                        elif movement == "forward":
-                            jump_loc_index = min([index + 1, len(locations) - 1])
+            if r.contains(trampoline.begin()) or r.contains(trampoline.end()):
+                if movement == "back":
+                    jump_loc_index = max([0, index - 1])
+                elif movement == "forward":
+                    jump_loc_index = min([index + 1, len(locations) - 1])
 
-                        break
+                break
 
-                if jump_loc_index is not None:
-                    self.view.run_command(
-                        "pg_smarts_select_ranges",
-                        {
-                            "ranges": [locations[jump_loc_index]["range"]],
-                        },
-                    )
+        if jump_loc_index is not None:
+            jump_region = range_region(self.view, locations[jump_loc_index]["range"])
 
-        params = view_textDocumentPositionParams(self.view)
+            self.view.sel().clear()
+            self.view.sel().add(jump_region)
 
-        client.textDocument_documentHighlight(params, callback)
+            self.view.show(jump_region)
 
 
 ## -- Listeners
@@ -1370,21 +1364,25 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 regions = [location_region(self.view, location) for location in result]
 
                 # Do nothing if result regions are the same as view regions.
-                if regions_ := self.view.get_regions(kSMARTS_HIGHLIGHTED_REGIONS):
+                if regions_ := self.view.get_regions(kSMARTS_HIGHLIGHTS):
                     if regions == regions_:
                         return
 
-                self.view.erase_regions(kSMARTS_HIGHLIGHTED_REGIONS)
+                self.view.erase_regions(kSMARTS_HIGHLIGHTS)
 
                 self.view.add_regions(
-                    kSMARTS_HIGHLIGHTED_REGIONS,
+                    kSMARTS_HIGHLIGHTS,
                     regions,
                     scope="region.cyanish",
                     icon="",
                     flags=sublime.DRAW_NO_FILL,
                 )
+
+                self.view.settings().set(kSMARTS_HIGHLIGHTS, result)
             else:
-                self.view.erase_regions(kSMARTS_HIGHLIGHTED_REGIONS)
+                self.view.erase_regions(kSMARTS_HIGHLIGHTS)
+
+                self.view.settings().erase(kSMARTS_HIGHLIGHTS)
 
         params = view_textDocumentPositionParams(self.view)
 
