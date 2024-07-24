@@ -514,8 +514,9 @@ class LanguageServerClient:
                 header = f"Content-Length: {len(content)}\r\n\r\n"
 
                 try:
-                    self.server_process.stdin.write(header.encode("ascii"))
-                    self.server_process.stdin.write(content.encode("utf-8"))
+                    message_encoded = header.encode("ascii") + content.encode("utf-8")
+
+                    self.server_process.stdin.write(message_encoded)
                     self.server_process.stdin.flush()
                 except BrokenPipeError as e:
                     logger.error(
