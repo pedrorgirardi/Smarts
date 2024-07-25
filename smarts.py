@@ -906,7 +906,7 @@ class LanguageServerClient:
                     },
                     "contentChanges": [
                         {
-                            "text": sublime.Region(0, view.size()),
+                            "text": view.substr(sublime.Region(0, view.size())),
                         }
                     ],
                 },
