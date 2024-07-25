@@ -74,6 +74,17 @@ def started_server(rootPath, server):
         return started_servers_.get(server)
 
 
+def add_server(rootPath, server):
+    server_name = server["config"]["name"]
+
+    global _STARTED_SERVERS
+
+    if started_servers_ := _STARTED_SERVERS.get(rootPath):
+        started_servers_[server_name] = server
+    else:
+        _STARTED_SERVERS[rootPath] = {server_name: server}
+
+
 def view_syntax(view):
     return view.settings().get("syntax")
 
@@ -1039,19 +1050,13 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
 
         rootPath = window_rootPath(self.window)
 
-        if started_servers_ := started_servers(rootPath):
-            started_servers_[server] = {
+        add_server(
+            rootPath,
+            {
                 "config": config,
                 "client": client,
-            }
-        else:
-            global _STARTED_SERVERS
-            _STARTED_SERVERS[rootPath] = {
-                server: {
-                    "config": config,
-                    "client": client,
-                }
-            }
+            },
+        )
 
 
 class PgSmartsShutdownCommand(sublime_plugin.WindowCommand):
