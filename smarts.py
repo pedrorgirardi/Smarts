@@ -184,7 +184,7 @@ def symbol_kind_name(kind):
         return f"{kind}"
 
 
-def range16_to_region(view, range16) -> sublime.Region:
+def range16_to_region(view: sublime.View, range16) -> sublime.Region:
     return sublime.Region(
         view.text_point_utf16(
             range16["start"]["line"],
@@ -199,11 +199,7 @@ def range16_to_region(view, range16) -> sublime.Region:
     )
 
 
-def location_region(view, location) -> sublime.Region:
-    return range16_to_region(view, location["range"])
-
-
-def region_to_range16(view, region):
+def region_to_range16(view: sublime.View, region: sublime.Region) -> dict:
     begin_row, begin_col = view.rowcol_utf16(region.begin())
     end_row, end_col = view.rowcol_utf16(region.end())
 
@@ -219,7 +215,7 @@ def region_to_range16(view, region):
     }
 
 
-def diagnostic_quick_panel_item(diagnostic_item) -> sublime.QuickPanelItem:
+def diagnostic_quick_panel_item(diagnostic_item: dict) -> sublime.QuickPanelItem:
     line = diagnostic_item["range"]["start"]["line"] + 1
     character = diagnostic_item["range"]["start"]["character"] + 1
 
@@ -231,7 +227,7 @@ def diagnostic_quick_panel_item(diagnostic_item) -> sublime.QuickPanelItem:
     )
 
 
-def document_symbol_quick_panel_item(data) -> sublime.QuickPanelItem:
+def document_symbol_quick_panel_item(data:dict) -> sublime.QuickPanelItem:
     line = None
     character = None
 
@@ -248,7 +244,7 @@ def document_symbol_quick_panel_item(data) -> sublime.QuickPanelItem:
     )
 
 
-def location_quick_panel_item(location):
+def location_quick_panel_item(location:dict):
     start_line = location["range"]["start"]["line"] + 1
     start_character = location["range"]["start"]["character"] + 1
 
@@ -1164,7 +1160,7 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
 
             logger.debug(diagnostic)
 
-            diagnostic_region = location_region(self.view, diagnostic)
+            diagnostic_region = range16_to_region(self.view, diagnostic["range"])
 
             self.view.sel().clear()
             self.view.sel().add(diagnostic_region)
@@ -1176,7 +1172,7 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
                 restore_viewport_position()
 
             else:
-                region = location_region(self.view, diagnostics[index])
+                region = range16_to_region(self.view, diagnostics[index]["range"])
 
                 self.view.sel().clear()
                 self.view.sel().add(region)
@@ -1285,7 +1281,7 @@ class PgSmartsSelectCommand(sublime_plugin.TextCommand):
         self.view.sel().clear()
 
         for loc in locations:
-            self.view.sel().add(location_region(self.view, loc))
+            self.view.sel().add(range16_to_region(self.view, loc["range"]))
 
         self.view.show(self.view.sel())
 
@@ -1310,7 +1306,7 @@ class PgSmartsJumpCommand(sublime_plugin.TextCommand):
         jump_loc_index = None
 
         for index, loc in enumerate(locations):
-            r = location_region(self.view, loc)
+            r = range16_to_region(self.view, loc["range"])
 
             if r.contains(trampoline.begin()) or r.contains(trampoline.end()):
                 if movement == "back":
@@ -1378,7 +1374,9 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 self.erase_highlights()
                 return
 
-            regions = [location_region(self.view, location) for location in result]
+            regions = [
+                range16_to_region(self.view, location["range"]) for location in result
+            ]
 
             # Do nothing if result regions are the same as view regions.
             if regions_ := self.view.get_regions(kSMARTS_HIGHLIGHTS):
