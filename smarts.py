@@ -36,6 +36,24 @@ STATUS_DIAGNOSTICS = "pg_lsc_diagnostics"
 kSMARTS_HIGHLIGHTS = "PG_SMARTS_HIGHLIGHTS"
 kSMARTS_HIGHLIGHTED_REGIONS = "PG_SMARTS_HIGHLIGHTED_REGIONS"
 
+kMINIHTML_STYLES = """
+.m-0 {
+    margin: 0px;
+}
+
+.p-0 {
+    padding: 0px;
+}
+
+.font-bold {
+    font-weight: bold;
+}
+
+.text-foreground-07 {
+    color: color(var(--foreground) alpha(0.7));
+}
+"""
+
 
 # -- Global Variables
 
@@ -725,8 +743,14 @@ class LanguageServerClient:
 
         def initialize_callback(response):
             self.server_initialized = True
-            self._server_info = response["result"]["serverInfo"]
-            self._server_capabilities = response["result"]["capabilities"]
+            self._server_capabilities = response.get("result").get("capabilities")
+            self._server_info = response.get("result").get(
+                "serverInfo",
+                {
+                    "name": "-",
+                    "version": "-",
+                },
+            )
 
             self._put(
                 {
@@ -1096,7 +1120,69 @@ class PgSmartsShutdownCommand(sublime_plugin.WindowCommand):
 
 class PgSmartsDebugCommand(sublime_plugin.WindowCommand):
     def run(self):
-        logger.debug(_STARTED_SERVERS)
+        minihtml = ""
+
+        label_class = "text-foreground-07"
+
+        for rootPath, started_servers in _STARTED_SERVERS.items():
+            minihtml += f"<span class='font-bold {label_class}'>Root path:</span> <span>{rootPath}</span><br /><br />"
+
+            for started_server in started_servers.values():
+                client: LanguageServerClient = started_server["client"]
+
+                textDocumentSync = client._server_capabilities.get(
+                    "textDocumentSync", {}
+                )
+
+                if not isinstance(textDocumentSync, dict):
+                    textDocumentSync = {
+                        "change": textDocumentSync,
+                    }
+
+                textDocumentSync_change = {
+                    0: "0 - None",
+                    1: "1 - Full",
+                    2: "2 - Incremental",
+                }.get(
+                    textDocumentSync.get("change"),
+                    textDocumentSync.get("change"),
+                )
+
+                textDocumentSync_openClose = textDocumentSync.get('openClose')
+
+                documentSymbolProvider = client._server_capabilities.get(
+                    "documentSymbolProvider", "-"
+                )
+                documentHighlightProvider = client._server_capabilities.get(
+                    "documentHighlightProvider", "-"
+                )
+
+                # Server name & version
+                minihtml += f'<strong>{client._server_info["name"]}, version {client._server_info["version"]}</strong><br /><br />'
+
+                minihtml += "<ul class='m-0'>"
+
+                minihtml += f"<li><span class='{label_class}'>openClose:</span> {textDocumentSync_openClose}</li>"
+                minihtml += f"<li><span class='{label_class}'>change:</span> {textDocumentSync_change}</li>"
+                minihtml += f"<li><span class='{label_class}'>documentSymbolProvider:</span> {documentSymbolProvider}</li>"
+                minihtml += f"<li><span class='{label_class}'>documentHighlightProvider:</span> {documentHighlightProvider}</li>"
+
+                minihtml += "</ul>"
+
+        sheet = self.window.new_html_sheet(
+            "Servers",
+            f"""
+            <style>
+                {kMINIHTML_STYLES}
+            </style>
+            <body>
+                {minihtml}
+            </body>
+            """,
+            sublime.SEMI_TRANSIENT | sublime.ADD_TO_SELECTION,
+        )
+
+        self.window.focus_sheet(sheet)
 
 
 class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
