@@ -1130,15 +1130,27 @@ class PgSmartsDebugCommand(sublime_plugin.WindowCommand):
             for started_server in started_servers.values():
                 client: LanguageServerClient = started_server["client"]
 
+                # Defines how text documents are synced.
+                #
+                # If omitted it defaults to `TextDocumentSyncKind.None`.
+                #
+                # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentSyncOptions
                 textDocumentSync = client._server_capabilities.get(
                     "textDocumentSync", {}
                 )
 
+                # Is either a detailed structure defining each notification
+                # or for backwards compatibility the TextDocumentSyncKind number.
                 if not isinstance(textDocumentSync, dict):
                     textDocumentSync = {
                         "change": textDocumentSync,
                     }
 
+                # Open and close notifications are sent to the server.
+                # If omitted open close notifications should not be sent.
+                textDocumentSync_openClose = textDocumentSync.get("openClose", "-")
+
+                # Change notifications are sent to the server.
                 textDocumentSync_change = {
                     0: "0 - None",
                     1: "1 - Full",
@@ -1147,8 +1159,6 @@ class PgSmartsDebugCommand(sublime_plugin.WindowCommand):
                     textDocumentSync.get("change"),
                     textDocumentSync.get("change"),
                 )
-
-                textDocumentSync_openClose = textDocumentSync.get('openClose')
 
                 documentSymbolProvider = client._server_capabilities.get(
                     "documentSymbolProvider", "-"
@@ -1167,7 +1177,7 @@ class PgSmartsDebugCommand(sublime_plugin.WindowCommand):
                 minihtml += f"<li><span class='{label_class}'>documentSymbolProvider:</span> {documentSymbolProvider}</li>"
                 minihtml += f"<li><span class='{label_class}'>documentHighlightProvider:</span> {documentHighlightProvider}</li>"
 
-                minihtml += "</ul>"
+                minihtml += "</ul><br /><br />"
 
         sheet = self.window.new_html_sheet(
             "Servers",
