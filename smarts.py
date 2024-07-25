@@ -103,6 +103,9 @@ def view_applicable(config, view):
 
 
 def applicable_servers(view):
+    """
+    Returns started servers applicable to view.
+    """
     servers = []
 
     for started_server in started_servers_values(window_rootPath(view.window())):
@@ -110,6 +113,14 @@ def applicable_servers(view):
             servers.append(started_server)
 
     return servers
+
+
+def applicable_server(view):
+    """
+    Returns the first started server applicable to view, or None.
+    """
+    if applicable := applicable_servers(view):
+        return applicable[0]
 
 
 def text_to_html(s: str) -> str:
@@ -182,63 +193,6 @@ def severity_kind(severity):
         return (sublime.KIND_ID_COLOR_PURPLISH, "H", "H")
     else:
         return (sublime.KIND_ID_AMBIGUOUS, "", "")
-
-
-def symbol_kind_name(kind):
-    if kind == 1:
-        return "File"
-    elif kind == 2:
-        return "Module"
-    elif kind == 3:
-        return "Namespace"
-    elif kind == 4:
-        return "Package"
-    elif kind == 5:
-        return "Class"
-    elif kind == 6:
-        return "Method"
-    elif kind == 7:
-        return "Property"
-    elif kind == 8:
-        return "Field"
-    elif kind == 9:
-        return "Constructor"
-    elif kind == 10:
-        return "Enum"
-    elif kind == 11:
-        return "Interface"
-    elif kind == 12:
-        return "Function"
-    elif kind == 13:
-        return "Variable"
-    elif kind == 14:
-        return "Constant"
-    elif kind == 15:
-        return "String"
-    elif kind == 16:
-        return "Number"
-    elif kind == 17:
-        return "Boolean"
-    elif kind == 18:
-        return "Array"
-    elif kind == 19:
-        return "Object"
-    elif kind == 20:
-        return "Key"
-    elif kind == 21:
-        return "Null"
-    elif kind == 22:
-        return "EnumMember"
-    elif kind == 23:
-        return "Struct"
-    elif kind == 24:
-        return "Event"
-    elif kind == 25:
-        return "Operator"
-    elif kind == 26:
-        return "Type Parameter"
-    else:
-        return f"{kind}"
 
 
 def range16_to_region(view: sublime.View, range16) -> sublime.Region:
@@ -1240,11 +1194,9 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
 
 class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
     def run(self, _):
-        applicable_servers_ = applicable_servers(self.view)
+        applicable_server_ = applicable_server(self.view)
 
-        client = applicable_servers_[0]["client"] if applicable_servers_ else None
-
-        if not client:
+        if not applicable_server_:
             return
 
         def callback(response):
@@ -1314,7 +1266,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
 
         params = view_textDocumentParams(self.view)
 
-        client.textDocument_documentSymbol(params, callback)
+        applicable_server_["client"].textDocument_documentSymbol(params, callback)
 
 
 class PgSmartsSelectRanges(sublime_plugin.TextCommand):
@@ -1385,20 +1337,14 @@ class PgSmartsJumpCommand(sublime_plugin.TextCommand):
 
 class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
     def run(self, _):
-        applicable_servers_ = applicable_servers(self.view)
+        if applicable_server_ := applicable_server(self.view):
+            params = view_textDocumentPositionParams(self.view)
 
-        client = applicable_servers_[0]["client"] if applicable_servers_ else None
+            def callback(response):
+                if result := response["result"]:
+                    show_hover_popup(self.view, result)
 
-        if not client:
-            return
-
-        params = view_textDocumentPositionParams(self.view)
-
-        def callback(response):
-            if result := response["result"]:
-                show_hover_popup(self.view, result)
-
-        client.textDocument_hover(params, callback)
+            applicable_server_["client"].textDocument_hover(params, callback)
 
 
 ## -- Listeners
@@ -1434,11 +1380,9 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         self.view.settings().erase(kSMARTS_HIGHLIGHTS)
 
     def highlight(self):
-        applicable_servers_ = applicable_servers(self.view)
+        applicable_server_ = applicable_server(self.view)
 
-        client = applicable_servers_[0]["client"] if applicable_servers_ else None
-
-        if not client:
+        if not applicable_server_:
             return
 
         def callback(response):
@@ -1469,17 +1413,11 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         params = view_textDocumentPositionParams(self.view)
 
-        client.textDocument_documentHighlight(params, callback)
+        applicable_server_["client"].textDocument_documentHighlight(params, callback)
 
     def notify_change(self):
-        applicable_servers_ = applicable_servers(self.view)
-
-        client = applicable_servers_[0]["client"] if applicable_servers_ else None
-
-        if not client:
-            return
-
-        client.textDocument_didChange(self.view)
+        if applicable_server_ := applicable_server(self.view):
+            applicable_server_["client"].textDocument_didChange(self.view)
 
     def on_modified(self):
         # Erase highlights immediately.
