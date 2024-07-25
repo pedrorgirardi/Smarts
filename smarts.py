@@ -85,11 +85,21 @@ def add_server(rootPath, server):
         _STARTED_SERVERS[rootPath] = {server_name: server}
 
 
-def view_syntax(view):
+def view_syntax(view) -> str:
+    """
+    Returns syntax for view.
+
+    A syntax might be something like "Packages/Python/Python.sublime-syntax".
+    """
     return view.settings().get("syntax")
 
 
 def view_applicable(config, view):
+    """
+    Returns True if view is applicable.
+
+    View is applicable if its syntax is contained in the `applicable_to` setting.
+    """
     applicable_to = set(config.get("applicable_to", []))
 
     applicable = view_syntax(view) in applicable_to
