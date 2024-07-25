@@ -112,6 +112,54 @@ def applicable_servers(view):
     return servers
 
 
+def text_to_html(s: str) -> str:
+    html = re.sub(r"\n", "<br/>", s)
+    html = re.sub(r"\t", "&nbsp;&nbsp;&nbsp;&nbsp;", html)
+    html = re.sub(r" ", "&nbsp;", html)
+
+    return html
+
+
+def show_hover_popup(view: sublime.View, result):
+    # The result of a hover request.
+    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#hover
+
+    result_contents = result["contents"]
+
+    popup_content = []
+
+    if isinstance(result_contents, str):
+        popup_content.append(text_to_html(result_contents))
+
+    elif isinstance(result_contents, dict):
+        popup_content.append(text_to_html(result_contents["value"]))
+
+    elif isinstance(result_contents, list):
+        for x in result_contents:
+            if isinstance(x, str):
+                popup_content.append(text_to_html(x))
+
+            elif isinstance(x, dict):
+                popup_content.append(text_to_html(x["value"]))
+
+    # The popup is shown at the current postion of the caret.
+    location = -1
+
+    # An optional range is a range inside a text document
+    # that is used to visualize a hover, e.g. by changing the background color.
+    if result_range := result["range"]:
+        location = view.text_point(
+            result_range["start"]["line"],
+            result_range["start"]["character"],
+        )
+
+    view.show_popup(
+        "<br /><br />".join(popup_content),
+        location=location,
+        max_width=860,
+    )
+
+
 def severity_name(severity):
     if severity == 1:
         return "Error"
@@ -1337,6 +1385,24 @@ class PgSmartsJumpCommand(sublime_plugin.TextCommand):
             self.view.show(jump_region)
 
 
+class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
+    def run(self, _):
+        applicable_servers_ = applicable_servers(self.view)
+
+        client = applicable_servers_[0]["client"] if applicable_servers_ else None
+
+        if not client:
+            return
+
+        params = view_textDocumentPositionParams(self.view)
+
+        def callback(response):
+            if result := response["result"]:
+                show_hover_popup(self.view, result)
+
+        client.textDocument_hover(params, callback)
+
+
 ## -- Listeners
 
 
@@ -1449,58 +1515,14 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 config = started_server["config"]
                 client = started_server["client"]
 
-                def text_to_html(s: str):
-                    html = re.sub(r"\n", "<br/>", s)
-                    html = re.sub(r"\t", "&nbsp;&nbsp;&nbsp;&nbsp;", html)
-                    html = re.sub(r" ", "&nbsp;", html)
-
-                    return html
-
-                def show_contents_popup(response):
-                    if result := response["result"]:
-                        # The result of a hover request.
-                        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#hover
-
-                        result_contents = result["contents"]
-
-                        popup_content = []
-
-                        if isinstance(result_contents, str):
-                            popup_content.append(text_to_html(result_contents))
-
-                        elif isinstance(result_contents, dict):
-                            popup_content.append(text_to_html(result_contents["value"]))
-
-                        elif isinstance(result_contents, list):
-                            for x in result_contents:
-                                if isinstance(x, str):
-                                    popup_content.append(text_to_html(x))
-
-                                elif isinstance(x, dict):
-                                    popup_content.append(text_to_html(x["value"]))
-
-                        # The popup is shown at the current postion of the caret.
-                        location = -1
-
-                        # An optional range is a range inside a text document
-                        # that is used to visualize a hover, e.g. by changing the background color.
-                        if result_range := result["range"]:
-                            location = self.view.text_point(
-                                result_range["start"]["line"],
-                                result_range["start"]["character"],
-                            )
-
-                        self.view.show_popup(
-                            "<br /><br />".join(popup_content),
-                            location=location,
-                            max_width=860,
-                        )
-
                 if view_applicable(config, self.view):
-                    client.textDocument_hover(
-                        view_textDocumentPositionParams(self.view, point),
-                        show_contents_popup,
-                    )
+                    params = view_textDocumentPositionParams(self.view, point)
+
+                    def callback(response):
+                        if result := response["result"]:
+                            show_hover_popup(self.view, result)
+
+                    client.textDocument_hover(params, callback)
 
 
 class PgSmartsListener(sublime_plugin.EventListener):
