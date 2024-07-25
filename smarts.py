@@ -1118,7 +1118,7 @@ class PgSmartsShutdownCommand(sublime_plugin.WindowCommand):
             del _STARTED_SERVERS[rootPath][server]
 
 
-class PgSmartsDebugCommand(sublime_plugin.WindowCommand):
+class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
     def run(self):
         minihtml = ""
 

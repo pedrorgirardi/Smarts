@@ -8,8 +8,8 @@
         }
     },
     {
-        "caption": "Smarts: Debug",
-        "command": "pg_smarts_debug"
+        "caption": "Smarts: Status",
+        "command": "pg_smarts_status"
     },
     {
         "caption": "Smarts: Initialize",
