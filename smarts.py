@@ -448,6 +448,8 @@ class LanguageServerClient:
         self.server_process = None
         self.server_shutdown = threading.Event()
         self.server_initialized = False
+        self._server_info = None
+        self._server_capabilities = None
         self.send_queue = Queue(maxsize=1)
         self.receive_queue = Queue(maxsize=1)
         self.reader = None
@@ -723,6 +725,8 @@ class LanguageServerClient:
 
         def initialize_callback(response):
             self.server_initialized = True
+            self._server_info = response["result"]["serverInfo"]
+            self._server_capabilities = response["result"]["capabilities"]
 
             self._put(
                 {
