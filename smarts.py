@@ -153,11 +153,9 @@ def show_hover_popup(view: sublime.View, result):
             result_range["start"]["character"],
         )
 
-    view.show_popup(
-        "<br /><br />".join(popup_content),
-        location=location,
-        max_width=860,
-    )
+    minihtml = "<br /><br />".join(popup_content)
+
+    view.show_popup(minihtml, location=location, max_width=860)
 
 
 def severity_name(severity):
