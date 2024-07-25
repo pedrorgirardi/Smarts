@@ -74,15 +74,15 @@ def started_server(rootPath, server):
         return started_servers_.get(server)
 
 
-def add_server(rootPath, server):
-    server_name = server["config"]["name"]
+def add_server(rootPath, started_server):
+    server_name = started_server["config"]["name"]
 
     global _STARTED_SERVERS
 
     if started_servers_ := _STARTED_SERVERS.get(rootPath):
-        started_servers_[server_name] = server
+        started_servers_[server_name] = started_server
     else:
-        _STARTED_SERVERS[rootPath] = {server_name: server}
+        _STARTED_SERVERS[rootPath] = {server_name: started_server}
 
 
 def view_syntax(view) -> str:
