@@ -895,8 +895,6 @@ class LanguageServerClient:
         if view.file_name() not in self.open_documents:
             return
 
-        text_region = sublime.Region(0, view.size())
-
         self._put(
             {
                 "jsonrpc": "2.0",
@@ -908,8 +906,7 @@ class LanguageServerClient:
                     },
                     "contentChanges": [
                         {
-                            "range": region_to_range16(view, text_region),
-                            "text": view.substr(text_region),
+                            "text": sublime.Region(0, view.size()),
                         }
                     ],
                 },
