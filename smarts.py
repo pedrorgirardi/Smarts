@@ -1217,12 +1217,15 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                     else:
                         show_at_center_range = data["selectionRange"]
 
-                    self.view.show_at_center(
-                        range16_to_region(
-                            self.view,
-                            show_at_center_range,
-                        )
+                    show_at_center_region = range16_to_region(
+                        self.view,
+                        show_at_center_range,
                     )
+
+                    self.view.sel().clear()
+                    self.view.sel().add(show_at_center_region)
+
+                    self.view.show_at_center(show_at_center_region)
 
                 def on_select(index):
                     if index == -1:
@@ -1231,16 +1234,21 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                     else:
                         data = result[index]
 
-                        show_at_center_range = None
+                        selected_range = None
 
                         if location := data.get("location"):
-                            show_at_center_range = location["range"]
+                            selected_range = location["range"]
                         else:
-                            show_at_center_range = data["selectionRange"]
+                            selected_range = data["selectionRange"]
 
-                        show_at_center_region = range16_to_region(
+                        selected_region = range16_to_region(
                             self.view,
-                            show_at_center_range,
+                            selected_range,
+                        )
+
+                        show_at_center_region = sublime.Region(
+                            selected_region.end(),
+                            selected_region.end(),
                         )
 
                         self.view.sel().clear()
