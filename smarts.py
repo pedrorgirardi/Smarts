@@ -227,7 +227,7 @@ def diagnostic_quick_panel_item(diagnostic_item: dict) -> sublime.QuickPanelItem
     )
 
 
-def document_symbol_quick_panel_item(data:dict) -> sublime.QuickPanelItem:
+def document_symbol_quick_panel_item(data: dict) -> sublime.QuickPanelItem:
     line = None
     character = None
 
@@ -244,7 +244,7 @@ def document_symbol_quick_panel_item(data:dict) -> sublime.QuickPanelItem:
     )
 
 
-def location_quick_panel_item(location:dict):
+def location_quick_panel_item(location: dict):
     start_line = location["range"]["start"]["line"] + 1
     start_character = location["range"]["start"]["character"] + 1
 
@@ -1397,12 +1397,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         client.textDocument_documentHighlight(params, callback)
 
-    def on_modified(self):
-        self.view.erase_regions(kSMARTS_HIGHLIGHTS)
-
-        self.view.settings().erase(kSMARTS_HIGHLIGHTS)
-
-    def on_modified_async(self):
+    def notify_change(self):
         applicable_servers_ = applicable_servers(self.view)
 
         client = applicable_servers_[0]["client"] if applicable_servers_ else None
@@ -1411,6 +1406,17 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             return
 
         client.textDocument_didChange(self.view)
+
+    def on_modified(self):
+        # Erase highlights immediately.
+        self.erase_highlights()
+
+    def on_modified_async(self):
+        if change_notifier := getattr(self, "pg_smarts_change_notifier", None):
+            change_notifier.cancel()
+
+        self.pg_smarts_change_notifier = threading.Timer(0.3, self.notify_change)
+        self.pg_smarts_change_notifier.start()
 
     def on_selection_modified_async(self):
         if highlighter := getattr(self, "pg_smarts_highlighter", None):
