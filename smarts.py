@@ -304,6 +304,20 @@ def uri_to_path(uri: str) -> str:
     return unquote(urlparse(uri).path)
 
 
+def view_text_document_item(view):
+    """
+    An item to transfer a text document from the client to the server.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentItem
+    """
+    return {
+        "uri": path_to_uri(view.file_name()),
+        "languageId": syntax_languageId(view_syntax(view)),
+        "version": view.change_count(),
+        "text": view.substr(sublime.Region(0, view.size())),
+    }
+
+
 def open_location_jar(window, location, flags):
     """
     Open JAR `fname` and call `f` with the path of the temporary file.
@@ -791,7 +805,11 @@ class LanguageServerClient:
             # (Check if a view's syntax is valid for the server.)
             for view in self.window.views():
                 if view_applicable(self.config, view):
-                    self.textDocument_didOpen(view)
+                    self.textDocument_didOpen(
+                        {
+                            "textDocument": view_text_document_item(view),
+                        }
+                    )
 
         # Enqueue 'initialize' message.
         # Message must contain "method" and "params";
@@ -890,7 +908,7 @@ class LanguageServerClient:
             f"[{self.config['name']}] Server terminated with returncode {returncode}"
         )
 
-    def textDocument_didOpen(self, view):
+    def textDocument_didOpen(self, params):
         """
         The document open notification is sent from the client to the server
         to signal newly opened text documents.
@@ -906,29 +924,22 @@ class LanguageServerClient:
 
         # An open notification must not be sent more than once without a corresponding close notification send before.
         # This means open and close notification must be balanced and the max open count for a particular textDocument is one.
-        if view.file_name() in self.open_documents:
-            return
+        textDocument_uri = params["textDocument"]["uri"]
 
-        textDocument_uri = path_to_uri(view.file_name())
+        if textDocument_uri in self.open_documents:
+            return
 
         self._put(
             {
                 "jsonrpc": "2.0",
                 "method": "textDocument/didOpen",
-                "params": {
-                    "textDocument": {
-                        "uri": textDocument_uri,
-                        "languageId": syntax_languageId(view.settings().get("syntax")),
-                        "version": view.change_count(),
-                        "text": view.substr(sublime.Region(0, view.size())),
-                    },
-                },
+                "params": params,
             }
         )
 
         self.open_documents.add(textDocument_uri)
 
-    def textDocument_didClose(self, view):
+    def textDocument_didClose(self, params):
         """
         The document close notification is sent from the client to the server
         when the document got closed in the client.
@@ -943,10 +954,9 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didClose
         """
 
+        textDocument_uri = params["textDocument"]["uri"]
+
         # A close notification requires a previous open notification to be sent.
-
-        textDocument_uri = path_to_uri(view.file_name())
-
         if textDocument_uri not in self.open_documents:
             return
 
@@ -954,11 +964,7 @@ class LanguageServerClient:
             {
                 "jsonrpc": "2.0",
                 "method": "textDocument/didClose",
-                "params": {
-                    "textDocument": {
-                        "uri": Path(view.file_name()).as_uri(),
-                    },
-                },
+                "params": params,
             }
         )
 
@@ -1557,7 +1563,11 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 client = started_server["client"]
 
                 if view_applicable(config, self.view):
-                    client.textDocument_didOpen(self.view)
+                    client.textDocument_didOpen(
+                        {
+                            "textDocument": view_text_document_item(self.view),
+                        }
+                    )
 
     def on_pre_close(self):
         # When the window is closed, there's no window 'attached' to view.
@@ -1569,7 +1579,13 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if started_servers_ := started_servers(rootPath):
             for started_server in started_servers_.values():
                 client = started_server["client"]
-                client.textDocument_didClose(self.view)
+                client.textDocument_didClose(
+                    {
+                        "textDocument": {
+                            "uri": path_to_uri(self.view.file_name()),
+                        },
+                    },
+                )
 
     def erase_highlights(self):
         self.view.erase_regions(kSMARTS_HIGHLIGHTS)
