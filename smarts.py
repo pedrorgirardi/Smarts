@@ -136,6 +136,9 @@ def applicable_servers(view):
     """
     servers = []
 
+    if not view.window():
+        return servers
+
     for started_server in started_servers_values(window_rootPath(view.window())):
         if view_applicable(started_server["config"], view):
             servers.append(started_server)
@@ -299,6 +302,20 @@ def path_to_uri(path: str) -> str:
 
 def uri_to_path(uri: str) -> str:
     return unquote(urlparse(uri).path)
+
+
+def view_text_document_item(view):
+    """
+    An item to transfer a text document from the client to the server.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentItem
+    """
+    return {
+        "uri": path_to_uri(view.file_name()),
+        "languageId": syntax_languageId(view_syntax(view)),
+        "version": view.change_count(),
+        "text": view.substr(sublime.Region(0, view.size())),
+    }
 
 
 def open_location_jar(window, location, flags):
@@ -483,6 +500,30 @@ class LanguageServerClient:
                 "open_documents": self.open_documents,
             }
         )
+
+    def capabilities_textDocumentSync(self):
+        """
+        Defines how text documents are synced.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentSyncOptions
+        """
+        if capabilities := self._server_capabilities:
+            # If omitted it defaults to `TextDocumentSyncKind.None`.
+            textDocumentSync = capabilities.get(
+                "textDocumentSync",
+                {
+                    "change": 0,
+                },
+            )
+
+            # Is either a detailed structure defining each notification
+            # or for backwards compatibility the TextDocumentSyncKind number.
+            if not isinstance(textDocumentSync, dict):
+                textDocumentSync = {
+                    "change": textDocumentSync,
+                }
+
+            return textDocumentSync
 
     def _read(self, out, n):
         remaining = n
@@ -764,7 +805,11 @@ class LanguageServerClient:
             # (Check if a view's syntax is valid for the server.)
             for view in self.window.views():
                 if view_applicable(self.config, view):
-                    self.textDocument_didOpen(view)
+                    self.textDocument_didOpen(
+                        {
+                            "textDocument": view_text_document_item(view),
+                        }
+                    )
 
         # Enqueue 'initialize' message.
         # Message must contain "method" and "params";
@@ -863,7 +908,7 @@ class LanguageServerClient:
             f"[{self.config['name']}] Server terminated with returncode {returncode}"
         )
 
-    def textDocument_didOpen(self, view):
+    def textDocument_didOpen(self, params):
         """
         The document open notification is sent from the client to the server
         to signal newly opened text documents.
@@ -879,27 +924,22 @@ class LanguageServerClient:
 
         # An open notification must not be sent more than once without a corresponding close notification send before.
         # This means open and close notification must be balanced and the max open count for a particular textDocument is one.
-        if view.file_name() in self.open_documents:
+        textDocument_uri = params["textDocument"]["uri"]
+
+        if textDocument_uri in self.open_documents:
             return
 
         self._put(
             {
                 "jsonrpc": "2.0",
                 "method": "textDocument/didOpen",
-                "params": {
-                    "textDocument": {
-                        "uri": Path(view.file_name()).as_uri(),
-                        "languageId": syntax_languageId(view.settings().get("syntax")),
-                        "version": view.change_count(),
-                        "text": view.substr(sublime.Region(0, view.size())),
-                    },
-                },
+                "params": params,
             }
         )
 
-        self.open_documents.add(view.file_name())
+        self.open_documents.add(textDocument_uri)
 
-    def textDocument_didClose(self, view):
+    def textDocument_didClose(self, params):
         """
         The document close notification is sent from the client to the server
         when the document got closed in the client.
@@ -914,25 +954,23 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didClose
         """
 
+        textDocument_uri = params["textDocument"]["uri"]
+
         # A close notification requires a previous open notification to be sent.
-        if view.file_name() not in self.open_documents:
+        if textDocument_uri not in self.open_documents:
             return
 
         self._put(
             {
                 "jsonrpc": "2.0",
                 "method": "textDocument/didClose",
-                "params": {
-                    "textDocument": {
-                        "uri": Path(view.file_name()).as_uri(),
-                    },
-                },
+                "params": params,
             }
         )
 
-        self.open_documents.remove(view.file_name())
+        self.open_documents.remove(textDocument_uri)
 
-    def textDocument_didChange(self, view):
+    def textDocument_didChange(self, params):
         """
         The document change notification is sent from the client to the server to signal changes to a text document.
 
@@ -941,24 +979,14 @@ class LanguageServerClient:
 
         # Before a client can change a text document it must claim
         # ownership of its content using the textDocument/didOpen notification.
-        if view.file_name() not in self.open_documents:
+        if params["textDocument"]["uri"] not in self.open_documents:
             return
 
         self._put(
             {
                 "jsonrpc": "2.0",
                 "method": "textDocument/didChange",
-                "params": {
-                    "textDocument": {
-                        "uri": Path(view.file_name()).as_uri(),
-                        "version": view.change_count(),
-                    },
-                    "contentChanges": [
-                        {
-                            "text": view.substr(sublime.Region(0, view.size())),
-                        }
-                    ],
-                },
+                "params": params,
             }
         )
 
@@ -1130,21 +1158,7 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
             for started_server in started_servers.values():
                 client: LanguageServerClient = started_server["client"]
 
-                # Defines how text documents are synced.
-                #
-                # If omitted it defaults to `TextDocumentSyncKind.None`.
-                #
-                # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentSyncOptions
-                textDocumentSync = client._server_capabilities.get(
-                    "textDocumentSync", {}
-                )
-
-                # Is either a detailed structure defining each notification
-                # or for backwards compatibility the TextDocumentSyncKind number.
-                if not isinstance(textDocumentSync, dict):
-                    textDocumentSync = {
-                        "change": textDocumentSync,
-                    }
+                textDocumentSync = client.capabilities_textDocumentSync()
 
                 # Open and close notifications are sent to the server.
                 # If omitted open close notifications should not be sent.
@@ -1460,6 +1474,85 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
 ## -- Listeners
 
 
+class PgSmartsTextListener(sublime_plugin.TextChangeListener):
+    def on_text_changed_async(self, changes):
+        view = self.buffer.primary_view()
+
+        language_client: LanguageServerClient = None
+
+        if applicable_server_ := applicable_server(view):
+            language_client = applicable_server_["client"]
+
+        if not language_client:
+            return
+
+        textDocumentSync = language_client.capabilities_textDocumentSync()
+
+        if not textDocumentSync:
+            return
+
+        # The document that did change.
+        # The version number points to the version
+        # after all provided content changes have been applied.
+        #
+        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#versionedTextDocumentIdentifier
+        textDocument = {
+            "uri": path_to_uri(view.file_name()),
+            "version": view.change_count(),
+        }
+
+        # The actual content changes.
+        # The content changes describe single state changes to the document.
+        # So if there are two content changes c1 (at array index 0) and c2 (at array index 1)
+        # for a document in state S then c1 moves the document from S to S' and
+        # c2 from S' to S''. So c1 is computed on the state S and c2 is computed on the state S'.
+        #
+        # If only a text is provided it is considered to be the full content of the document.
+        #
+        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentContentChangeEvent
+        contentChanges = None
+
+        # Full
+        # Documents are synced by always sending the full content of the document.
+        if textDocumentSync["change"] == 1:
+            contentChanges = [
+                {
+                    "text": view.substr(sublime.Region(0, view.size())),
+                }
+            ]
+
+        # Incremental
+        # Documents are synced by sending the full content on open.
+        # After that only incremental updates to the document are sent.
+        elif textDocumentSync["change"] == 2:
+            contentChanges = []
+
+            for change in changes:
+                contentChanges.append(
+                    {
+                        "range": {
+                            "start": {
+                                "line": change.a.row,
+                                "character": change.a.col_utf16,
+                            },
+                            "end": {
+                                "line": change.b.row,
+                                "character": change.b.col_utf16,
+                            },
+                        },
+                        "rangeLength": change.len_utf16,
+                        "text": change.str,
+                    }
+                )
+
+        language_client.textDocument_didChange(
+            {
+                "textDocument": textDocument,
+                "contentChanges": contentChanges,
+            }
+        )
+
+
 class PgSmartsViewListener(sublime_plugin.ViewEventListener):
     def on_load_async(self):
         rootPath = window_rootPath(self.view.window())
@@ -1470,7 +1563,11 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 client = started_server["client"]
 
                 if view_applicable(config, self.view):
-                    client.textDocument_didOpen(self.view)
+                    client.textDocument_didOpen(
+                        {
+                            "textDocument": view_text_document_item(self.view),
+                        }
+                    )
 
     def on_pre_close(self):
         # When the window is closed, there's no window 'attached' to view.
@@ -1482,7 +1579,13 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if started_servers_ := started_servers(rootPath):
             for started_server in started_servers_.values():
                 client = started_server["client"]
-                client.textDocument_didClose(self.view)
+                client.textDocument_didClose(
+                    {
+                        "textDocument": {
+                            "uri": path_to_uri(self.view.file_name()),
+                        },
+                    },
+                )
 
     def erase_highlights(self):
         self.view.erase_regions(kSMARTS_HIGHLIGHTS)
@@ -1525,20 +1628,9 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         applicable_server_["client"].textDocument_documentHighlight(params, callback)
 
-    def notify_change(self):
-        if applicable_server_ := applicable_server(self.view):
-            applicable_server_["client"].textDocument_didChange(self.view)
-
     def on_modified(self):
         # Erase highlights immediately.
         self.erase_highlights()
-
-    def on_modified_async(self):
-        if change_notifier := getattr(self, "pg_smarts_change_notifier", None):
-            change_notifier.cancel()
-
-        self.pg_smarts_change_notifier = threading.Timer(0.3, self.notify_change)
-        self.pg_smarts_change_notifier.start()
 
     def on_selection_modified_async(self):
         if highlighter := getattr(self, "pg_smarts_highlighter", None):
