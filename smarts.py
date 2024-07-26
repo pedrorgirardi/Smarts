@@ -38,6 +38,15 @@ kOUTPUT_PANEL_NAME_PREFIXED = f"output.{kOUTPUT_PANEL_NAME}"
 kSMARTS_HIGHLIGHTS = "PG_SMARTS_HIGHLIGHTS"
 kSMARTS_HIGHLIGHTED_REGIONS = "PG_SMARTS_HIGHLIGHTED_REGIONS"
 
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#messageType
+kMESSAGE_TYPE_NAME = {
+    1: "Error",
+    2: "Warning",
+    3: "Info",
+    4: "Log",
+    5: "Debug",
+}
+
 kMINIHTML_STYLES = """
 .m-0 {
     margin: 0px;
@@ -706,9 +715,16 @@ class LanguageServerClient:
                     )
 
                 elif message["method"] == "window/showMessage":
+                    # The show message notification is sent from a server to a client
+                    # to ask the client to display a particular message in the user interface.
+                    #
+                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_showMessage
+
+                    message_type = message["params"]["type"]
+
                     output_insert(
                         sublime.active_window(),
-                        f'{message["params"]["message"]}\n',
+                        f'{kMESSAGE_TYPE_NAME.get(message_type, message_type)}: {message["params"]["message"]}\n',
                     )
 
                     show_output_panel(sublime.active_window())
