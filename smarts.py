@@ -484,6 +484,30 @@ class LanguageServerClient:
             }
         )
 
+    def capabilities_textDocumentSync(self):
+        """
+        Defines how text documents are synced.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentSyncOptions
+        """
+        if capabilities := self._server_capabilities:
+            # If omitted it defaults to `TextDocumentSyncKind.None`.
+            textDocumentSync = capabilities.get(
+                "textDocumentSync",
+                {
+                    "change": 0,
+                },
+            )
+
+            # Is either a detailed structure defining each notification
+            # or for backwards compatibility the TextDocumentSyncKind number.
+            if not isinstance(textDocumentSync, dict):
+                textDocumentSync = {
+                    "change": textDocumentSync,
+                }
+
+            return textDocumentSync
+
     def _read(self, out, n):
         remaining = n
 
@@ -1130,21 +1154,7 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
             for started_server in started_servers.values():
                 client: LanguageServerClient = started_server["client"]
 
-                # Defines how text documents are synced.
-                #
-                # If omitted it defaults to `TextDocumentSyncKind.None`.
-                #
-                # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentSyncOptions
-                textDocumentSync = client._server_capabilities.get(
-                    "textDocumentSync", {}
-                )
-
-                # Is either a detailed structure defining each notification
-                # or for backwards compatibility the TextDocumentSyncKind number.
-                if not isinstance(textDocumentSync, dict):
-                    textDocumentSync = {
-                        "change": textDocumentSync,
-                    }
+                textDocumentSync = client.capabilities_textDocumentSync()
 
                 # Open and close notifications are sent to the server.
                 # If omitted open close notifications should not be sent.
