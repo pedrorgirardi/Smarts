@@ -968,20 +968,59 @@ class LanguageServerClient:
         if view.file_name() not in self.open_documents:
             return
 
+        textDocumentSync = self.capabilities_textDocumentSync()
+
+        if not textDocumentSync:
+            return
+
+        # The document that did change.
+        # The version number points to the version
+        # after all provided content changes have been applied.
+        #
+        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#versionedTextDocumentIdentifier
+        textDocument = {
+            "uri": path_to_uri(view.file_name()),
+            "version": view.change_count(),
+        }
+
+        # The actual content changes.
+        # The content changes describe single state changes to the document.
+        # So if there are two content changes c1 (at array index 0) and c2 (at array index 1)
+        # for a document in state S then c1 moves the document from S to S' and
+        # c2 from S' to S''. So c1 is computed on the state S and c2 is computed on the state S'.
+        #
+        # If only a text is provided it is considered to be the full content of the document.
+        #
+        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentContentChangeEvent
+        contentChanges = None
+
+        # Full
+        # Documents are synced by always sending the full content of the document.
+        if textDocumentSync["change"] == 1:
+            contentChanges = [
+                {
+                    "text": view.substr(sublime.Region(0, view.size())),
+                }
+            ]
+
+        # Incremental
+        # Documents are synced by sending the full content on open.
+        # After that only incremental updates to the document are sent.
+        elif textDocumentSync["change"] == 2:
+            # FIXME
+            contentChanges = [
+                {
+                    "text": view.substr(sublime.Region(0, view.size())),
+                }
+            ]
+
         self._put(
             {
                 "jsonrpc": "2.0",
                 "method": "textDocument/didChange",
                 "params": {
-                    "textDocument": {
-                        "uri": Path(view.file_name()).as_uri(),
-                        "version": view.change_count(),
-                    },
-                    "contentChanges": [
-                        {
-                            "text": view.substr(sublime.Region(0, view.size())),
-                        }
-                    ],
+                    "textDocument": textDocument,
+                    "contentChanges": contentChanges,
                 },
             }
         )
