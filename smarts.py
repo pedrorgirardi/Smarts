@@ -909,13 +909,15 @@ class LanguageServerClient:
         if view.file_name() in self.open_documents:
             return
 
+        textDocument_uri = path_to_uri(view.file_name())
+
         self._put(
             {
                 "jsonrpc": "2.0",
                 "method": "textDocument/didOpen",
                 "params": {
                     "textDocument": {
-                        "uri": Path(view.file_name()).as_uri(),
+                        "uri": textDocument_uri,
                         "languageId": syntax_languageId(view.settings().get("syntax")),
                         "version": view.change_count(),
                         "text": view.substr(sublime.Region(0, view.size())),
@@ -924,7 +926,7 @@ class LanguageServerClient:
             }
         )
 
-        self.open_documents.add(view.file_name())
+        self.open_documents.add(textDocument_uri)
 
     def textDocument_didClose(self, view):
         """
@@ -942,7 +944,10 @@ class LanguageServerClient:
         """
 
         # A close notification requires a previous open notification to be sent.
-        if view.file_name() not in self.open_documents:
+
+        textDocument_uri = path_to_uri(view.file_name())
+
+        if textDocument_uri not in self.open_documents:
             return
 
         self._put(
@@ -957,9 +962,9 @@ class LanguageServerClient:
             }
         )
 
-        self.open_documents.remove(view.file_name())
+        self.open_documents.remove(textDocument_uri)
 
-    def textDocument_didChange(self, view, changes):
+    def textDocument_didChange(self, params):
         """
         The document change notification is sent from the client to the server to signal changes to a text document.
 
@@ -968,76 +973,14 @@ class LanguageServerClient:
 
         # Before a client can change a text document it must claim
         # ownership of its content using the textDocument/didOpen notification.
-        if view.file_name() not in self.open_documents:
+        if params["textDocument"]["uri"] not in self.open_documents:
             return
-
-        textDocumentSync = self.capabilities_textDocumentSync()
-
-        if not textDocumentSync:
-            return
-
-        # The document that did change.
-        # The version number points to the version
-        # after all provided content changes have been applied.
-        #
-        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#versionedTextDocumentIdentifier
-        textDocument = {
-            "uri": path_to_uri(view.file_name()),
-            "version": view.change_count(),
-        }
-
-        # The actual content changes.
-        # The content changes describe single state changes to the document.
-        # So if there are two content changes c1 (at array index 0) and c2 (at array index 1)
-        # for a document in state S then c1 moves the document from S to S' and
-        # c2 from S' to S''. So c1 is computed on the state S and c2 is computed on the state S'.
-        #
-        # If only a text is provided it is considered to be the full content of the document.
-        #
-        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentContentChangeEvent
-        contentChanges = None
-
-        # Full
-        # Documents are synced by always sending the full content of the document.
-        if textDocumentSync["change"] == 1:
-            contentChanges = [
-                {
-                    "text": view.substr(sublime.Region(0, view.size())),
-                }
-            ]
-
-        # Incremental
-        # Documents are synced by sending the full content on open.
-        # After that only incremental updates to the document are sent.
-        elif textDocumentSync["change"] == 2:
-            contentChanges = []
-
-            for change in changes:
-                contentChanges.append(
-                    {
-                        "range": {
-                            "start": {
-                                "line": change.a.row,
-                                "character": change.a.col_utf16,
-                            },
-                            "end": {
-                                "line": change.b.row,
-                                "character": change.b.col_utf16,
-                            },
-                        },
-                        "rangeLength": change.len_utf16,
-                        "text": change.str,
-                    }
-                )
 
         self._put(
             {
                 "jsonrpc": "2.0",
                 "method": "textDocument/didChange",
-                "params": {
-                    "textDocument": textDocument,
-                    "contentChanges": contentChanges,
-                },
+                "params": params,
             }
         )
 
@@ -1529,8 +1472,79 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
     def on_text_changed(self, changes):
         view = self.buffer.primary_view()
 
+        language_client: LanguageServerClient = None
+
         if applicable_server_ := applicable_server(view):
-            applicable_server_["client"].textDocument_didChange(view, changes)
+            language_client = applicable_server_["client"]
+
+        if not language_client:
+            return
+
+        textDocumentSync = language_client.capabilities_textDocumentSync()
+
+        if not textDocumentSync:
+            return
+
+        # The document that did change.
+        # The version number points to the version
+        # after all provided content changes have been applied.
+        #
+        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#versionedTextDocumentIdentifier
+        textDocument = {
+            "uri": path_to_uri(view.file_name()),
+            "version": view.change_count(),
+        }
+
+        # The actual content changes.
+        # The content changes describe single state changes to the document.
+        # So if there are two content changes c1 (at array index 0) and c2 (at array index 1)
+        # for a document in state S then c1 moves the document from S to S' and
+        # c2 from S' to S''. So c1 is computed on the state S and c2 is computed on the state S'.
+        #
+        # If only a text is provided it is considered to be the full content of the document.
+        #
+        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentContentChangeEvent
+        contentChanges = None
+
+        # Full
+        # Documents are synced by always sending the full content of the document.
+        if textDocumentSync["change"] == 1:
+            contentChanges = [
+                {
+                    "text": view.substr(sublime.Region(0, view.size())),
+                }
+            ]
+
+        # Incremental
+        # Documents are synced by sending the full content on open.
+        # After that only incremental updates to the document are sent.
+        elif textDocumentSync["change"] == 2:
+            contentChanges = []
+
+            for change in changes:
+                contentChanges.append(
+                    {
+                        "range": {
+                            "start": {
+                                "line": change.a.row,
+                                "character": change.a.col_utf16,
+                            },
+                            "end": {
+                                "line": change.b.row,
+                                "character": change.b.col_utf16,
+                            },
+                        },
+                        "rangeLength": change.len_utf16,
+                        "text": change.str,
+                    }
+                )
+
+        language_client.textDocument_didChange(
+            {
+                "textDocument": textDocument,
+                "contentChanges": contentChanges,
+            }
+        )
 
 
 class PgSmartsViewListener(sublime_plugin.ViewEventListener):
