@@ -33,6 +33,8 @@ STG_SERVERS = "servers"
 STG_DIAGNOSTICS = "pg_lsc_diagnostics"
 STATUS_DIAGNOSTICS = "pg_lsc_diagnostics"
 
+kOUTPUT_PANEL_NAME = "PG_SMARTS_OUTPUT_PANEL"
+kOUTPUT_PANEL_NAME_PREFIXED = f"output.{kOUTPUT_PANEL_NAME}"
 kSMARTS_HIGHLIGHTS = "PG_SMARTS_HIGHLIGHTS"
 kSMARTS_HIGHLIGHTED_REGIONS = "PG_SMARTS_HIGHLIGHTED_REGIONS"
 
@@ -160,6 +162,52 @@ def text_to_html(s: str) -> str:
     html = re.sub(r" ", "&nbsp;", html)
 
     return html
+
+
+def output_panel(window) -> sublime.View:
+    if panel_view := window.find_output_panel(kOUTPUT_PANEL_NAME):
+        return panel_view
+    else:
+        panel_view = window.create_output_panel(kOUTPUT_PANEL_NAME)
+        panel_view.settings().set("gutter", False)
+        panel_view.settings().set("highlight_line", False)
+        panel_view.settings().set("line_numbers", False)
+        panel_view.settings().set("scroll_past_end", False)
+
+        return panel_view
+
+
+def output_insert(window, text):
+    panel_view = output_panel(window)
+    panel_view.run_command("insert", {"characters": text})
+
+
+def show_output_panel(window):
+    window.run_command(
+        "show_panel",
+        {
+            "panel": kOUTPUT_PANEL_NAME_PREFIXED,
+        },
+    )
+
+
+def hide_output_panel(window):
+    window.run_command(
+        "hide_panel",
+        {
+            "panel": kOUTPUT_PANEL_NAME_PREFIXED,
+        },
+    )
+
+
+def toggle_output_panel(window):
+    if window.active_panel() == kOUTPUT_PANEL_NAME_PREFIXED:
+        hide_output_panel(window)
+    else:
+        # Create Output Panel if it doesn't exist.
+        output_panel(sublime.active_window())
+
+        show_output_panel(window)
 
 
 def show_hover_popup(view: sublime.View, result):
@@ -651,6 +699,19 @@ class LanguageServerClient:
                     log_message = message["params"]["message"]
 
                     logger.debug(f"{log_type} {log_message}")
+
+                    output_insert(
+                        sublime.active_window(),
+                        f"{log_message}\n",
+                    )
+
+                elif message["method"] == "window/showMessage":
+                    output_insert(
+                        sublime.active_window(),
+                        f'{message["params"]["message"]}\n',
+                    )
+
+                    show_output_panel(sublime.active_window())
 
                 elif message["method"] == "textDocument/publishDiagnostics":
                     try:
@@ -1144,6 +1205,18 @@ class PgSmartsShutdownCommand(sublime_plugin.WindowCommand):
 
             global _STARTED_SERVERS
             del _STARTED_SERVERS[rootPath][server]
+
+
+class PgSmartsToggleOutputPanelCommand(sublime_plugin.WindowCommand):
+    def run(self):
+        toggle_output_panel(self.window)
+
+
+class PgSmartsClearOutputPanelCommand(sublime_plugin.WindowCommand):
+    def run(self):
+        panel_view = output_panel(self.window)
+        panel_view.run_command("select_all")
+        panel_view.run_command("left_delete")
 
 
 class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
