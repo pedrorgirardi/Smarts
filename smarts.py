@@ -136,6 +136,9 @@ def applicable_servers(view):
     """
     servers = []
 
+    if not view.window():
+        return servers
+
     for started_server in started_servers_values(window_rootPath(view.window())):
         if view_applicable(started_server["config"], view):
             servers.append(started_server)
@@ -956,7 +959,7 @@ class LanguageServerClient:
 
         self.open_documents.remove(view.file_name())
 
-    def textDocument_didChange(self, view):
+    def textDocument_didChange(self, view, changes):
         """
         The document change notification is sent from the client to the server to signal changes to a text document.
 
@@ -1007,12 +1010,25 @@ class LanguageServerClient:
         # Documents are synced by sending the full content on open.
         # After that only incremental updates to the document are sent.
         elif textDocumentSync["change"] == 2:
-            # FIXME
-            contentChanges = [
-                {
-                    "text": view.substr(sublime.Region(0, view.size())),
-                }
-            ]
+            contentChanges = []
+
+            for change in changes:
+                contentChanges.append(
+                    {
+                        "range": {
+                            "start": {
+                                "line": change.a.row,
+                                "character": change.a.col_utf16,
+                            },
+                            "end": {
+                                "line": change.b.row,
+                                "character": change.b.col_utf16,
+                            },
+                        },
+                        "rangeLength": change.len_utf16,
+                        "text": change.str,
+                    }
+                )
 
         self._put(
             {
@@ -1509,6 +1525,14 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
 ## -- Listeners
 
 
+class PgSmartsTextListener(sublime_plugin.TextChangeListener):
+    def on_text_changed(self, changes):
+        view = self.buffer.primary_view()
+
+        if applicable_server_ := applicable_server(view):
+            applicable_server_["client"].textDocument_didChange(view, changes)
+
+
 class PgSmartsViewListener(sublime_plugin.ViewEventListener):
     def on_load_async(self):
         rootPath = window_rootPath(self.view.window())
@@ -1574,20 +1598,9 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         applicable_server_["client"].textDocument_documentHighlight(params, callback)
 
-    def notify_change(self):
-        if applicable_server_ := applicable_server(self.view):
-            applicable_server_["client"].textDocument_didChange(self.view)
-
     def on_modified(self):
         # Erase highlights immediately.
         self.erase_highlights()
-
-    def on_modified_async(self):
-        if change_notifier := getattr(self, "pg_smarts_change_notifier", None):
-            change_notifier.cancel()
-
-        self.pg_smarts_change_notifier = threading.Timer(0.3, self.notify_change)
-        self.pg_smarts_change_notifier.start()
 
     def on_selection_modified_async(self):
         if highlighter := getattr(self, "pg_smarts_highlighter", None):
