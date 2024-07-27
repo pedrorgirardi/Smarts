@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import pprint
 import re
 import subprocess
 import tempfile
@@ -179,6 +180,10 @@ def output_panel(window) -> sublime.View:
     else:
         panel_view = window.create_output_panel(kOUTPUT_PANEL_NAME)
         panel_view.settings().set("gutter", False)
+        panel_view.settings().set("auto_indent", False)
+        panel_view.settings().set("translate_tabs_to_spaces", False)
+        panel_view.settings().set("smart_indent", False)
+        panel_view.settings().set("indent_to_bracket", False)
         panel_view.settings().set("highlight_line", False)
         panel_view.settings().set("line_numbers", False)
         panel_view.settings().set("scroll_past_end", False)
@@ -536,30 +541,116 @@ def syntax_languageId(syntax):
         return ""
 
 
+def handle_window_logMessage(window, message):
+    # The log message notification is sent from the server to the client
+    # to ask the client to log a particular message.
+    #
+    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_logMessage
+
+    message_type = message["params"]["type"]
+    message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
+    message_message = message["params"]["message"]
+
+    logger.debug(f"{message_type}: {message_message}")
+
+    panel_log(window, f"{message_type}: {message_message}\n")
+
+
+def handle_window_showMessage(window, message):
+    # The show message notification is sent from a server to a client
+    # to ask the client to display a particular message in the user interface.
+    #
+    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_showMessage
+
+    message_type = message["params"]["type"]
+    message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
+    message_message = message["params"]["message"]
+
+    logger.debug(f"{message_type}: {message_message}")
+
+    panel_log(window, f"{message_type}: {message_message}\n", show=True)
+
+
+def handle_textDocument_publishDiagnostics(window, message):
+    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#publishDiagnosticsParams
+    params = message["params"]
+
+    fname = unquote(urlparse(params["uri"]).path)
+
+    if view := window.find_open_file(fname):
+        diagnostics = params["diagnostics"]
+
+        view.settings().set(STG_DIAGNOSTICS, diagnostics)
+
+        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnosticSeverity
+        severity_count = {
+            1: 0,
+            2: 0,
+            3: 0,
+            4: 0,
+        }
+
+        # Represents a diagnostic, such as a compiler error or warning.
+        # Diagnostic objects are only valid in the scope of a resource.
+        #
+        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic
+        for diagnostic in diagnostics:
+            severity_count[diagnostic["severity"]] += 1
+
+        diagnostics_status = []
+
+        for severity, count in severity_count.items():
+            if count > 0:
+                diagnostics_status.append(f"{severity_name(severity)}: {count}")
+
+        view.set_status(STATUS_DIAGNOSTICS, ", ".join(diagnostics_status))
+
+
+def on_send_message(window, message):
+    # panel_log(window, f"{pprint.pformat(message)}\n\n")
+    pass
+
+
+def on_receive_message(window, message):
+    message_method = message.get("method")
+
+    if message_method == "window/logMessage":
+        handle_window_logMessage(window, message)
+
+    elif message_method == "window/showMessage":
+        handle_window_showMessage(window, message)
+
+    elif message_method == "textDocument/publishDiagnostics":
+        handle_textDocument_publishDiagnostics(window, message)
+
+
+# -- CLIENT
+
+
 class LanguageServerClient:
-    def __init__(self, window, config):
-        self.window = window
-        self.config = config
-        self.server_process = None
-        self.server_shutdown = threading.Event()
-        self.server_initialized = False
+    def __init__(
+        self,
+        server_name,
+        server_start,
+        on_send=None,
+        on_receive=None,
+    ):
+        self._server_name = server_name
+        self._server_start = server_start
+        self._server_process = None
+        self._server_shutdown = threading.Event()
+        self._server_initialized = False
         self._server_info = None
         self._server_capabilities = None
-        self.send_queue = Queue(maxsize=1)
-        self.receive_queue = Queue(maxsize=1)
-        self.reader = None
-        self.writer = None
-        self.handler = None
-        self.request_callback = {}
-        self.open_documents = set()
-
-    def __str__(self):
-        return json.dumps(
-            {
-                "server_initialized": self.server_initialized,
-                "open_documents": self.open_documents,
-            }
-        )
+        self._on_send = on_send
+        self._on_receive = on_receive
+        self._send_queue = Queue(maxsize=1)
+        self._receive_queue = Queue(maxsize=1)
+        self._reader = None
+        self._writer = None
+        self._handler = None
+        self._request_callback = {}
+        self._open_documents = set()
 
     def capabilities_textDocumentSync(self):
         """
@@ -604,10 +695,10 @@ class LanguageServerClient:
         return b"".join(chunks)
 
     def _start_reader(self):
-        logger.debug(f"[{self.config['name']}] Reader is ready")
+        logger.debug(f"[{self._server_name}] Reader is ready")
 
-        while not self.server_shutdown.is_set():
-            out = self.server_process.stdout
+        while not self._server_shutdown.is_set():
+            out = self._server_process.stdout
 
             # The base protocol consists of a header and a content part (comparable to HTTP).
             # The header and content part are separated by a ‘\r\n’.
@@ -633,27 +724,23 @@ class LanguageServerClient:
             if content_length := headers.get("Content-Length"):
                 content = self._read(out, int(content_length)).decode("utf-8").strip()
 
-                logger.debug(f"[{self.config['name']}] < {content}")
-
                 try:
+                    message = json.loads(content)
+
                     # Enqueue message; Blocks if queue is full.
-                    self.receive_queue.put(json.loads(content))
+                    self._receive_queue.put(message)
+
                 except json.JSONDecodeError:
                     # The effect of not being able to decode a message,
                     # is that an 'in-flight' request won't have its callback called.
                     logger.error(f"Failed to decode message: {content}")
 
-        logger.debug(f"[{self.config['name']}] Reader is done")
+        logger.debug(f"[{self._server_name}] Reader is done")
 
     def _start_writer(self):
-        logger.debug(f"[{self.config['name']}] Writer is ready")
+        logger.debug(f"[{self._server_name}] Writer is ready")
 
-        while (message := self.send_queue.get()) is not None:
-            # Note: Notification Message doesn't have `id`.
-            logger.debug(
-                f"[{self.config['name']}] > {message['method']} {message.get('id', '')}"
-            )
-
+        while (message := self._send_queue.get()) is not None:
             try:
                 content = json.dumps(message)
 
@@ -661,131 +748,61 @@ class LanguageServerClient:
 
                 try:
                     encoded = header.encode("ascii") + content.encode("utf-8")
-                    self.server_process.stdin.write(encoded)
-                    self.server_process.stdin.flush()
+                    self._server_process.stdin.write(encoded)
+                    self._server_process.stdin.flush()
                 except BrokenPipeError as e:
                     logger.error(
-                        f"{self.config['name']} - Can't write to server's stdin: {e}"
+                        f"{self._server_name} - Can't write to server's stdin: {e}"
                     )
 
+                if self._on_send:
+                    try:
+                        self._on_send(message)
+                    except Exception:
+                        logger.exception("Error handling sent message")
+
             finally:
-                self.send_queue.task_done()
+                self._send_queue.task_done()
 
         # 'None Task' is complete.
-        self.send_queue.task_done()
+        self._send_queue.task_done()
 
-        logger.debug(f"[{self.config['name']}] Writer is done")
+        logger.debug(f"[{self._server_name}] Writer is done")
 
     def _start_handler(self):
-        logger.debug(f"[{self.config['name']}] Handler is ready")
+        logger.debug(f"[{self._server_name}] Handler is ready")
 
-        while (message := self.receive_queue.get()) is not None:  # noqa
+        while (message := self._receive_queue.get()) is not None:  # noqa
+            if self._on_receive:
+                try:
+                    self._on_receive(message)
+                except Exception:
+                    logger.exception("Error handling received message")
+
             if request_id := message.get("id"):
-                if callback := self.request_callback.get(request_id):
+                if callback := self._request_callback.get(request_id):
                     try:
                         callback(message)
                     except Exception:
                         logger.exception(
-                            f"{self.config['name']} - Request callback error"
+                            f"{self._server_name} - Request callback error"
                         )
                     finally:
-                        del self.request_callback[request_id]
-            else:
-                if message["method"] == "window/logMessage":
-                    # The log message notification is sent from the server to the client
-                    # to ask the client to log a particular message.
-                    #
-                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_logMessage
-                    #
-                    # Message Type:
-                    #
-                    # Error   = 1
-                    # Warning = 2
-                    # Info    = 3
-                    # Log     = 4
-                    #
-                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#messageType
+                        del self._request_callback[request_id]
 
-                    log_type = message["params"]["type"]
-
-                    log_message = message["params"]["message"]
-
-                    logger.debug(f"{log_type} {log_message}")
-
-                    panel_log(
-                        sublime.active_window(),
-                        f"{log_message}\n",
-                    )
-
-                elif message["method"] == "window/showMessage":
-                    # The show message notification is sent from a server to a client
-                    # to ask the client to display a particular message in the user interface.
-                    #
-                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_showMessage
-
-                    message_type = message["params"]["type"]
-
-                    panel_log(
-                        sublime.active_window(),
-                        f'{kMESSAGE_TYPE_NAME.get(message_type, message_type)}: {message["params"]["message"]}\n',
-                        show=True,
-                    )
-
-                elif message["method"] == "textDocument/publishDiagnostics":
-                    try:
-                        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#publishDiagnosticsParams
-                        params = message["params"]
-
-                        fname = unquote(urlparse(params["uri"]).path)
-
-                        if view := self.window.find_open_file(fname):
-                            diagnostics = params["diagnostics"]
-
-                            view.settings().set(STG_DIAGNOSTICS, diagnostics)
-
-                            # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnosticSeverity
-                            severity_count = {
-                                1: 0,
-                                2: 0,
-                                3: 0,
-                                4: 0,
-                            }
-
-                            # Represents a diagnostic, such as a compiler error or warning.
-                            # Diagnostic objects are only valid in the scope of a resource.
-                            #
-                            # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic
-                            for diagnostic in diagnostics:
-                                severity_count[diagnostic["severity"]] += 1
-
-                            diagnostics_status = []
-
-                            for severity, count in severity_count.items():
-                                if count > 0:
-                                    diagnostics_status.append(
-                                        f"{severity_name(severity)}: {count}"
-                                    )
-
-                            view.set_status(
-                                STATUS_DIAGNOSTICS, ", ".join(diagnostics_status)
-                            )
-
-                    except Exception as e:
-                        logger.error(e)
-
-            self.receive_queue.task_done()
+            self._receive_queue.task_done()
 
         # 'None Task' is complete.
-        self.receive_queue.task_done()
+        self._receive_queue.task_done()
 
-        logger.debug(f"[{self.config['name']}] Handler is done")
+        logger.debug(f"[{self._server_name}] Handler is done")
 
     def _put(self, message, callback=None):
         # Drop message if server is not ready - unless it's an initization message.
-        if not self.server_initialized and not message["method"] == "initialize":
+        if not self._server_initialized and not message["method"] == "initialize":
             return
 
-        self.send_queue.put(message)
+        self._send_queue.put(message)
 
         if message_id := message.get("id"):
             # A mapping of request ID to callback.
@@ -794,9 +811,9 @@ class LanguageServerClient:
             #
             # callback might not be called if there's an error reading the response,
             # or the server never returns a response.
-            self.request_callback[message_id] = callback
+            self._request_callback[message_id] = callback
 
-    def initialize(self):
+    def initialize(self, params, callback):
         """
         The initialize request is sent as the first request from the client to the server.
         Until the server has responded to the initialize request with an InitializeResult,
@@ -805,64 +822,48 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
         """
 
-        if self.server_initialized:
+        if self._server_initialized:
             return
 
-        # The rootPath of the workspace. Is null if no folder is open.
-        # Deprecated in favour of rootUri.
-        rootPath = self.window.folders()[0] if self.window.folders() else None
+        logger.debug(f"Initialize {self._server_name} {self._server_start}")
 
-        # The rootUri of the workspace. Is null if no folder is open.
-        # If both rootPath and rootUri are set rootUri wins.
-        # Deprecated in favour of workspaceFolders.
-        rootUri = Path(rootPath).as_uri() if rootPath else None
-
-        # The workspace folders configured in the client when the server starts.
-        workspaceFolders = (
-            [{"name": Path(rootPath).name, "uri": rootUri}] if rootPath else None
-        )
-
-        logger.debug(
-            f"Initialize {self.config['name']} {self.config['start']}; rootPath='{rootPath}'"
-        )
-
-        self.server_process = subprocess.Popen(
-            self.config["start"],
+        self._server_process = subprocess.Popen(
+            self._server_start,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
 
         logger.info(
-            f"{self.config['name']} is up and running; PID {self.server_process.pid}"
+            f"{self._server_name} is up and running; PID {self._server_process.pid}"
         )
 
         # Thread responsible for handling received messages.
-        self.handler = threading.Thread(
+        self._handler = threading.Thread(
             name="Handler",
             target=self._start_handler,
             daemon=True,
         )
-        self.handler.start()
+        self._handler.start()
 
         # Thread responsible for sending/writing messages.
-        self.writer = threading.Thread(
+        self._writer = threading.Thread(
             name="Writer",
             target=self._start_writer,
             daemon=True,
         )
-        self.writer.start()
+        self._writer.start()
 
         # Thread responsible for reading messages.
-        self.reader = threading.Thread(
+        self._reader = threading.Thread(
             name="Reader",
             target=self._start_reader,
             daemon=True,
         )
-        self.reader.start()
+        self._reader.start()
 
-        def initialize_callback(response):
-            self.server_initialized = True
+        def _callback(response):
+            self._server_initialized = True
             self._server_capabilities = response.get("result").get("capabilities")
             self._server_info = response.get("result").get(
                 "serverInfo",
@@ -880,57 +881,19 @@ class LanguageServerClient:
                 }
             )
 
-            # Notify the server about current views.
-            # (Check if a view's syntax is valid for the server.)
-            for view in self.window.views():
-                if view_applicable(self.config, view):
-                    self.textDocument_didOpen(
-                        {
-                            "textDocument": view_text_document_item(view),
-                        }
-                    )
+            callback(response)
 
-        # Enqueue 'initialize' message.
-        # Message must contain "method" and "params";
-        # Keys "id" and "jsonrpc" are added by the worker.
         self._put(
             {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
                 "method": "initialize",
-                "params": {
-                    "processId": os.getpid(),
-                    "clientInfo": {
-                        "name": "Smarts",
-                        "version": "0.1.0",
-                    },
-                    "rootPath": rootPath,
-                    "rootUri": rootUri,
-                    "workspaceFolders": workspaceFolders,
-                    "capabilities": {
-                        # Client support for textDocument/didOpen, textDocument/didChange
-                        # and textDocument/didClose notifications is mandatory in the protocol
-                        # and clients can not opt out supporting them.
-                        #
-                        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_synchronization
-                        "textDocument": {
-                            "synchronization": {
-                                # Whether text document synchronization supports dynamic registration.
-                                "dynamicRegistration": False,
-                                # Documents are synced by always sending the full content of the document.
-                                "change": 1,
-                            },
-                            "hover": {
-                                "contentFormat": ["plaintext"],
-                            },
-                        }
-                    },
-                },
+                "params": params,
             },
-            initialize_callback,
+            _callback,
         )
 
-    def shutdown(self):
+    def shutdown(self, callback=None):
         """
         The shutdown request is sent from the client to the server.
         It asks the server to shut down,
@@ -940,6 +903,12 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
         """
 
+        def _callback(message):
+            self.exit()
+
+            if callback:
+                callback(message)
+
         self._put(
             {
                 "jsonrpc": "2.0",
@@ -947,7 +916,7 @@ class LanguageServerClient:
                 "method": "shutdown",
                 "params": {},
             },
-            lambda _: self.exit(),
+            _callback,
         )
 
     def exit(self):
@@ -967,24 +936,24 @@ class LanguageServerClient:
             }
         )
 
-        self.server_shutdown.set()
+        self._server_shutdown.set()
 
         # Enqueue `None` to signal that workers must stop:
-        self.send_queue.put(None)
-        self.receive_queue.put(None)
+        self._send_queue.put(None)
+        self._receive_queue.put(None)
 
         returncode = None
 
         try:
-            returncode = self.server_process.wait(30)
+            returncode = self._server_process.wait(30)
         except subprocess.TimeoutExpired:
             # Explicitly kill the process if it did not terminate.
-            self.server_process.kill()
+            self._server_process.kill()
 
-            returncode = self.server_process.wait()
+            returncode = self._server_process.wait()
 
         logger.debug(
-            f"[{self.config['name']}] Server terminated with returncode {returncode}"
+            f"[{self._server_name}] Server terminated with returncode {returncode}"
         )
 
     def textDocument_didOpen(self, params):
@@ -1005,7 +974,7 @@ class LanguageServerClient:
         # This means open and close notification must be balanced and the max open count for a particular textDocument is one.
         textDocument_uri = params["textDocument"]["uri"]
 
-        if textDocument_uri in self.open_documents:
+        if textDocument_uri in self._open_documents:
             return
 
         self._put(
@@ -1016,7 +985,7 @@ class LanguageServerClient:
             }
         )
 
-        self.open_documents.add(textDocument_uri)
+        self._open_documents.add(textDocument_uri)
 
     def textDocument_didClose(self, params):
         """
@@ -1036,7 +1005,7 @@ class LanguageServerClient:
         textDocument_uri = params["textDocument"]["uri"]
 
         # A close notification requires a previous open notification to be sent.
-        if textDocument_uri not in self.open_documents:
+        if textDocument_uri not in self._open_documents:
             return
 
         self._put(
@@ -1047,7 +1016,7 @@ class LanguageServerClient:
             }
         )
 
-        self.open_documents.remove(textDocument_uri)
+        self._open_documents.remove(textDocument_uri)
 
     def textDocument_didChange(self, params):
         """
@@ -1058,7 +1027,7 @@ class LanguageServerClient:
 
         # Before a client can change a text document it must claim
         # ownership of its content using the textDocument/didOpen notification.
-        if params["textDocument"]["uri"] not in self.open_documents:
+        if params["textDocument"]["uri"] not in self._open_documents:
             return
 
         self._put(
@@ -1190,8 +1159,68 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
 
         config = available_servers_indexed.get(server)
 
-        client = LanguageServerClient(window=self.window, config=config)
-        client.initialize()
+        client = LanguageServerClient(
+            server_name=server,
+            server_start=config["start"],
+            on_send=lambda message: on_send_message(self.window, message),
+            on_receive=lambda message: on_receive_message(self.window, message),
+        )
+
+        # The rootPath of the workspace. Is null if no folder is open.
+        # Deprecated in favour of rootUri.
+        rootPath = self.window.folders()[0] if self.window.folders() else None
+
+        # The rootUri of the workspace. Is null if no folder is open.
+        # If both rootPath and rootUri are set rootUri wins.
+        # Deprecated in favour of workspaceFolders.
+        rootUri = Path(rootPath).as_uri() if rootPath else None
+
+        # The workspace folders configured in the client when the server starts.
+        workspaceFolders = (
+            [{"name": Path(rootPath).name, "uri": rootUri}] if rootPath else None
+        )
+
+        params = {
+            "processId": os.getpid(),
+            "clientInfo": {
+                "name": "Smarts",
+                "version": "0.1.0",
+            },
+            "rootPath": rootPath,
+            "rootUri": rootUri,
+            "workspaceFolders": workspaceFolders,
+            "capabilities": {
+                # Client support for textDocument/didOpen, textDocument/didChange
+                # and textDocument/didClose notifications is mandatory in the protocol
+                # and clients can not opt out supporting them.
+                #
+                # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_synchronization
+                "textDocument": {
+                    "synchronization": {
+                        # Whether text document synchronization supports dynamic registration.
+                        "dynamicRegistration": False,
+                        # Documents are synced by always sending the full content of the document.
+                        "change": 1,
+                    },
+                    "hover": {
+                        "contentFormat": ["plaintext"],
+                    },
+                }
+            },
+        }
+
+        def callback(response):
+            # Notify the server about current views.
+            # (Check if a view's syntax is valid for the server.)
+            for view in self.window.views():
+                if view_applicable(config, view):
+                    client.textDocument_didOpen(
+                        {
+                            "textDocument": view_text_document_item(view),
+                        }
+                    )
+
+        client.initialize(params, callback)
 
         rootPath = window_rootPath(self.window)
 
