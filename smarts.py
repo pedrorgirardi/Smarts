@@ -906,7 +906,7 @@ class LanguageServerClient:
             _callback,
         )
 
-    def shutdown(self):
+    def shutdown(self, callback=None):
         """
         The shutdown request is sent from the client to the server.
         It asks the server to shut down,
@@ -916,6 +916,12 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
         """
 
+        def _callback(message):
+            self.exit()
+
+            if callback:
+                callback(message)
+
         self._put(
             {
                 "jsonrpc": "2.0",
@@ -923,7 +929,7 @@ class LanguageServerClient:
                 "method": "shutdown",
                 "params": {},
             },
-            lambda _: self.exit(),
+            _callback,
         )
 
     def exit(self):
