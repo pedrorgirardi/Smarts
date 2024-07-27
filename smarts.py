@@ -830,7 +830,7 @@ class LanguageServerClient:
             # or the server never returns a response.
             self.request_callback[message_id] = callback
 
-    def initialize(self):
+    def initialize(self, callback):
         """
         The initialize request is sent as the first request from the client to the server.
         Until the server has responded to the initialize request with an InitializeResult,
@@ -895,7 +895,7 @@ class LanguageServerClient:
         )
         self.reader.start()
 
-        def initialize_callback(response):
+        def _callback(response):
             self.server_initialized = True
             self._server_capabilities = response.get("result").get("capabilities")
             self._server_info = response.get("result").get(
@@ -914,15 +914,7 @@ class LanguageServerClient:
                 }
             )
 
-            # Notify the server about current views.
-            # (Check if a view's syntax is valid for the server.)
-            for view in self.window.views():
-                if view_applicable(self.config, view):
-                    self.textDocument_didOpen(
-                        {
-                            "textDocument": view_text_document_item(view),
-                        }
-                    )
+            callback(response)
 
         # Enqueue 'initialize' message.
         # Message must contain "method" and "params";
@@ -961,7 +953,7 @@ class LanguageServerClient:
                     },
                 },
             },
-            initialize_callback,
+            _callback,
         )
 
     def shutdown(self):
@@ -1227,13 +1219,24 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
         client = LanguageServerClient(
             window=self.window,
             config=config,
-            server_name = server,
-            server_start = config["start"],
+            server_name=server,
+            server_start=config["start"],
             on_send=lambda message: on_send_message(self.window, message),
             on_receive=lambda message: on_receive_message(self.window, message),
         )
 
-        client.initialize()
+        def callback(response):
+            # Notify the server about current views.
+            # (Check if a view's syntax is valid for the server.)
+            for view in self.window.views():
+                if view_applicable(config, view):
+                    client.textDocument_didOpen(
+                        {
+                            "textDocument": view_text_document_item(view),
+                        }
+                    )
+
+        client.initialize(callback)
 
         rootPath = window_rootPath(self.window)
 
