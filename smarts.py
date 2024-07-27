@@ -541,6 +541,105 @@ def syntax_languageId(syntax):
         return ""
 
 
+def handle_window_logMessage(window, message):
+    # The log message notification is sent from the server to the client
+    # to ask the client to log a particular message.
+    #
+    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_logMessage
+    #
+    # Message Type:
+    #
+    # Error   = 1
+    # Warning = 2
+    # Info    = 3
+    # Log     = 4
+    #
+    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#messageType
+
+    message_type = message["params"]["type"]
+    message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
+
+    message_message = message["params"]["message"]
+
+    logger.debug(f"{message_type}: {message_message}")
+
+    panel_log(window, f"{message_type}: {message_message}\n")
+
+
+def handle_window_showMessage(window, message):
+    # The show message notification is sent from a server to a client
+    # to ask the client to display a particular message in the user interface.
+    #
+    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_showMessage
+
+    message_type = message["params"]["type"]
+    message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
+
+    message_message = message["params"]["message"]
+
+    logger.debug(f"{message_type}: {message_message}")
+
+    panel_log(window, f"{message_type}: {message_message}\n")
+
+
+def handle_textDocument_publishDiagnostics(window, message):
+    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#publishDiagnosticsParams
+    params = message["params"]
+
+    fname = unquote(urlparse(params["uri"]).path)
+
+    if view := window.find_open_file(fname):
+        diagnostics = params["diagnostics"]
+
+        view.settings().set(STG_DIAGNOSTICS, diagnostics)
+
+        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnosticSeverity
+        severity_count = {
+            1: 0,
+            2: 0,
+            3: 0,
+            4: 0,
+        }
+
+        # Represents a diagnostic, such as a compiler error or warning.
+        # Diagnostic objects are only valid in the scope of a resource.
+        #
+        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic
+        for diagnostic in diagnostics:
+            severity_count[diagnostic["severity"]] += 1
+
+        diagnostics_status = []
+
+        for severity, count in severity_count.items():
+            if count > 0:
+                diagnostics_status.append(f"{severity_name(severity)}: {count}")
+
+        view.set_status(STATUS_DIAGNOSTICS, ", ".join(diagnostics_status))
+
+
+def on_send_message(window, message):
+    # panel_log(window, f"{pprint.pformat(message)}\n\n")
+    pass
+
+
+def on_receive_message(window, message):
+    # panel_log(window, f"{pprint.pformat(message)}\n\n")
+
+    message_method = message.get("method")
+
+    if message_method == "window/logMessage":
+        handle_window_logMessage(window, message)
+
+    elif message_method == "window/showMessage":
+        handle_window_showMessage(window, message)
+
+    elif message_method == "textDocument/publishDiagnostics":
+        handle_textDocument_publishDiagnostics(window, message)
+
+
+# -- CLIENT
+
+
 class LanguageServerClient:
     def __init__(
         self,
@@ -681,7 +780,7 @@ class LanguageServerClient:
                     try:
                         self._on_send(message)
                     except Exception:
-                        logger.exception("")
+                        logger.exception("Error handling sent message")
 
             finally:
                 self.send_queue.task_done()
@@ -699,7 +798,7 @@ class LanguageServerClient:
                 try:
                     self._on_receive(message)
                 except Exception:
-                    logger.exception("")
+                    logger.exception("Error handling received message")
 
             if request_id := message.get("id"):
                 if callback := self.request_callback.get(request_id):
@@ -711,87 +810,6 @@ class LanguageServerClient:
                         )
                     finally:
                         del self.request_callback[request_id]
-            else:
-                if message["method"] == "window/logMessage":
-                    # The log message notification is sent from the server to the client
-                    # to ask the client to log a particular message.
-                    #
-                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_logMessage
-                    #
-                    # Message Type:
-                    #
-                    # Error   = 1
-                    # Warning = 2
-                    # Info    = 3
-                    # Log     = 4
-                    #
-                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#messageType
-
-                    message_type = message["params"]["type"]
-                    message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
-
-                    message_message = message["params"]["message"]
-
-                    logger.debug(
-                        f"[{self.config['name']}] {message_type}: {message_message}",
-                    )
-
-                elif message["method"] == "window/showMessage":
-                    # The show message notification is sent from a server to a client
-                    # to ask the client to display a particular message in the user interface.
-                    #
-                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_showMessage
-
-                    message_type = message["params"]["type"]
-                    message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
-
-                    message_message = message["params"]["message"]
-
-                    logger.debug(
-                        f"[{self.config['name']}] {message_type}: {message_message}",
-                    )
-
-                elif message["method"] == "textDocument/publishDiagnostics":
-                    try:
-                        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#publishDiagnosticsParams
-                        params = message["params"]
-
-                        fname = unquote(urlparse(params["uri"]).path)
-
-                        if view := self.window.find_open_file(fname):
-                            diagnostics = params["diagnostics"]
-
-                            view.settings().set(STG_DIAGNOSTICS, diagnostics)
-
-                            # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnosticSeverity
-                            severity_count = {
-                                1: 0,
-                                2: 0,
-                                3: 0,
-                                4: 0,
-                            }
-
-                            # Represents a diagnostic, such as a compiler error or warning.
-                            # Diagnostic objects are only valid in the scope of a resource.
-                            #
-                            # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic
-                            for diagnostic in diagnostics:
-                                severity_count[diagnostic["severity"]] += 1
-
-                            diagnostics_status = []
-
-                            for severity, count in severity_count.items():
-                                if count > 0:
-                                    diagnostics_status.append(
-                                        f"{severity_name(severity)}: {count}"
-                                    )
-
-                            view.set_status(
-                                STATUS_DIAGNOSTICS, ", ".join(diagnostics_status)
-                            )
-
-                    except Exception as e:
-                        logger.error(e)
 
             self.receive_queue.task_done()
 
@@ -1196,14 +1214,6 @@ class ServerInputHandler(sublime_plugin.ListInputHandler):
 # -- COMMANDS
 
 
-def on_send_message(window, message):
-    panel_log(window, f"{pprint.pformat(message)}\n\n")
-
-
-def on_receive_message(window, message):
-    panel_log(window, f"{pprint.pformat(message)}\n\n")
-
-
 class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "server" not in args:
@@ -1221,8 +1231,8 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
         client = LanguageServerClient(
             window=self.window,
             config=config,
-            on_receive=lambda message: on_receive_message(self.window, message),
             on_send=lambda message: on_send_message(self.window, message),
+            on_receive=lambda message: on_receive_message(self.window, message),
         )
 
         client.initialize()
