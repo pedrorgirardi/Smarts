@@ -830,7 +830,7 @@ class LanguageServerClient:
             # or the server never returns a response.
             self.request_callback[message_id] = callback
 
-    def initialize(self, callback):
+    def initialize(self, params, callback):
         """
         The initialize request is sent as the first request from the client to the server.
         Until the server has responded to the initialize request with an InitializeResult,
@@ -842,23 +842,7 @@ class LanguageServerClient:
         if self.server_initialized:
             return
 
-        # The rootPath of the workspace. Is null if no folder is open.
-        # Deprecated in favour of rootUri.
-        rootPath = self.window.folders()[0] if self.window.folders() else None
-
-        # The rootUri of the workspace. Is null if no folder is open.
-        # If both rootPath and rootUri are set rootUri wins.
-        # Deprecated in favour of workspaceFolders.
-        rootUri = Path(rootPath).as_uri() if rootPath else None
-
-        # The workspace folders configured in the client when the server starts.
-        workspaceFolders = (
-            [{"name": Path(rootPath).name, "uri": rootUri}] if rootPath else None
-        )
-
-        logger.debug(
-            f"Initialize {self._server_name} {self._server_start}; rootPath='{rootPath}'"
-        )
+        logger.debug(f"Initialize {self._server_name} {self._server_start}")
 
         self.server_process = subprocess.Popen(
             self._server_start,
@@ -916,42 +900,12 @@ class LanguageServerClient:
 
             callback(response)
 
-        # Enqueue 'initialize' message.
-        # Message must contain "method" and "params";
-        # Keys "id" and "jsonrpc" are added by the worker.
         self._put(
             {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
                 "method": "initialize",
-                "params": {
-                    "processId": os.getpid(),
-                    "clientInfo": {
-                        "name": "Smarts",
-                        "version": "0.1.0",
-                    },
-                    "rootPath": rootPath,
-                    "rootUri": rootUri,
-                    "workspaceFolders": workspaceFolders,
-                    "capabilities": {
-                        # Client support for textDocument/didOpen, textDocument/didChange
-                        # and textDocument/didClose notifications is mandatory in the protocol
-                        # and clients can not opt out supporting them.
-                        #
-                        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_synchronization
-                        "textDocument": {
-                            "synchronization": {
-                                # Whether text document synchronization supports dynamic registration.
-                                "dynamicRegistration": False,
-                                # Documents are synced by always sending the full content of the document.
-                                "change": 1,
-                            },
-                            "hover": {
-                                "contentFormat": ["plaintext"],
-                            },
-                        }
-                    },
-                },
+                "params": params,
             },
             _callback,
         )
@@ -1225,6 +1179,49 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             on_receive=lambda message: on_receive_message(self.window, message),
         )
 
+        # The rootPath of the workspace. Is null if no folder is open.
+        # Deprecated in favour of rootUri.
+        rootPath = self.window.folders()[0] if self.window.folders() else None
+
+        # The rootUri of the workspace. Is null if no folder is open.
+        # If both rootPath and rootUri are set rootUri wins.
+        # Deprecated in favour of workspaceFolders.
+        rootUri = Path(rootPath).as_uri() if rootPath else None
+
+        # The workspace folders configured in the client when the server starts.
+        workspaceFolders = (
+            [{"name": Path(rootPath).name, "uri": rootUri}] if rootPath else None
+        )
+
+        params = {
+            "processId": os.getpid(),
+            "clientInfo": {
+                "name": "Smarts",
+                "version": "0.1.0",
+            },
+            "rootPath": rootPath,
+            "rootUri": rootUri,
+            "workspaceFolders": workspaceFolders,
+            "capabilities": {
+                # Client support for textDocument/didOpen, textDocument/didChange
+                # and textDocument/didClose notifications is mandatory in the protocol
+                # and clients can not opt out supporting them.
+                #
+                # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_synchronization
+                "textDocument": {
+                    "synchronization": {
+                        # Whether text document synchronization supports dynamic registration.
+                        "dynamicRegistration": False,
+                        # Documents are synced by always sending the full content of the document.
+                        "change": 1,
+                    },
+                    "hover": {
+                        "contentFormat": ["plaintext"],
+                    },
+                }
+            },
+        }
+
         def callback(response):
             # Notify the server about current views.
             # (Check if a view's syntax is valid for the server.)
@@ -1236,7 +1233,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
                         }
                     )
 
-        client.initialize(callback)
+        client.initialize(params, callback)
 
         rootPath = window_rootPath(self.window)
 
