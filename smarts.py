@@ -546,19 +546,9 @@ def handle_window_logMessage(window, message):
     # to ask the client to log a particular message.
     #
     # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_logMessage
-    #
-    # Message Type:
-    #
-    # Error   = 1
-    # Warning = 2
-    # Info    = 3
-    # Log     = 4
-    #
-    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#messageType
 
     message_type = message["params"]["type"]
     message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
-
     message_message = message["params"]["message"]
 
     logger.debug(f"{message_type}: {message_message}")
@@ -574,12 +564,11 @@ def handle_window_showMessage(window, message):
 
     message_type = message["params"]["type"]
     message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
-
     message_message = message["params"]["message"]
 
     logger.debug(f"{message_type}: {message_message}")
 
-    panel_log(window, f"{message_type}: {message_message}\n")
+    panel_log(window, f"{message_type}: {message_message}\n", show=True)
 
 
 def handle_textDocument_publishDiagnostics(window, message):
@@ -623,8 +612,6 @@ def on_send_message(window, message):
 
 
 def on_receive_message(window, message):
-    # panel_log(window, f"{pprint.pformat(message)}\n\n")
-
     message_method = message.get("method")
 
     if message_method == "window/logMessage":
