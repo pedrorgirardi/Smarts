@@ -646,19 +646,11 @@ class LanguageServerClient:
             if content_length := headers.get("Content-Length"):
                 content = self._read(out, int(content_length)).decode("utf-8").strip()
 
-                # logger.debug(f"[{self.config['name']}] < {content}")
-
                 try:
                     message = json.loads(content)
 
                     # Enqueue message; Blocks if queue is full.
                     self.receive_queue.put(message)
-
-                    if self._on_receive:
-                        try:
-                            self._on_receive(message)
-                        except Exception:
-                            logger.exception("")
 
                 except json.JSONDecodeError:
                     # The effect of not being able to decode a message,
@@ -671,17 +663,6 @@ class LanguageServerClient:
         logger.debug(f"[{self.config['name']}] Writer is ready")
 
         while (message := self.send_queue.get()) is not None:
-            # Note: Notification Message doesn't have `id`.
-            # logger.debug(
-            #     f"[{self.config['name']}] > {message['method']} {message.get('id', '')}"
-            # )
-
-            if self._on_send:
-                try:
-                    self._on_send(message)
-                except Exception:
-                    logger.exception("")
-
             try:
                 content = json.dumps(message)
 
@@ -696,6 +677,12 @@ class LanguageServerClient:
                         f"{self.config['name']} - Can't write to server's stdin: {e}"
                     )
 
+                if self._on_send:
+                    try:
+                        self._on_send(message)
+                    except Exception:
+                        logger.exception("")
+
             finally:
                 self.send_queue.task_done()
 
@@ -708,6 +695,12 @@ class LanguageServerClient:
         logger.debug(f"[{self.config['name']}] Handler is ready")
 
         while (message := self.receive_queue.get()) is not None:  # noqa
+            if self._on_receive:
+                try:
+                    self._on_receive(message)
+                except Exception:
+                    logger.exception("")
+
             if request_id := message.get("id"):
                 if callback := self.request_callback.get(request_id):
                     try:
