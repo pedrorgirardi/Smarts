@@ -643,27 +643,27 @@ def on_receive_message(window, message):
 class LanguageServerClient:
     def __init__(
         self,
-        server_name="Server",
-        server_start=[],
+        server_name,
+        server_start,
         on_send=None,
         on_receive=None,
     ):
         self._server_name = server_name
         self._server_start = server_start
-        self.server_process = None
-        self.server_shutdown = threading.Event()
-        self.server_initialized = False
+        self._server_process = None
+        self._server_shutdown = threading.Event()
+        self._server_initialized = False
         self._server_info = None
         self._server_capabilities = None
         self._on_send = on_send
         self._on_receive = on_receive
-        self.send_queue = Queue(maxsize=1)
-        self.receive_queue = Queue(maxsize=1)
-        self.reader = None
-        self.writer = None
-        self.handler = None
-        self.request_callback = {}
-        self.open_documents = set()
+        self._send_queue = Queue(maxsize=1)
+        self._receive_queue = Queue(maxsize=1)
+        self._reader = None
+        self._writer = None
+        self._handler = None
+        self._request_callback = {}
+        self._open_documents = set()
 
     def capabilities_textDocumentSync(self):
         """
@@ -710,8 +710,8 @@ class LanguageServerClient:
     def _start_reader(self):
         logger.debug(f"[{self._server_name}] Reader is ready")
 
-        while not self.server_shutdown.is_set():
-            out = self.server_process.stdout
+        while not self._server_shutdown.is_set():
+            out = self._server_process.stdout
 
             # The base protocol consists of a header and a content part (comparable to HTTP).
             # The header and content part are separated by a ‘\r\n’.
@@ -741,7 +741,7 @@ class LanguageServerClient:
                     message = json.loads(content)
 
                     # Enqueue message; Blocks if queue is full.
-                    self.receive_queue.put(message)
+                    self._receive_queue.put(message)
 
                 except json.JSONDecodeError:
                     # The effect of not being able to decode a message,
@@ -753,7 +753,7 @@ class LanguageServerClient:
     def _start_writer(self):
         logger.debug(f"[{self._server_name}] Writer is ready")
 
-        while (message := self.send_queue.get()) is not None:
+        while (message := self._send_queue.get()) is not None:
             try:
                 content = json.dumps(message)
 
@@ -761,8 +761,8 @@ class LanguageServerClient:
 
                 try:
                     encoded = header.encode("ascii") + content.encode("utf-8")
-                    self.server_process.stdin.write(encoded)
-                    self.server_process.stdin.flush()
+                    self._server_process.stdin.write(encoded)
+                    self._server_process.stdin.flush()
                 except BrokenPipeError as e:
                     logger.error(
                         f"{self._server_name} - Can't write to server's stdin: {e}"
@@ -775,17 +775,17 @@ class LanguageServerClient:
                         logger.exception("Error handling sent message")
 
             finally:
-                self.send_queue.task_done()
+                self._send_queue.task_done()
 
         # 'None Task' is complete.
-        self.send_queue.task_done()
+        self._send_queue.task_done()
 
         logger.debug(f"[{self._server_name}] Writer is done")
 
     def _start_handler(self):
         logger.debug(f"[{self._server_name}] Handler is ready")
 
-        while (message := self.receive_queue.get()) is not None:  # noqa
+        while (message := self._receive_queue.get()) is not None:  # noqa
             if self._on_receive:
                 try:
                     self._on_receive(message)
@@ -793,7 +793,7 @@ class LanguageServerClient:
                     logger.exception("Error handling received message")
 
             if request_id := message.get("id"):
-                if callback := self.request_callback.get(request_id):
+                if callback := self._request_callback.get(request_id):
                     try:
                         callback(message)
                     except Exception:
@@ -801,21 +801,21 @@ class LanguageServerClient:
                             f"{self._server_name} - Request callback error"
                         )
                     finally:
-                        del self.request_callback[request_id]
+                        del self._request_callback[request_id]
 
-            self.receive_queue.task_done()
+            self._receive_queue.task_done()
 
         # 'None Task' is complete.
-        self.receive_queue.task_done()
+        self._receive_queue.task_done()
 
         logger.debug(f"[{self._server_name}] Handler is done")
 
     def _put(self, message, callback=None):
         # Drop message if server is not ready - unless it's an initization message.
-        if not self.server_initialized and not message["method"] == "initialize":
+        if not self._server_initialized and not message["method"] == "initialize":
             return
 
-        self.send_queue.put(message)
+        self._send_queue.put(message)
 
         if message_id := message.get("id"):
             # A mapping of request ID to callback.
@@ -824,7 +824,7 @@ class LanguageServerClient:
             #
             # callback might not be called if there's an error reading the response,
             # or the server never returns a response.
-            self.request_callback[message_id] = callback
+            self._request_callback[message_id] = callback
 
     def initialize(self, params, callback):
         """
@@ -835,12 +835,12 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
         """
 
-        if self.server_initialized:
+        if self._server_initialized:
             return
 
         logger.debug(f"Initialize {self._server_name} {self._server_start}")
 
-        self.server_process = subprocess.Popen(
+        self._server_process = subprocess.Popen(
             self._server_start,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -848,35 +848,35 @@ class LanguageServerClient:
         )
 
         logger.info(
-            f"{self._server_name} is up and running; PID {self.server_process.pid}"
+            f"{self._server_name} is up and running; PID {self._server_process.pid}"
         )
 
         # Thread responsible for handling received messages.
-        self.handler = threading.Thread(
+        self._handler = threading.Thread(
             name="Handler",
             target=self._start_handler,
             daemon=True,
         )
-        self.handler.start()
+        self._handler.start()
 
         # Thread responsible for sending/writing messages.
-        self.writer = threading.Thread(
+        self._writer = threading.Thread(
             name="Writer",
             target=self._start_writer,
             daemon=True,
         )
-        self.writer.start()
+        self._writer.start()
 
         # Thread responsible for reading messages.
-        self.reader = threading.Thread(
+        self._reader = threading.Thread(
             name="Reader",
             target=self._start_reader,
             daemon=True,
         )
-        self.reader.start()
+        self._reader.start()
 
         def _callback(response):
-            self.server_initialized = True
+            self._server_initialized = True
             self._server_capabilities = response.get("result").get("capabilities")
             self._server_info = response.get("result").get(
                 "serverInfo",
@@ -943,21 +943,21 @@ class LanguageServerClient:
             }
         )
 
-        self.server_shutdown.set()
+        self._server_shutdown.set()
 
         # Enqueue `None` to signal that workers must stop:
-        self.send_queue.put(None)
-        self.receive_queue.put(None)
+        self._send_queue.put(None)
+        self._receive_queue.put(None)
 
         returncode = None
 
         try:
-            returncode = self.server_process.wait(30)
+            returncode = self._server_process.wait(30)
         except subprocess.TimeoutExpired:
             # Explicitly kill the process if it did not terminate.
-            self.server_process.kill()
+            self._server_process.kill()
 
-            returncode = self.server_process.wait()
+            returncode = self._server_process.wait()
 
         logger.debug(
             f"[{self._server_name}] Server terminated with returncode {returncode}"
@@ -981,7 +981,7 @@ class LanguageServerClient:
         # This means open and close notification must be balanced and the max open count for a particular textDocument is one.
         textDocument_uri = params["textDocument"]["uri"]
 
-        if textDocument_uri in self.open_documents:
+        if textDocument_uri in self._open_documents:
             return
 
         self._put(
@@ -992,7 +992,7 @@ class LanguageServerClient:
             }
         )
 
-        self.open_documents.add(textDocument_uri)
+        self._open_documents.add(textDocument_uri)
 
     def textDocument_didClose(self, params):
         """
@@ -1012,7 +1012,7 @@ class LanguageServerClient:
         textDocument_uri = params["textDocument"]["uri"]
 
         # A close notification requires a previous open notification to be sent.
-        if textDocument_uri not in self.open_documents:
+        if textDocument_uri not in self._open_documents:
             return
 
         self._put(
@@ -1023,7 +1023,7 @@ class LanguageServerClient:
             }
         )
 
-        self.open_documents.remove(textDocument_uri)
+        self._open_documents.remove(textDocument_uri)
 
     def textDocument_didChange(self, params):
         """
@@ -1034,7 +1034,7 @@ class LanguageServerClient:
 
         # Before a client can change a text document it must claim
         # ownership of its content using the textDocument/didOpen notification.
-        if params["textDocument"]["uri"] not in self.open_documents:
+        if params["textDocument"]["uri"] not in self._open_documents:
             return
 
         self._put(
