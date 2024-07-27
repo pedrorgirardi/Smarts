@@ -186,11 +186,6 @@ def output_panel(window) -> sublime.View:
         return panel_view
 
 
-def output_insert(window, text):
-    panel_view = output_panel(window)
-    panel_view.run_command("insert", {"characters": text})
-
-
 def show_output_panel(window):
     window.run_command(
         "show_panel",
@@ -216,6 +211,14 @@ def toggle_output_panel(window):
         # Create Output Panel if it doesn't exist.
         output_panel(sublime.active_window())
 
+        show_output_panel(window)
+
+
+def panel_log(window, text, show=False):
+    panel_view = output_panel(window)
+    panel_view.run_command("insert", {"characters": text})
+
+    if show:
         show_output_panel(window)
 
 
@@ -709,7 +712,7 @@ class LanguageServerClient:
 
                     logger.debug(f"{log_type} {log_message}")
 
-                    output_insert(
+                    panel_log(
                         sublime.active_window(),
                         f"{log_message}\n",
                     )
@@ -722,12 +725,11 @@ class LanguageServerClient:
 
                     message_type = message["params"]["type"]
 
-                    output_insert(
+                    panel_log(
                         sublime.active_window(),
                         f'{kMESSAGE_TYPE_NAME.get(message_type, message_type)}: {message["params"]["message"]}\n',
+                        show=True,
                     )
-
-                    show_output_panel(sublime.active_window())
 
                 elif message["method"] == "textDocument/publishDiagnostics":
                     try:
