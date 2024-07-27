@@ -643,15 +643,11 @@ def on_receive_message(window, message):
 class LanguageServerClient:
     def __init__(
         self,
-        window,
-        config,
         server_name="Server",
         server_start=[],
         on_send=None,
         on_receive=None,
     ):
-        self.window = window
-        self.config = config
         self._server_name = server_name
         self._server_start = server_start
         self.server_process = None
@@ -1171,8 +1167,6 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
         config = available_servers_indexed.get(server)
 
         client = LanguageServerClient(
-            window=self.window,
-            config=config,
             server_name=server,
             server_start=config["start"],
             on_send=lambda message: on_send_message(self.window, message),
