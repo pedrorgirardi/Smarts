@@ -645,11 +645,15 @@ class LanguageServerClient:
         self,
         window,
         config,
+        server_name="Server",
+        server_start=[],
         on_send=None,
         on_receive=None,
     ):
         self.window = window
         self.config = config
+        self._server_name = server_name
+        self._server_start = server_start
         self.server_process = None
         self.server_shutdown = threading.Event()
         self.server_initialized = False
@@ -664,14 +668,6 @@ class LanguageServerClient:
         self.handler = None
         self.request_callback = {}
         self.open_documents = set()
-
-    def __str__(self):
-        return json.dumps(
-            {
-                "server_initialized": self.server_initialized,
-                "open_documents": self.open_documents,
-            }
-        )
 
     def capabilities_textDocumentSync(self):
         """
@@ -716,7 +712,7 @@ class LanguageServerClient:
         return b"".join(chunks)
 
     def _start_reader(self):
-        logger.debug(f"[{self.config['name']}] Reader is ready")
+        logger.debug(f"[{self._server_name}] Reader is ready")
 
         while not self.server_shutdown.is_set():
             out = self.server_process.stdout
@@ -756,10 +752,10 @@ class LanguageServerClient:
                     # is that an 'in-flight' request won't have its callback called.
                     logger.error(f"Failed to decode message: {content}")
 
-        logger.debug(f"[{self.config['name']}] Reader is done")
+        logger.debug(f"[{self._server_name}] Reader is done")
 
     def _start_writer(self):
-        logger.debug(f"[{self.config['name']}] Writer is ready")
+        logger.debug(f"[{self._server_name}] Writer is ready")
 
         while (message := self.send_queue.get()) is not None:
             try:
@@ -773,7 +769,7 @@ class LanguageServerClient:
                     self.server_process.stdin.flush()
                 except BrokenPipeError as e:
                     logger.error(
-                        f"{self.config['name']} - Can't write to server's stdin: {e}"
+                        f"{self._server_name} - Can't write to server's stdin: {e}"
                     )
 
                 if self._on_send:
@@ -788,10 +784,10 @@ class LanguageServerClient:
         # 'None Task' is complete.
         self.send_queue.task_done()
 
-        logger.debug(f"[{self.config['name']}] Writer is done")
+        logger.debug(f"[{self._server_name}] Writer is done")
 
     def _start_handler(self):
-        logger.debug(f"[{self.config['name']}] Handler is ready")
+        logger.debug(f"[{self._server_name}] Handler is ready")
 
         while (message := self.receive_queue.get()) is not None:  # noqa
             if self._on_receive:
@@ -806,7 +802,7 @@ class LanguageServerClient:
                         callback(message)
                     except Exception:
                         logger.exception(
-                            f"{self.config['name']} - Request callback error"
+                            f"{self._server_name} - Request callback error"
                         )
                     finally:
                         del self.request_callback[request_id]
@@ -816,7 +812,7 @@ class LanguageServerClient:
         # 'None Task' is complete.
         self.receive_queue.task_done()
 
-        logger.debug(f"[{self.config['name']}] Handler is done")
+        logger.debug(f"[{self._server_name}] Handler is done")
 
     def _put(self, message, callback=None):
         # Drop message if server is not ready - unless it's an initization message.
@@ -861,18 +857,18 @@ class LanguageServerClient:
         )
 
         logger.debug(
-            f"Initialize {self.config['name']} {self.config['start']}; rootPath='{rootPath}'"
+            f"Initialize {self._server_name} {self._server_start}; rootPath='{rootPath}'"
         )
 
         self.server_process = subprocess.Popen(
-            self.config["start"],
+            self._server_start,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
 
         logger.info(
-            f"{self.config['name']} is up and running; PID {self.server_process.pid}"
+            f"{self._server_name} is up and running; PID {self.server_process.pid}"
         )
 
         # Thread responsible for handling received messages.
@@ -1022,7 +1018,7 @@ class LanguageServerClient:
             returncode = self.server_process.wait()
 
         logger.debug(
-            f"[{self.config['name']}] Server terminated with returncode {returncode}"
+            f"[{self._server_name}] Server terminated with returncode {returncode}"
         )
 
     def textDocument_didOpen(self, params):
@@ -1231,6 +1227,8 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
         client = LanguageServerClient(
             window=self.window,
             config=config,
+            server_name = server,
+            server_start = config["start"],
             on_send=lambda message: on_send_message(self.window, message),
             on_receive=lambda message: on_receive_message(self.window, message),
         )
