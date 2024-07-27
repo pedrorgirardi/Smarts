@@ -33,8 +33,19 @@ STG_SERVERS = "servers"
 STG_DIAGNOSTICS = "pg_lsc_diagnostics"
 STATUS_DIAGNOSTICS = "pg_lsc_diagnostics"
 
+kOUTPUT_PANEL_NAME = "Smarts"
+kOUTPUT_PANEL_NAME_PREFIXED = f"output.{kOUTPUT_PANEL_NAME}"
 kSMARTS_HIGHLIGHTS = "PG_SMARTS_HIGHLIGHTS"
 kSMARTS_HIGHLIGHTED_REGIONS = "PG_SMARTS_HIGHLIGHTED_REGIONS"
+
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#messageType
+kMESSAGE_TYPE_NAME = {
+    1: "Error",
+    2: "Warning",
+    3: "Info",
+    4: "Log",
+    5: "Debug",
+}
 
 kMINIHTML_STYLES = """
 .m-0 {
@@ -160,6 +171,55 @@ def text_to_html(s: str) -> str:
     html = re.sub(r" ", "&nbsp;", html)
 
     return html
+
+
+def output_panel(window) -> sublime.View:
+    if panel_view := window.find_output_panel(kOUTPUT_PANEL_NAME):
+        return panel_view
+    else:
+        panel_view = window.create_output_panel(kOUTPUT_PANEL_NAME)
+        panel_view.settings().set("gutter", False)
+        panel_view.settings().set("highlight_line", False)
+        panel_view.settings().set("line_numbers", False)
+        panel_view.settings().set("scroll_past_end", False)
+
+        return panel_view
+
+
+def show_output_panel(window):
+    window.run_command(
+        "show_panel",
+        {
+            "panel": kOUTPUT_PANEL_NAME_PREFIXED,
+        },
+    )
+
+
+def hide_output_panel(window):
+    window.run_command(
+        "hide_panel",
+        {
+            "panel": kOUTPUT_PANEL_NAME_PREFIXED,
+        },
+    )
+
+
+def toggle_output_panel(window):
+    if window.active_panel() == kOUTPUT_PANEL_NAME_PREFIXED:
+        hide_output_panel(window)
+    else:
+        # Create Output Panel if it doesn't exist.
+        output_panel(sublime.active_window())
+
+        show_output_panel(window)
+
+
+def panel_log(window, text, show=False):
+    panel_view = output_panel(window)
+    panel_view.run_command("insert", {"characters": text})
+
+    if show:
+        show_output_panel(window)
 
 
 def show_hover_popup(view: sublime.View, result):
@@ -651,6 +711,25 @@ class LanguageServerClient:
                     log_message = message["params"]["message"]
 
                     logger.debug(f"{log_type} {log_message}")
+
+                    panel_log(
+                        sublime.active_window(),
+                        f"{log_message}\n",
+                    )
+
+                elif message["method"] == "window/showMessage":
+                    # The show message notification is sent from a server to a client
+                    # to ask the client to display a particular message in the user interface.
+                    #
+                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_showMessage
+
+                    message_type = message["params"]["type"]
+
+                    panel_log(
+                        sublime.active_window(),
+                        f'{kMESSAGE_TYPE_NAME.get(message_type, message_type)}: {message["params"]["message"]}\n',
+                        show=True,
+                    )
 
                 elif message["method"] == "textDocument/publishDiagnostics":
                     try:
@@ -1144,6 +1223,18 @@ class PgSmartsShutdownCommand(sublime_plugin.WindowCommand):
 
             global _STARTED_SERVERS
             del _STARTED_SERVERS[rootPath][server]
+
+
+class PgSmartsToggleOutputPanelCommand(sublime_plugin.WindowCommand):
+    def run(self):
+        toggle_output_panel(self.window)
+
+
+class PgSmartsClearOutputPanelCommand(sublime_plugin.WindowCommand):
+    def run(self):
+        panel_view = output_panel(self.window)
+        panel_view.run_command("select_all")
+        panel_view.run_command("left_delete")
 
 
 class PgSmartsStatusCommand(sublime_plugin.WindowCommand):

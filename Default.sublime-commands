@@ -12,6 +12,14 @@
         "command": "pg_smarts_status"
     },
     {
+        "caption": "Smarts: Toggle Output Panel",
+        "command": "pg_smarts_toggle_output_panel"
+    },
+    {
+        "caption": "Smarts: Clear Output Panel",
+        "command": "pg_smarts_clear_output_panel"
+    },
+    {
         "caption": "Smarts: Initialize",
         "command": "pg_smarts_initialize"
     },
