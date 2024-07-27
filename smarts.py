@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import pprint
 import re
 import subprocess
 import tempfile
@@ -179,6 +180,10 @@ def output_panel(window) -> sublime.View:
     else:
         panel_view = window.create_output_panel(kOUTPUT_PANEL_NAME)
         panel_view.settings().set("gutter", False)
+        panel_view.settings().set("auto_indent", False)
+        panel_view.settings().set("translate_tabs_to_spaces", False)
+        panel_view.settings().set("smart_indent", False)
+        panel_view.settings().set("indent_to_bracket", False)
         panel_view.settings().set("highlight_line", False)
         panel_view.settings().set("line_numbers", False)
         panel_view.settings().set("scroll_past_end", False)
@@ -537,7 +542,13 @@ def syntax_languageId(syntax):
 
 
 class LanguageServerClient:
-    def __init__(self, window, config):
+    def __init__(
+        self,
+        window,
+        config,
+        on_send=None,
+        on_receive=None,
+    ):
         self.window = window
         self.config = config
         self.server_process = None
@@ -545,6 +556,8 @@ class LanguageServerClient:
         self.server_initialized = False
         self._server_info = None
         self._server_capabilities = None
+        self._on_send = on_send
+        self._on_receive = on_receive
         self.send_queue = Queue(maxsize=1)
         self.receive_queue = Queue(maxsize=1)
         self.reader = None
@@ -633,11 +646,20 @@ class LanguageServerClient:
             if content_length := headers.get("Content-Length"):
                 content = self._read(out, int(content_length)).decode("utf-8").strip()
 
-                logger.debug(f"[{self.config['name']}] < {content}")
+                # logger.debug(f"[{self.config['name']}] < {content}")
 
                 try:
+                    message = json.loads(content)
+
                     # Enqueue message; Blocks if queue is full.
-                    self.receive_queue.put(json.loads(content))
+                    self.receive_queue.put(message)
+
+                    if self._on_receive:
+                        try:
+                            self._on_receive(message)
+                        except Exception:
+                            logger.exception("")
+
                 except json.JSONDecodeError:
                     # The effect of not being able to decode a message,
                     # is that an 'in-flight' request won't have its callback called.
@@ -650,9 +672,15 @@ class LanguageServerClient:
 
         while (message := self.send_queue.get()) is not None:
             # Note: Notification Message doesn't have `id`.
-            logger.debug(
-                f"[{self.config['name']}] > {message['method']} {message.get('id', '')}"
-            )
+            # logger.debug(
+            #     f"[{self.config['name']}] > {message['method']} {message.get('id', '')}"
+            # )
+
+            if self._on_send:
+                try:
+                    self._on_send(message)
+                except Exception:
+                    logger.exception("")
 
             try:
                 content = json.dumps(message)
@@ -706,15 +734,13 @@ class LanguageServerClient:
                     #
                     # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#messageType
 
-                    log_type = message["params"]["type"]
+                    message_type = message["params"]["type"]
+                    message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
 
-                    log_message = message["params"]["message"]
+                    message_message = message["params"]["message"]
 
-                    logger.debug(f"{log_type} {log_message}")
-
-                    panel_log(
-                        sublime.active_window(),
-                        f"{log_message}\n",
+                    logger.debug(
+                        f"[{self.config['name']}] {message_type}: {message_message}",
                     )
 
                 elif message["method"] == "window/showMessage":
@@ -724,11 +750,12 @@ class LanguageServerClient:
                     # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_showMessage
 
                     message_type = message["params"]["type"]
+                    message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
 
-                    panel_log(
-                        sublime.active_window(),
-                        f'{kMESSAGE_TYPE_NAME.get(message_type, message_type)}: {message["params"]["message"]}\n',
-                        show=True,
+                    message_message = message["params"]["message"]
+
+                    logger.debug(
+                        f"[{self.config['name']}] {message_type}: {message_message}",
                     )
 
                 elif message["method"] == "textDocument/publishDiagnostics":
@@ -1176,6 +1203,14 @@ class ServerInputHandler(sublime_plugin.ListInputHandler):
 # -- COMMANDS
 
 
+def on_send_message(window, message):
+    panel_log(window, f"{pprint.pformat(message)}\n\n")
+
+
+def on_receive_message(window, message):
+    panel_log(window, f"{pprint.pformat(message)}\n\n")
+
+
 class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "server" not in args:
@@ -1190,7 +1225,13 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
 
         config = available_servers_indexed.get(server)
 
-        client = LanguageServerClient(window=self.window, config=config)
+        client = LanguageServerClient(
+            window=self.window,
+            config=config,
+            on_receive=lambda message: on_receive_message(self.window, message),
+            on_send=lambda message: on_send_message(self.window, message),
+        )
+
         client.initialize()
 
         rootPath = window_rootPath(self.window)
