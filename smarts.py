@@ -1612,17 +1612,17 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
 
             def callback(response):
                 if error := response.get("error"):
-                    logger.error(f"{error}")
+                    logger.error(f"Error: {error.get('code')}: {error.get('message')}")
+
                     return
 
-                textEdits = response.get("result")
-
-                self.view.run_command(
-                    "pg_smarts_apply_edits",
-                    {
-                        "edits": textEdits,
-                    },
-                )
+                if textEdits := response.get("result"):
+                    self.view.run_command(
+                        "pg_smarts_apply_edits",
+                        {
+                            "edits": textEdits,
+                        },
+                    )
 
             applicable_server_["client"].textDocument_formatting(params, callback)
 
