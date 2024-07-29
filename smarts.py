@@ -336,7 +336,11 @@ def document_symbol_quick_panel_item(data: dict) -> sublime.QuickPanelItem:
         line = data["selectionRange"]["start"]["line"] + 1
         character = data["selectionRange"]["start"]["character"] + 1
 
-    details = f"{data['containerName']}.{data['name']}" if data.get('containerName') else f"{data['name']}"
+    details = (
+        f"{data['containerName']}.{data['name']}"
+        if data.get("containerName")
+        else f"{data['name']}"
+    )
 
     return sublime.QuickPanelItem(
         details,
@@ -1822,7 +1826,6 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
 
 class PgSmartsListener(sublime_plugin.EventListener):
-
     def shutdown_servers(self, window):
         def shutdown(rootPath, started_servers):
             for started_server in started_servers.values():
@@ -1839,7 +1842,6 @@ class PgSmartsListener(sublime_plugin.EventListener):
                 target=lambda: shutdown(rootPath, started_servers_),
                 daemon=True,
             ).start()
-
 
     def on_pre_close_window(self, window):
         self.shutdown_servers(window)
