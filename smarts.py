@@ -873,13 +873,11 @@ class LanguageServerClient:
                 },
             )
 
-            self._put(
-                {
-                    "jsonrpc": "2.0",
-                    "method": "initialized",
-                    "params": {},
-                }
-            )
+            self._put({
+                "jsonrpc": "2.0",
+                "method": "initialized",
+                "params": {},
+            })
 
             callback(response)
 
@@ -928,13 +926,11 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#exit
         """
 
-        self._put(
-            {
-                "jsonrpc": "2.0",
-                "method": "exit",
-                "params": {},
-            }
-        )
+        self._put({
+            "jsonrpc": "2.0",
+            "method": "exit",
+            "params": {},
+        })
 
         self._server_shutdown.set()
 
@@ -977,13 +973,11 @@ class LanguageServerClient:
         if textDocument_uri in self._open_documents:
             return
 
-        self._put(
-            {
-                "jsonrpc": "2.0",
-                "method": "textDocument/didOpen",
-                "params": params,
-            }
-        )
+        self._put({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": params,
+        })
 
         self._open_documents.add(textDocument_uri)
 
@@ -1008,13 +1002,11 @@ class LanguageServerClient:
         if textDocument_uri not in self._open_documents:
             return
 
-        self._put(
-            {
-                "jsonrpc": "2.0",
-                "method": "textDocument/didClose",
-                "params": params,
-            }
-        )
+        self._put({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didClose",
+            "params": params,
+        })
 
         self._open_documents.remove(textDocument_uri)
 
@@ -1030,13 +1022,11 @@ class LanguageServerClient:
         if params["textDocument"]["uri"] not in self._open_documents:
             return
 
-        self._put(
-            {
-                "jsonrpc": "2.0",
-                "method": "textDocument/didChange",
-                "params": params,
-            }
-        )
+        self._put({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didChange",
+            "params": params,
+        })
 
     def textDocument_hover(self, params, callback):
         """
@@ -1119,6 +1109,22 @@ class LanguageServerClient:
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
                 "method": "textDocument/documentSymbol",
+                "params": params,
+            },
+            callback,
+        )
+
+    def textDocument_formatting(self, params, callback):
+        """
+        The document formatting request is sent from the client to the server to format a whole document.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_formatting
+        """
+        self._put(
+            {
+                "jsonrpc": "2.0",
+                "id": str(uuid.uuid4()),
+                "method": "textDocument/formatting",
                 "params": params,
             },
             callback,
@@ -1214,11 +1220,9 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             # (Check if a view's syntax is valid for the server.)
             for view in self.window.views():
                 if view_applicable(config, view):
-                    client.textDocument_didOpen(
-                        {
-                            "textDocument": view_text_document_item(view),
-                        }
-                    )
+                    client.textDocument_didOpen({
+                        "textDocument": view_text_document_item(view),
+                    })
 
         client.initialize(params, callback)
 
@@ -1591,6 +1595,47 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
             applicable_server_["client"].textDocument_hover(params, callback)
 
 
+class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
+    def run(self, _):
+        if applicable_server_ := applicable_server(self.view):
+            settings = self.view.settings()
+
+            params = {
+                "textDocument": {
+                    "uri": path_to_uri(self.view.file_name()),
+                },
+                "options": {
+                    "tabSize": settings.get("tab_size"),
+                    "insertSpaces": True,
+                },
+            }
+
+            def callback(response):
+                if error := response.get("error"):
+                    logger.error(f"Error: {error.get('code')}: {error.get('message')}")
+
+                    return
+
+                if textEdits := response.get("result"):
+                    self.view.run_command(
+                        "pg_smarts_apply_edits",
+                        {
+                            "edits": textEdits,
+                        },
+                    )
+
+            applicable_server_["client"].textDocument_formatting(params, callback)
+
+
+class PgSmartsApplyEditsCommand(sublime_plugin.TextCommand):
+    def run(self, edit, edits):
+        for e in edits:
+            edit_region = range16_to_region(self.view, e["range"])
+            edit_new_text = e["newText"]
+
+            self.view.replace(edit, edit_region, edit_new_text)
+
+
 ## -- Listeners
 
 
@@ -1648,29 +1693,25 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
             contentChanges = []
 
             for change in changes:
-                contentChanges.append(
-                    {
-                        "range": {
-                            "start": {
-                                "line": change.a.row,
-                                "character": change.a.col_utf16,
-                            },
-                            "end": {
-                                "line": change.b.row,
-                                "character": change.b.col_utf16,
-                            },
+                contentChanges.append({
+                    "range": {
+                        "start": {
+                            "line": change.a.row,
+                            "character": change.a.col_utf16,
                         },
-                        "rangeLength": change.len_utf16,
-                        "text": change.str,
-                    }
-                )
+                        "end": {
+                            "line": change.b.row,
+                            "character": change.b.col_utf16,
+                        },
+                    },
+                    "rangeLength": change.len_utf16,
+                    "text": change.str,
+                })
 
-        language_client.textDocument_didChange(
-            {
-                "textDocument": textDocument,
-                "contentChanges": contentChanges,
-            }
-        )
+        language_client.textDocument_didChange({
+            "textDocument": textDocument,
+            "contentChanges": contentChanges,
+        })
 
 
 class PgSmartsViewListener(sublime_plugin.ViewEventListener):
@@ -1683,11 +1724,9 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 client = started_server["client"]
 
                 if view_applicable(config, self.view):
-                    client.textDocument_didOpen(
-                        {
-                            "textDocument": view_text_document_item(self.view),
-                        }
-                    )
+                    client.textDocument_didOpen({
+                        "textDocument": view_text_document_item(self.view),
+                    })
 
     def on_pre_close(self):
         # When the window is closed, there's no window 'attached' to view.
