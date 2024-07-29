@@ -1343,6 +1343,13 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
             if view_applicable(config, self.view):
 
                 def callback(response):
+                    if error := response.get("error"):
+                        panel_log(
+                            self.view.window(),
+                            f"Error: {error.get('code')} {error.get('message')}\n",
+                            show=True,
+                        )
+
                     result = response.get("result")
 
                     if not result:
@@ -1371,6 +1378,13 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
             if view_applicable(config, self.view):
 
                 def callback(response):
+                    if error := response.get("error"):
+                        panel_log(
+                            self.view.window(),
+                            f"Error: {error.get('code')} {error.get('message')}\n",
+                            show=True,
+                        )
+
                     result = response.get("result")
 
                     if not result:
@@ -1447,6 +1461,13 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
             return
 
         def callback(response):
+            if error := response.get("error"):
+                panel_log(
+                    self.view.window(),
+                    f"Error: {error.get('code')} {error.get('message')}\n",
+                    show=True,
+                )
+
             if result := response.get("result"):
                 restore_viewport_position = capture_viewport_position(self.view)
 
@@ -1588,6 +1609,13 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
             params = view_textDocumentPositionParams(self.view)
 
             def callback(response):
+                if error := response.get("error"):
+                    panel_log(
+                        self.view.window(),
+                        f"Error: {error.get('code')} {error.get('message')}\n",
+                        show=True,
+                    )
+
                 if result := response["result"]:
                     show_hover_popup(self.view, result)
 
@@ -1611,9 +1639,11 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
 
             def callback(response):
                 if error := response.get("error"):
-                    logger.error(f"Error: {error.get('code')}: {error.get('message')}")
-
-                    return
+                    panel_log(
+                        self.view.window(),
+                        f"Error: {error.get('code')} {error.get('message')}\n",
+                        show=True,
+                    )
 
                 if textEdits := response.get("result"):
                     self.view.run_command(
@@ -1760,6 +1790,13 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             return
 
         def callback(response):
+            if error := response.get("error"):
+                panel_log(
+                    self.view.window(),
+                    f"Error: {error.get('code')} {error.get('message')}\n",
+                    show=True,
+                )
+
             result = response.get("result")
 
             if not result:
@@ -1818,6 +1855,13 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                     params = view_textDocumentPositionParams(self.view, point)
 
                     def callback(response):
+                        if error := response.get("error"):
+                            panel_log(
+                                self.view.window(),
+                                f"Error: {error.get('code')} {error.get('message')}\n",
+                                show=True,
+                            )
+
                         if result := response["result"]:
                             show_hover_popup(self.view, result)
 
