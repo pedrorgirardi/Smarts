@@ -1310,6 +1310,9 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
 
                 minihtml += "</ul><br /><br />"
 
+        if not minihtml:
+            return
+
         sheet = self.window.new_html_sheet(
             "Servers",
             f"""
