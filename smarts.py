@@ -28,14 +28,13 @@ logger.propagate = False
 
 # -- CONSTANTS
 
-STG_SERVERS = "servers"
-STG_DIAGNOSTICS = "pg_lsc_diagnostics"
-STATUS_DIAGNOSTICS = "pg_lsc_diagnostics"
+kSETTING_SERVERS = "servers"
 
 kOUTPUT_PANEL_NAME = "Smarts"
 kOUTPUT_PANEL_NAME_PREFIXED = f"output.{kOUTPUT_PANEL_NAME}"
+
+kDIAGNOSTICS = "PG_SMARTS_DIAGNOSTICS"
 kSMARTS_HIGHLIGHTS = "PG_SMARTS_HIGHLIGHTS"
-kSMARTS_HIGHLIGHTED_REGIONS = "PG_SMARTS_HIGHLIGHTED_REGIONS"
 
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#messageType
 kMESSAGE_TYPE_NAME = {
@@ -86,7 +85,7 @@ def window_rootPath(window):
 
 
 def available_servers():
-    return settings().get(STG_SERVERS, [])
+    return settings().get(kSETTING_SERVERS, [])
 
 
 def started_servers(rootPath):
@@ -577,7 +576,7 @@ def handle_textDocument_publishDiagnostics(window, message):
     if view := window.find_open_file(fname):
         diagnostics = params["diagnostics"]
 
-        view.settings().set(STG_DIAGNOSTICS, diagnostics)
+        view.settings().set(kDIAGNOSTICS, diagnostics)
 
         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnosticSeverity
         severity_count = {
@@ -600,7 +599,7 @@ def handle_textDocument_publishDiagnostics(window, message):
             if count > 0:
                 diagnostics_status.append(f"{severity_name(severity)}: {count}")
 
-        view.set_status(STATUS_DIAGNOSTICS, ", ".join(diagnostics_status))
+        view.set_status(kDIAGNOSTICS, ", ".join(diagnostics_status))
 
 
 def on_send_message(window, message):
@@ -1398,7 +1397,7 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
         restore_viewport_position = capture_viewport_position(self.view)
 
         diagnostics = sorted(
-            self.view.settings().get(STG_DIAGNOSTICS, []),
+            self.view.settings().get(kDIAGNOSTICS, []),
             key=lambda diagnostic: [
                 diagnostic["range"]["start"]["line"],
                 diagnostic["range"]["start"]["character"],
