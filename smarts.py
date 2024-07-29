@@ -19,13 +19,11 @@ import sublime_plugin  # pyright: ignore
 
 logging_formatter = logging.Formatter(fmt="[{name}] {levelname} {message}", style="{")
 
-logging_handler = logging.StreamHandler()
-logging_handler.setFormatter(logging_formatter)
+console_logging_handler = logging.StreamHandler()
+console_logging_handler.setFormatter(logging_formatter)
 
 logger = logging.getLogger(__package__)
 logger.propagate = False
-logger.addHandler(logging_handler)
-logger.setLevel("DEBUG")
 
 
 # -- CONSTANTS
@@ -1844,6 +1842,9 @@ class PgSmartsListener(sublime_plugin.EventListener):
 def plugin_loaded():
     logger.debug("loaded plugin")
 
+    logger.addHandler(console_logging_handler)
+    logger.setLevel(settings().get("logger.console.level", "INFO"))
+
 
 def plugin_unloaded():
     if _STARTED_SERVERS:
@@ -1863,4 +1864,4 @@ def plugin_unloaded():
 
     logger.debug("unloaded plugin")
 
-    logger.removeHandler(logging_handler)
+    logger.removeHandler(console_logging_handler)

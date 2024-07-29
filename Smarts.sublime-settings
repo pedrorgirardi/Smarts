@@ -1,4 +1,6 @@
 {
+    "logger.console.level": "INFO",
+
     "capabilities": {
         "textDocument/hover": false,
         "textDocument/documentHighlight": false
