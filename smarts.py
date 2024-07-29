@@ -336,8 +336,10 @@ def document_symbol_quick_panel_item(data: dict) -> sublime.QuickPanelItem:
         line = data["selectionRange"]["start"]["line"] + 1
         character = data["selectionRange"]["start"]["character"] + 1
 
+    details = f"{data['containerName']}.{data['name']}" if data.get('containerName') else f"{data['name']}"
+
     return sublime.QuickPanelItem(
-        f"{data['name']}",
+        details,
         annotation=f"{line}:{character}",
     )
 
