@@ -130,14 +130,7 @@ def view_applicable(config, view):
     """
     applicable_to = set(config.get("applicable_to", []))
 
-    applicable = view_syntax(view) in applicable_to
-
-    if not applicable:
-        logger.debug(
-            f"Not-applicable View; Syntax '{view_syntax(view)}' not in {applicable_to}"
-        )
-
-    return applicable
+    return view_syntax(view) in applicable_to
 
 
 def applicable_servers(view):
