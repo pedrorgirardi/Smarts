@@ -1821,16 +1821,19 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 class PgSmartsListener(sublime_plugin.EventListener):
 
     def shutdown_servers(self, window):
-        def shutdown_servers(started_servers):
+        def shutdown(rootPath, started_servers):
             for started_server in started_servers.values():
                 started_server["client"].shutdown()
 
-        if started_servers_ := started_servers(window_rootPath(window)):
-            logger.debug("Shutdown Servers...")
+            global _STARTED_SERVERS
+            del _STARTED_SERVERS[rootPath]
 
+        rootPath = window_rootPath(window)
+
+        if started_servers_ := started_servers(rootPath):
             threading.Thread(
-                name="ShutdownServers",
-                target=lambda: shutdown_servers(started_servers_),
+                name="PreCloseShutdown",
+                target=lambda: shutdown(rootPath, started_servers_),
                 daemon=True,
             ).start()
 
