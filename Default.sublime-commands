@@ -36,7 +36,7 @@
         "command": "pg_smarts_goto_document_symbol"
     },
     {
-        "caption": "Smarts: Goto Format Document",
+        "caption": "Smarts: Format Document",
         "command": "pg_smarts_format_document"
     }
 ]
