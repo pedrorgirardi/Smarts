@@ -1728,14 +1728,17 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         if started_servers_ := started_servers(rootPath):
             for started_server in started_servers_.values():
+                config = started_server["config"]
                 client = started_server["client"]
-                client.textDocument_didClose(
-                    {
-                        "textDocument": {
-                            "uri": path_to_uri(self.view.file_name()),
+
+                if view_applicable(config, self.view):
+                    client.textDocument_didClose(
+                        {
+                            "textDocument": {
+                                "uri": path_to_uri(self.view.file_name()),
+                            },
                         },
-                    },
-                )
+                    )
 
     def erase_highlights(self):
         self.view.erase_regions(kSMARTS_HIGHLIGHTS)
