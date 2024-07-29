@@ -1819,7 +1819,8 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
 
 class PgSmartsListener(sublime_plugin.EventListener):
-    def on_pre_close_window(self, window):
+
+    def shutdown_servers(self, window):
         def shutdown_servers(started_servers):
             for started_server in started_servers.values():
                 started_server["client"].shutdown()
@@ -1832,6 +1833,13 @@ class PgSmartsListener(sublime_plugin.EventListener):
                 target=lambda: shutdown_servers(started_servers_),
                 daemon=True,
             ).start()
+
+
+    def on_pre_close_window(self, window):
+        self.shutdown_servers(window)
+
+    def on_pre_close_project(self, window):
+        self.shutdown_servers(window)
 
 
 # -- PLUGIN LIFECYLE
