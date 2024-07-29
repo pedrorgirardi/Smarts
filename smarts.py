@@ -1728,6 +1728,11 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                         "textDocument": view_text_document_item(self.view),
                     })
 
+    def on_pre_save(self):
+        if started_server := applicable_server(self.view):
+            if started_server["config"].get("format_on_save"):
+                self.view.run_command("pg_smarts_format_document")
+
     def on_pre_close(self):
         # When the window is closed, there's no window 'attached' to view.
         if not self.view.window():
