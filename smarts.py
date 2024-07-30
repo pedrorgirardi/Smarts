@@ -694,7 +694,7 @@ class LanguageServerClient:
         return b"".join(chunks)
 
     def _start_reader(self):
-        logger.debug(f"[{self._server_name}] Reader is ready")
+        logger.debug(f"[{self._server_name}] Reader started 🟢")
 
         while not self._server_shutdown.is_set():
             out = self._server_process.stdout
@@ -734,10 +734,10 @@ class LanguageServerClient:
                     # is that an 'in-flight' request won't have its callback called.
                     logger.error(f"Failed to decode message: {content}")
 
-        logger.debug(f"[{self._server_name}] Reader is done")
+        logger.debug(f"[{self._server_name}] Reader stopped 🔴")
 
     def _start_writer(self):
-        logger.debug(f"[{self._server_name}] Writer is ready")
+        logger.debug(f"[{self._server_name}] Writer started 🟢")
 
         while (message := self._send_queue.get()) is not None:
             try:
@@ -766,10 +766,10 @@ class LanguageServerClient:
         # 'None Task' is complete.
         self._send_queue.task_done()
 
-        logger.debug(f"[{self._server_name}] Writer is done")
+        logger.debug(f"[{self._server_name}] Writer stopped 🔴")
 
     def _start_handler(self):
-        logger.debug(f"[{self._server_name}] Handler is ready")
+        logger.debug(f"[{self._server_name}] Handler started 🟢")
 
         while (message := self._receive_queue.get()) is not None:  # noqa
             if self._on_receive:
@@ -794,7 +794,7 @@ class LanguageServerClient:
         # 'None Task' is complete.
         self._receive_queue.task_done()
 
-        logger.debug(f"[{self._server_name}] Handler is done")
+        logger.debug(f"[{self._server_name}] Handler stopped 🔴")
 
     def _put(self, message, callback=None):
         # Drop message if server is not ready - unless it's an initization message.
