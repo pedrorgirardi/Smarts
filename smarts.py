@@ -76,6 +76,13 @@ def settings():
     return sublime.load_settings("Smarts.sublime-settings")
 
 
+def project_data(window):
+    if project_data_ := window.project_data():
+        return project_data_.get("smarts")
+
+    return None
+
+
 def stg_capabilities():
     return settings().get("capabilities", {})
 
@@ -1889,6 +1896,16 @@ class PgSmartsListener(sublime_plugin.EventListener):
     def on_pre_close_window(self, window):
         self.shutdown_servers(window)
 
+    def on_load_project(self, window):
+        if project_data_ := project_data(window):
+            if start_ := project_data_.get("start"):
+                window.run_command(
+                    "pg_smarts_initialize",
+                    {
+                        "server": start_,
+                    },
+                )
+
     def on_pre_close_project(self, window):
         self.shutdown_servers(window)
 
@@ -1901,6 +1918,15 @@ def plugin_loaded():
 
     logger.addHandler(console_logging_handler)
     logger.setLevel(settings().get("logger.console.level", "INFO"))
+
+    if project_data_ := project_data(sublime.active_window()):
+        if start_ := project_data_.get("start"):
+            sublime.active_window().run_command(
+                "pg_smarts_initialize",
+                {
+                    "server": start_,
+                },
+            )
 
 
 def plugin_unloaded():
