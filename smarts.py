@@ -554,8 +554,6 @@ def handle_window_logMessage(window, message):
     message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
     message_message = message["params"]["message"]
 
-    logger.debug(f"{message_type}: {message_message}")
-
     panel_log(window, f"{message_type}: {message_message}\n")
 
 
@@ -568,8 +566,6 @@ def handle_window_showMessage(window, message):
     message_type = message["params"]["type"]
     message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
     message_message = message["params"]["message"]
-
-    logger.debug(f"{message_type}: {message_message}")
 
     panel_log(window, f"{message_type}: {message_message}\n", show=True)
 

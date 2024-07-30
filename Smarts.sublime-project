@@ -5,6 +5,6 @@
         }
     ],
     "smarts": {
-        "start": "Ruff"
+        "start": "Pyright"
     }
 }
