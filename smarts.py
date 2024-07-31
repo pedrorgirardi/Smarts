@@ -251,7 +251,7 @@ def show_hover_popup(view: sublime.View, result):
 
     # An optional range is a range inside a text document
     # that is used to visualize a hover, e.g. by changing the background color.
-    if result_range := result["range"]:
+    if result_range := result.get("range"):
         location = view.text_point(
             result_range["start"]["line"],
             result_range["start"]["character"],
