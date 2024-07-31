@@ -1654,6 +1654,9 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
 
 class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
     def run(self, _):
+        if not self.view.file_name():
+            return
+
         if applicable_server_ := applicable_server(self.view):
             settings = self.view.settings()
 
@@ -1775,6 +1778,9 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
 
 class PgSmartsViewListener(sublime_plugin.ViewEventListener):
     def on_load_async(self):
+        if not self.view.file_name():
+            return
+
         rootPath = window_rootPath(self.view.window())
 
         if started_servers_ := started_servers(rootPath):
@@ -1788,6 +1794,9 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                     })
 
     def on_pre_close(self):
+        if not self.view.file_name():
+            return
+
         # When the window is closed, there's no window 'attached' to view.
         if not self.view.window():
             return
