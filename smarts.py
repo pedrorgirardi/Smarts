@@ -1422,11 +1422,7 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
         )
 
         def on_highlight(index):
-            diagnostic = diagnostics[index]
-
-            logger.debug(diagnostic)
-
-            diagnostic_region = range16_to_region(self.view, diagnostic["range"])
+            diagnostic_region = range16_to_region(self.view, diagnostics[index]["range"])
 
             self.view.sel().clear()
             self.view.sel().add(diagnostic_region)
@@ -1476,8 +1472,6 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
 
                 def on_highlight(index):
                     data = result[index]
-
-                    logger.debug(data)
 
                     show_at_center_range = None
 
