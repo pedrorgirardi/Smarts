@@ -593,8 +593,39 @@ def handle_textDocument_publishDiagnostics(window, message):
         # Diagnostic objects are only valid in the scope of a resource.
         #
         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic
+
+        regions = []
+        annotations = []
+
         for diagnostic in diagnostics:
             severity_count[diagnostic["severity"]] += 1
+
+            regions.append(range16_to_region(view, diagnostic["range"]))
+
+            minihtml = f"""
+            <body>
+                <div>
+                    <span style="font-size:0.9em">{diagnostic["message"]}</span>
+                </div>
+            </body>
+            """
+
+            annotations.append(minihtml)
+
+        view.erase_regions(kDIAGNOSTICS)
+
+        view.add_regions(
+            kDIAGNOSTICS,
+            regions,
+            scope="",
+            annotations=annotations,
+            annotation_color="gray",
+            flags=(
+                sublime.DRAW_SQUIGGLY_UNDERLINE
+                | sublime.DRAW_NO_FILL
+                | sublime.DRAW_NO_OUTLINE
+            ),
+        )
 
         diagnostics_status = []
 
@@ -1218,7 +1249,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             # Notify the server about current views.
             # (Check if a view's syntax is valid for the server.)
             for view in self.window.views():
-                if view_applicable(config, view):
+                if view.file_name() and view_applicable(config, view):
                     client.textDocument_didOpen({
                         "textDocument": view_text_document_item(view),
                     })
@@ -1422,7 +1453,9 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
         )
 
         def on_highlight(index):
-            diagnostic_region = range16_to_region(self.view, diagnostics[index]["range"])
+            diagnostic_region = range16_to_region(
+                self.view, diagnostics[index]["range"]
+            )
 
             self.view.sel().clear()
             self.view.sel().add(diagnostic_region)
