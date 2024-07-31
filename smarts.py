@@ -594,38 +594,63 @@ def handle_textDocument_publishDiagnostics(window, message):
         #
         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic
 
-        regions = []
-        annotations = []
+        severity_regions = {}
 
         for diagnostic in diagnostics:
             severity_count[diagnostic["severity"]] += 1
 
-            regions.append(range16_to_region(view, diagnostic["range"]))
+            severity_data = severity_regions.setdefault(diagnostic["severity"], {})
 
-            minihtml = f"""
-            <body>
-                <div>
-                    <span style="font-size:0.9em">{diagnostic["message"]}</span>
-                </div>
-            </body>
-            """
+            # Regions by Severity
+            severity_data.setdefault("regions", []).append(
+                range16_to_region(view, diagnostic["range"]),
+            )
 
-            annotations.append(minihtml)
+            # Annotations (minihtml) by Severity
+            severity_data.setdefault("annotations", []).append(
+                f"""
+                <body>
+                    <span style="font-size:0.8em">{diagnostic["message"]}</span>
+                </body>
+                """,
+            )
 
         view.erase_regions(kDIAGNOSTICS)
 
-        view.add_regions(
-            kDIAGNOSTICS,
-            regions,
-            scope="",
-            annotations=annotations,
-            annotation_color="gray",
-            flags=(
-                sublime.DRAW_SQUIGGLY_UNDERLINE
-                | sublime.DRAW_NO_FILL
-                | sublime.DRAW_NO_OUTLINE
-            ),
-        )
+        for severity, regions in severity_regions.items():
+            annotation_color = None
+
+            if severity == 1:
+                annotation_color = view.style_for_scope("region.redish").get(
+                    "foreground"
+                )
+            elif severity == 2:
+                annotation_color = view.style_for_scope("region.orangish").get(
+                    "foreground"
+                )
+            elif severity == 3:
+                annotation_color = view.style_for_scope("region.bluish").get(
+                    "foreground"
+                )
+            elif severity == 4:
+                annotation_color = view.style_for_scope("region.purplish").get(
+                    "foreground"
+                )
+            else:
+                annotation_color = "gray"
+
+            view.add_regions(
+                kDIAGNOSTICS,
+                regions["regions"],
+                scope="",
+                annotations=regions["annotations"],
+                annotation_color=annotation_color or "",
+                flags=(
+                    sublime.DRAW_SQUIGGLY_UNDERLINE
+                    | sublime.DRAW_NO_FILL
+                    | sublime.DRAW_NO_OUTLINE
+                ),
+            )
 
         diagnostics_status = []
 
