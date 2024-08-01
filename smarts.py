@@ -599,15 +599,17 @@ def handle_textDocument_publishDiagnostics(window, message):
         for diagnostic in diagnostics:
             severity_count[diagnostic["severity"]] += 1
 
-            severity_data = severity_regions.setdefault(diagnostic["severity"], {})
-
             # Regions by Severity
-            severity_data.setdefault("regions", []).append(
+            severity_regions.setdefault(diagnostic["severity"], {}).setdefault(
+                "regions", []
+            ).append(
                 range16_to_region(view, diagnostic["range"]),
             )
 
             # Annotations (minihtml) by Severity
-            severity_data.setdefault("annotations", []).append(
+            severity_regions.setdefault(diagnostic["severity"], {}).setdefault(
+                "annotations", []
+            ).append(
                 f"""
                 <body>
                     <span style="font-size:0.8em">{diagnostic["message"]}</span>
@@ -753,7 +755,7 @@ class LanguageServerClient:
         logger.debug(f"[{self._server_name}] Reader started 🟢")
 
         while not self._server_shutdown.is_set():
-            out = self._server_process.stdout
+            out = self._server_process.stdout # type: ignore
 
             # The base protocol consists of a header and a content part (comparable to HTTP).
             # The header and content part are separated by a ‘\r\n’.
@@ -765,7 +767,7 @@ class LanguageServerClient:
             headers = {}
 
             while True:
-                line = out.readline().decode("ascii").strip()
+                line = out.readline().decode("ascii").strip() # type: ignore
 
                 if line == "":
                     break
@@ -803,8 +805,8 @@ class LanguageServerClient:
 
                 try:
                     encoded = header.encode("ascii") + content.encode("utf-8")
-                    self._server_process.stdin.write(encoded)
-                    self._server_process.stdin.flush()
+                    self._server_process.stdin.write(encoded) # type: ignore
+                    self._server_process.stdin.flush() # type: ignore
                 except BrokenPipeError as e:
                     logger.error(
                         f"{self._server_name} - Can't write to server's stdin: {e}"
@@ -996,12 +998,12 @@ class LanguageServerClient:
         returncode = None
 
         try:
-            returncode = self._server_process.wait(30)
+            returncode = self._server_process.wait(30) # type: ignore
         except subprocess.TimeoutExpired:
             # Explicitly kill the process if it did not terminate.
-            self._server_process.kill()
+            self._server_process.kill() # type: ignore
 
-            returncode = self._server_process.wait()
+            returncode = self._server_process.wait() # type: ignore
 
         logger.debug(
             f"[{self._server_name}] Server terminated with returncode {returncode}"
@@ -1222,7 +1224,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
 
         client = LanguageServerClient(
             server_name=server,
-            server_start=config["start"],
+            server_start=config["start"], # type: ignore
             on_send=lambda message: on_send_message(self.window, message),
             on_receive=lambda message: on_receive_message(self.window, message),
         )
@@ -1341,27 +1343,27 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
 
                 # Open and close notifications are sent to the server.
                 # If omitted open close notifications should not be sent.
-                textDocumentSync_openClose = textDocumentSync.get("openClose", "-")
+                textDocumentSync_openClose = textDocumentSync.get("openClose", "-") # type: ignore
 
                 # Change notifications are sent to the server.
-                textDocumentSync_change = {
+                textDocumentSync_change = { # type: ignore
                     0: "0 - None",
                     1: "1 - Full",
                     2: "2 - Incremental",
                 }.get(
-                    textDocumentSync.get("change"),
-                    textDocumentSync.get("change"),
+                    textDocumentSync.get("change"), # type: ignore
+                    textDocumentSync.get("change"), # type: ignore
                 )
 
-                documentSymbolProvider = client._server_capabilities.get(
+                documentSymbolProvider = client._server_capabilities.get( # type: ignore
                     "documentSymbolProvider", "-"
                 )
-                documentHighlightProvider = client._server_capabilities.get(
+                documentHighlightProvider = client._server_capabilities.get( # type: ignore
                     "documentHighlightProvider", "-"
                 )
 
                 # Server name & version
-                minihtml += f'<strong>{client._server_info["name"]}, version {client._server_info["version"]}</strong><br /><br />'
+                minihtml += f'<strong>{client._server_info["name"]}, version {client._server_info["version"]}</strong><br /><br />' # type: ignore
 
                 minihtml += "<ul class='m-0'>"
 
@@ -1730,7 +1732,7 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
     def on_text_changed_async(self, changes):
         view = self.buffer.primary_view()
 
-        language_client: LanguageServerClient = None
+        language_client = None
 
         if applicable_server_ := applicable_server(view):
             language_client = applicable_server_["client"]
