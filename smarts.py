@@ -12,8 +12,8 @@ from queue import Queue
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
-import sublime  # pyright: ignore
-import sublime_plugin  # pyright: ignore
+import sublime
+import sublime_plugin
 
 # -- Logging
 

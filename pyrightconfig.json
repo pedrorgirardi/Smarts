@@ -1,5 +1,6 @@
 {
     "include": ["smarts.py"],
+    "reportMissingImports": false,
     "reportOptionalMemberAccess": false,
     "reportOptionalSubscript": false
 }
