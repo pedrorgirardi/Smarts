@@ -1730,6 +1730,9 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
     def on_text_changed_async(self, changes):
         view = self.buffer.primary_view()
 
+        if not view.file_name():
+            return
+
         language_client = None
 
         if applicable_server_ := applicable_server(view):
