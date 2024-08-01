@@ -83,10 +83,6 @@ def project_data(window):
     return None
 
 
-def stg_capabilities():
-    return settings().get("capabilities", {})
-
-
 def window_rootPath(window):
     return window.folders()[0] if window.folders() else None
 
@@ -1902,14 +1898,14 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if highlighter := getattr(self, "pg_smarts_highlighter", None):
             highlighter.cancel()
 
-        if not stg_capabilities().get("textDocument/documentHighlight"):
+        if not settings().get("highlight_references"):
             return
 
         self.pg_smarts_highlighter = threading.Timer(0.3, self.highlight)
         self.pg_smarts_highlighter.start()
 
     def on_hover(self, point, hover_zone):
-        if not stg_capabilities().get("textDocument/hover"):
+        if not settings().get("show_hover"):
             return
 
         if hover_zone == sublime.HOVER_TEXT:

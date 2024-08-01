@@ -1,10 +1,8 @@
 {
     "logger.console.level": "INFO",
 
-    "capabilities": {
-        "textDocument/hover": false,
-        "textDocument/documentHighlight": false
-    },
+    "highlight_references": false,
+    "show_hover": false,
 
     "servers": []
 }
