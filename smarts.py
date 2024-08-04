@@ -540,11 +540,22 @@ def syntax_languageId(syntax):
         return ""
 
 
+def handle_logTrace(window, message):
+    """
+    A notification to log the trace of the server’s execution.
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#logTrace
+    """
+
+    panel_log(window, f"{pprint.pformat(message)}\n\n")
+
+
 def handle_window_logMessage(window, message):
-    # The log message notification is sent from the server to the client
-    # to ask the client to log a particular message.
-    #
-    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_logMessage
+    """
+    The log message notification is sent from the server to the client
+    to ask the client to log a particular message.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_logMessage
+    """
 
     message_type = message["params"]["type"]
     message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
@@ -554,10 +565,12 @@ def handle_window_logMessage(window, message):
 
 
 def handle_window_showMessage(window, message):
-    # The show message notification is sent from a server to a client
-    # to ask the client to display a particular message in the user interface.
-    #
-    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_showMessage
+    """
+    The show message notification is sent from a server to a client
+    to ask the client to display a particular message in the user interface.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_showMessage
+    """
 
     message_type = message["params"]["type"]
     message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
@@ -567,7 +580,18 @@ def handle_window_showMessage(window, message):
 
 
 def handle_textDocument_publishDiagnostics(window, message):
-    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#publishDiagnosticsParams
+    """
+    Diagnostics notifications are sent from the server to the client to signal results of validation runs.
+
+    Diagnostics are “owned” by the server so it is the server’s responsibility to clear them if necessary.
+
+    When a file changes it is the server’s responsibility to re-compute diagnostics and push them to the client.
+    If the computed set is empty it has to push the empty array to clear former diagnostics.
+    Newly pushed diagnostics always replace previously pushed diagnostics.
+    There is no merging that happens on the client side.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#publishDiagnosticsParams
+    """
     params = message["params"]
 
     fname = unquote(urlparse(params["uri"]).path)
@@ -667,7 +691,10 @@ def on_send_message(window, message):
 def on_receive_message(window, message):
     message_method = message.get("method")
 
-    if message_method == "window/logMessage":
+    if message_method == "$/logTrace":
+        handle_logTrace(window, message)
+
+    elif message_method == "window/logMessage":
         handle_window_logMessage(window, message)
 
     elif message_method == "window/showMessage":
@@ -675,6 +702,10 @@ def on_receive_message(window, message):
 
     elif message_method == "textDocument/publishDiagnostics":
         handle_textDocument_publishDiagnostics(window, message)
+
+    # Log unhanled methods
+    elif message_method:
+        panel_log(window, f"{pprint.pformat(message)}\n\n")
 
 
 # -- CLIENT
@@ -1248,6 +1279,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             "rootPath": rootPath,
             "rootUri": rootUri,
             "workspaceFolders": workspaceFolders,
+            "trace": "verbose",
             "capabilities": {
                 # Client support for textDocument/didOpen, textDocument/didChange
                 # and textDocument/didClose notifications is mandatory in the protocol
