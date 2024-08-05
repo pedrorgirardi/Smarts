@@ -683,12 +683,12 @@ def handle_textDocument_publishDiagnostics(window, message):
         view.set_status(kDIAGNOSTICS, ", ".join(diagnostics_status))
 
 
-def on_send_message(window, message):
-    # panel_log(window, f"{pprint.pformat(message)}\n\n")
+def on_send_message(window, server, message):
+    # panel_log(window, f'{server} {message.get("method")}\n')
     pass
 
 
-def on_receive_message(window, message):
+def on_receive_message(window, server, message):
     message_method = message.get("method")
 
     if message_method == "$/logTrace":
@@ -881,12 +881,19 @@ class LanguageServerClient:
 
         logger.debug(f"[{self._server_name}] Handler stopped 🔴")
 
-    def _put(self, message, callback=None):
+    def _put(self, message, callback=None, on_put=None):
         # Drop message if server is not ready - unless it's an initization message.
         if not self._server_initialized and not message["method"] == "initialize":
+            logger.warn(
+                f'Server {self._server_name} is not initialized; Will drop {message["method"]}'
+            )
+
             return
 
         self._send_queue.put(message)
+
+        if on_put:
+            on_put()
 
         if message_id := message.get("id"):
             # A mapping of request ID to callback.
@@ -1057,13 +1064,14 @@ class LanguageServerClient:
         if textDocument_uri in self._open_documents:
             return
 
-        self._put({
-            "jsonrpc": "2.0",
-            "method": "textDocument/didOpen",
-            "params": params,
-        })
-
-        self._open_documents.add(textDocument_uri)
+        self._put(
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": params,
+            },
+            on_put=lambda: self._open_documents.add(textDocument_uri),
+        )
 
     def textDocument_didClose(self, params):
         """
@@ -1086,13 +1094,14 @@ class LanguageServerClient:
         if textDocument_uri not in self._open_documents:
             return
 
-        self._put({
-            "jsonrpc": "2.0",
-            "method": "textDocument/didClose",
-            "params": params,
-        })
-
-        self._open_documents.remove(textDocument_uri)
+        self._put(
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/didClose",
+                "params": params,
+            },
+            on_put=lambda: self._open_documents.remove(textDocument_uri),
+        )
 
     def textDocument_didChange(self, params):
         """
@@ -1252,8 +1261,8 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
         client = LanguageServerClient(
             server_name=server,
             server_start=config["start"],
-            on_send=lambda message: on_send_message(self.window, message),
-            on_receive=lambda message: on_receive_message(self.window, message),
+            on_send=lambda message: on_send_message(self.window, server, message),
+            on_receive=lambda message: on_receive_message(self.window, server, message),
         )
 
         # The rootPath of the workspace. Is null if no folder is open.
