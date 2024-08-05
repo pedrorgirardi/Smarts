@@ -884,7 +884,7 @@ class LanguageServerClient:
     def _put(self, message, callback=None, on_put=None):
         # Drop message if server is not ready - unless it's an initization message.
         if not self._server_initialized and not message["method"] == "initialize":
-            logger.warn(
+            logger.debug(
                 f'Server {self._server_name} is not initialized; Will drop {message["method"]}'
             )
 
