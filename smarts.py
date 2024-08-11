@@ -714,11 +714,13 @@ def on_receive_message(window, server, message):
 class LanguageServerClient:
     def __init__(
         self,
+        logger,
         server_name,
         server_start,
         on_send=None,
         on_receive=None,
     ):
+        self._logger = logger
         self._server_name = server_name
         self._server_start = server_start
         self._server_process = None
@@ -779,7 +781,7 @@ class LanguageServerClient:
         return b"".join(chunks)
 
     def _start_reader(self):
-        logger.debug(f"[{self._server_name}] Reader started 🟢")
+        self._logger.debug(f"[{self._server_name}] Reader started 🟢")
 
         while not self._server_shutdown.is_set():
             out = self._server_process.stdout
@@ -817,12 +819,12 @@ class LanguageServerClient:
                 except json.JSONDecodeError:
                     # The effect of not being able to decode a message,
                     # is that an 'in-flight' request won't have its callback called.
-                    logger.error(f"Failed to decode message: {content}")
+                    self._logger.error(f"Failed to decode message: {content}")
 
-        logger.debug(f"[{self._server_name}] Reader stopped 🔴")
+        self._logger.debug(f"[{self._server_name}] Reader stopped 🔴")
 
     def _start_writer(self):
-        logger.debug(f"[{self._server_name}] Writer started 🟢")
+        self._logger.debug(f"[{self._server_name}] Writer started 🟢")
 
         while (message := self._send_queue.get()) is not None:
             try:
@@ -835,7 +837,7 @@ class LanguageServerClient:
                     self._server_process.stdin.write(encoded)
                     self._server_process.stdin.flush()
                 except BrokenPipeError as e:
-                    logger.error(
+                    self._logger.error(
                         f"{self._server_name} - Can't write to server's stdin: {e}"
                     )
 
@@ -843,7 +845,7 @@ class LanguageServerClient:
                     try:
                         self._on_send(message)
                     except Exception:
-                        logger.exception("Error handling sent message")
+                        self._logger.exception("Error handling sent message")
 
             finally:
                 self._send_queue.task_done()
@@ -851,24 +853,24 @@ class LanguageServerClient:
         # 'None Task' is complete.
         self._send_queue.task_done()
 
-        logger.debug(f"[{self._server_name}] Writer stopped 🔴")
+        self._logger.debug(f"[{self._server_name}] Writer stopped 🔴")
 
     def _start_handler(self):
-        logger.debug(f"[{self._server_name}] Handler started 🟢")
+        self._logger.debug(f"[{self._server_name}] Handler started 🟢")
 
         while (message := self._receive_queue.get()) is not None:  # noqa
             if self._on_receive:
                 try:
                     self._on_receive(message)
                 except Exception:
-                    logger.exception("Error handling received message")
+                    self._logger.exception("Error handling received message")
 
             if request_id := message.get("id"):
                 if callback := self._request_callback.get(request_id):
                     try:
                         callback(message)
                     except Exception:
-                        logger.exception(
+                        self._logger.exception(
                             f"{self._server_name} - Request callback error"
                         )
                     finally:
@@ -879,12 +881,12 @@ class LanguageServerClient:
         # 'None Task' is complete.
         self._receive_queue.task_done()
 
-        logger.debug(f"[{self._server_name}] Handler stopped 🔴")
+        self._logger.debug(f"[{self._server_name}] Handler stopped 🔴")
 
     def _put(self, message, callback=None, on_put=None):
         # Drop message if server is not ready - unless it's an initization message.
         if not self._server_initialized and not message["method"] == "initialize":
-            logger.debug(
+            self._logger.debug(
                 f'Server {self._server_name} is not initialized; Will drop {message["method"]}'
             )
 
@@ -916,7 +918,7 @@ class LanguageServerClient:
         if self._server_initialized:
             return
 
-        logger.debug(f"Initialize {self._server_name} {self._server_start}")
+        self._logger.debug(f"Initialize {self._server_name} {self._server_start}")
 
         self._server_process = subprocess.Popen(
             self._server_start,
@@ -925,7 +927,7 @@ class LanguageServerClient:
             stderr=subprocess.PIPE,
         )
 
-        logger.info(
+        self._logger.info(
             f"{self._server_name} is up and running; PID {self._server_process.pid}"
         )
 
@@ -1039,7 +1041,7 @@ class LanguageServerClient:
 
             returncode = self._server_process.wait()
 
-        logger.debug(
+        self._logger.debug(
             f"[{self._server_name}] Server terminated with returncode {returncode}"
         )
 
@@ -1259,6 +1261,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
         config = available_servers_indexed.get(server)
 
         client = LanguageServerClient(
+            logger=logger,
             server_name=server,
             server_start=config["start"],
             on_send=lambda message: on_send_message(self.window, server, message),
