@@ -132,7 +132,7 @@ def view_applicable(config, view):
     """
     applicable_to = set(config.get("applicable_to", []))
 
-    return view_syntax(view) in applicable_to
+    return view.file_name() and view_syntax(view) in applicable_to
 
 
 def applicable_servers(view):
@@ -503,7 +503,7 @@ def view_textDocumentPositionParams(view, point=None):
 
     return {
         "textDocument": {
-            "uri": Path(view.file_name()).as_uri(),
+            "uri": path_to_uri(view.file_name()),
         },
         "position": {
             "line": line,
