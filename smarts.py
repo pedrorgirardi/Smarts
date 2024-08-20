@@ -614,65 +614,38 @@ def handle_textDocument_publishDiagnostics(window, message):
         #
         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic
 
-        severity_regions = {}
+        regions = {
+            "regions": [],
+            "annotations": [],
+        }
 
         for diagnostic in diagnostics:
             severity_count[diagnostic["severity"]] += 1
 
             # Regions by Severity
-            severity_regions.setdefault(diagnostic["severity"], {}).setdefault(
-                "regions", []
-            ).append(
+            regions["regions"].append(
                 range16_to_region(view, diagnostic["range"]),
             )
 
             # Annotations (minihtml) by Severity
-            severity_regions.setdefault(diagnostic["severity"], {}).setdefault(
-                "annotations", []
-            ).append(
-                f"""
-                <body>
-                    <span style="font-size:0.8em">{diagnostic["message"]}</span>
-                </body>
-                """,
+            regions["annotations"].append(
+                f'<span style="font-size:0.8em">{diagnostic["message"]}</span>',
             )
 
         view.erase_regions(kDIAGNOSTICS)
 
-        for severity, regions in severity_regions.items():
-            annotation_color = None
-
-            if severity == 1:
-                annotation_color = view.style_for_scope("region.redish").get(
-                    "foreground"
-                )
-            elif severity == 2:
-                annotation_color = view.style_for_scope("region.orangish").get(
-                    "foreground"
-                )
-            elif severity == 3:
-                annotation_color = view.style_for_scope("region.bluish").get(
-                    "foreground"
-                )
-            elif severity == 4:
-                annotation_color = view.style_for_scope("region.purplish").get(
-                    "foreground"
-                )
-            else:
-                annotation_color = "gray"
-
-            view.add_regions(
-                kDIAGNOSTICS,
-                regions["regions"],
-                scope="",
-                annotations=regions["annotations"],
-                annotation_color=annotation_color or "",
-                flags=(
-                    sublime.DRAW_SQUIGGLY_UNDERLINE
-                    | sublime.DRAW_NO_FILL
-                    | sublime.DRAW_NO_OUTLINE
-                ),
-            )
+        view.add_regions(
+            kDIAGNOSTICS,
+            regions["regions"],
+            scope="",
+            annotations=regions["annotations"],
+            annotation_color="gray",
+            flags=(
+                sublime.DRAW_SQUIGGLY_UNDERLINE
+                | sublime.DRAW_NO_FILL
+                | sublime.DRAW_NO_OUTLINE
+            ),
+        )
 
         diagnostics_status = []
 
