@@ -320,7 +320,7 @@ def diagnostic_quick_panel_item(diagnostic_item: dict) -> sublime.QuickPanelItem
     character = diagnostic_item["range"]["start"]["character"] + 1
 
     return sublime.QuickPanelItem(
-        f"{diagnostic_item['message']}",
+        f"{severity_name(diagnostic_item['severity'])}: {diagnostic_item['message']}",
         details=f"{diagnostic_item.get('code', '')}",
         annotation=f"{line}:{character}",
         kind=severity_kind(diagnostic_item["severity"]),
