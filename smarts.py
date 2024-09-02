@@ -11,6 +11,7 @@ from pathlib import Path
 from queue import Queue
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
+from itertools import groupby
 
 import sublime
 import sublime_plugin
@@ -35,6 +36,12 @@ kOUTPUT_PANEL_NAME_PREFIXED = f"output.{kOUTPUT_PANEL_NAME}"
 
 kDIAGNOSTICS = "PG_SMARTS_DIAGNOSTICS"
 kSMARTS_HIGHLIGHTS = "PG_SMARTS_HIGHLIGHTS"
+
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnosticSeverity
+kDIAGNOSTIC_SEVERITY_ERROR = 1
+kDIAGNOSTIC_SEVERITY_WARNING = 2
+kDIAGNOSTIC_SEVERITY_INFORMATION = 3
+kDIAGNOSTIC_SEVERITY_HINT = 4
 
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#messageType
 kMESSAGE_TYPE_NAME = {
@@ -269,6 +276,27 @@ def severity_name(severity):
         return "Hint"
     else:
         return f"Unknown {severity}"
+
+
+def severity_scope(severity):
+    if severity == kDIAGNOSTIC_SEVERITY_ERROR:
+        return "region.redish"
+    elif severity == kDIAGNOSTIC_SEVERITY_WARNING:
+        return "region.orangish"
+    elif severity == kDIAGNOSTIC_SEVERITY_INFORMATION:
+        return "region.bluish"
+    elif severity == kDIAGNOSTIC_SEVERITY_HINT:
+        return "region.purplish"
+    else:
+        return "invalid"
+
+
+def severity_annotation_color(view, severity):
+    scope = severity_scope(severity)
+
+    style = view.style_for_scope(scope)
+
+    return style.get("foreground")
 
 
 def severity_kind(severity):
@@ -599,59 +627,53 @@ def handle_textDocument_publishDiagnostics(window, message):
     if view := window.find_open_file(fname):
         diagnostics = params["diagnostics"]
 
+        # Persists document diagnostics.
         view.settings().set(kDIAGNOSTICS, diagnostics)
-
-        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnosticSeverity
-        severity_count = {
-            1: 0,
-            2: 0,
-            3: 0,
-            4: 0,
-        }
-
-        # Represents a diagnostic, such as a compiler error or warning.
-        # Diagnostic objects are only valid in the scope of a resource.
-        #
-        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic
-
-        regions = {
-            "regions": [],
-            "annotations": [],
-        }
-
-        for diagnostic in diagnostics:
-            severity_count[diagnostic["severity"]] += 1
-
-            # Regions by Severity
-            regions["regions"].append(
-                range16_to_region(view, diagnostic["range"]),
-            )
-
-            # Annotations (minihtml) by Severity
-            regions["annotations"].append(
-                f'<span style="font-size:0.8em">{diagnostic["message"]}</span>',
-            )
-
-        view.erase_regions(kDIAGNOSTICS)
-
-        view.add_regions(
-            kDIAGNOSTICS,
-            regions["regions"],
-            scope="",
-            annotations=regions["annotations"],
-            annotation_color="gray",
-            flags=(
-                sublime.DRAW_SQUIGGLY_UNDERLINE
-                | sublime.DRAW_NO_FILL
-                | sublime.DRAW_NO_OUTLINE
-            ),
-        )
 
         diagnostics_status = []
 
-        for severity, count in severity_count.items():
-            if count > 0:
-                diagnostics_status.append(f"{severity_name(severity)}: {count}")
+        # Clear annotations for all severity levels.
+        for s in [
+            kDIAGNOSTIC_SEVERITY_ERROR,
+            kDIAGNOSTIC_SEVERITY_WARNING,
+            kDIAGNOSTIC_SEVERITY_INFORMATION,
+            kDIAGNOSTIC_SEVERITY_HINT,
+        ]:
+            view.erase_regions(f"{kDIAGNOSTICS}_SEVERITY_{s}")
+
+        def severity_key(diagnostic):
+            return diagnostic["severity"]
+
+        for k, g in groupby(sorted(diagnostics, key=severity_key), key=severity_key):
+            severity_regions = []
+            severity_annotations = []
+            severity_diagnostics = list(g)
+
+            diagnostics_status.append(
+                f"{severity_name(k)}: {len(severity_diagnostics)}"
+            )
+
+            for d in severity_diagnostics:
+                # Regions by Severity
+                severity_regions.append(
+                    range16_to_region(view, d["range"]),
+                )
+
+                # Annotations (minihtml) by Severity
+                severity_annotations.append(
+                    f'<span style="font-size:0.8em">{d["message"]}</span>',
+                )
+
+            view.add_regions(
+                f"{kDIAGNOSTICS}_SEVERITY_{k}",
+                severity_regions,
+                scope=severity_scope(k),
+                annotations=severity_annotations,
+                annotation_color=severity_annotation_color(view, k),
+                flags=sublime.DRAW_SQUIGGLY_UNDERLINE
+                | sublime.DRAW_NO_FILL
+                | sublime.DRAW_NO_OUTLINE,
+            )
 
         view.set_status(kDIAGNOSTICS, ", ".join(diagnostics_status))
 
