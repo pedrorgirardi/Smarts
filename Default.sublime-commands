@@ -4,7 +4,7 @@
         "command": "edit_settings",
         "args": {
             "base_file": "${packages}/Smarts/Smarts.sublime-settings",
-            "user_file": "${packages}/User/Smarts.sublime-settings"
+            "default": "// Smarts Settings - User\n{\n\t$0\n}\n"
         }
     },
     {
