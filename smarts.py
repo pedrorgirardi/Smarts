@@ -1043,7 +1043,7 @@ class LanguageServerClient:
             returncode = self._server_process.wait()
 
         self._logger.info(
-            f"[{self._server_name}] Server terminated with returncode {returncode}"
+            f"{self._server_name} terminated with returncode {returncode}"
         )
 
     def textDocument_didOpen(self, params):
