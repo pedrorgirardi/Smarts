@@ -23,8 +23,11 @@ logging_formatter = logging.Formatter(fmt="[{name}] {levelname} {message}", styl
 console_logging_handler = logging.StreamHandler()
 console_logging_handler.setFormatter(logging_formatter)
 
-logger = logging.getLogger(__package__)
-logger.propagate = False
+plugin_logger = logging.getLogger(__package__)
+plugin_logger.propagate = False
+
+client_logger = logging.getLogger(f"{__package__}.Client")
+client_logger.propagate = False
 
 
 # -- CONSTANTS
@@ -989,6 +992,8 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
         """
 
+        self._logger.info(f"Shutdown {self._server_name}")
+
         def _callback(message):
             self.exit()
 
@@ -1013,6 +1018,7 @@ class LanguageServerClient:
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#exit
         """
+        self._logger.info(f"Exit {self._server_name}")
 
         self._put({
             "jsonrpc": "2.0",
@@ -1036,7 +1042,7 @@ class LanguageServerClient:
 
             returncode = self._server_process.wait()
 
-        self._logger.debug(
+        self._logger.info(
             f"[{self._server_name}] Server terminated with returncode {returncode}"
         )
 
@@ -1256,7 +1262,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
         config = available_servers_indexed.get(server)
 
         client = LanguageServerClient(
-            logger=logger,
+            logger=client_logger,
             server_name=server,
             server_start=config["start"],
             on_send=lambda message: on_send_message(self.window, server, message),
@@ -2013,10 +2019,13 @@ class PgSmartsListener(sublime_plugin.EventListener):
 
 
 def plugin_loaded():
-    logger.debug("loaded plugin")
+    plugin_logger.addHandler(console_logging_handler)
+    plugin_logger.setLevel(settings().get("logger.plugin.level", "INFO"))
 
-    logger.addHandler(console_logging_handler)
-    logger.setLevel(settings().get("logger.console.level", "INFO"))
+    client_logger.addHandler(console_logging_handler)
+    client_logger.setLevel(settings().get("logger.console.level", "INFO"))
+
+    plugin_logger.debug("loaded plugin")
 
     if project_data_ := project_data(sublime.active_window()):
         if start_ := project_data_.get("start"):
@@ -2034,8 +2043,6 @@ def plugin_unloaded():
         def shutdown_servers():
             for rootPath, servers in _STARTED_SERVERS.items():
                 for server_name, started_server in servers.items():
-                    logger.debug(f"[{server_name}] Shutdown")
-
                     started_server["client"].shutdown()
 
         threading.Thread(
@@ -2044,6 +2051,7 @@ def plugin_unloaded():
             daemon=True,
         ).start()
 
-    logger.debug("unloaded plugin")
+    plugin_logger.debug("unloaded plugin")
 
-    logger.removeHandler(console_logging_handler)
+    plugin_logger.removeHandler(console_logging_handler)
+    client_logger.removeHandler(console_logging_handler)

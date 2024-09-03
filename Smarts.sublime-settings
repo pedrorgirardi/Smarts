@@ -1,4 +1,5 @@
 {
+    "logger.plugin.level": "INFO",
     "logger.console.level": "INFO",
 
     "highlight_references": false,
