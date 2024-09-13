@@ -2,8 +2,8 @@
     "logger.plugin.level": "INFO",
     "logger.console.level": "INFO",
 
-    "highlight_references": false,
-    "show_hover": false,
+    "editor.highlight_references": false,
+    "editor.show_hover": false,
 
     "servers": []
 }

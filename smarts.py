@@ -1946,14 +1946,14 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if highlighter := getattr(self, "pg_smarts_highlighter", None):
             highlighter.cancel()
 
-        if not settings().get("highlight_references"):
+        if not settings().get("editor.highlight_references"):
             return
 
         self.pg_smarts_highlighter = threading.Timer(0.3, self.highlight)
         self.pg_smarts_highlighter.start()
 
     def on_hover(self, point, hover_zone):
-        if not settings().get("show_hover"):
+        if not settings().get("editor.show_hover"):
             return
 
         if hover_zone == sublime.HOVER_TEXT:
