@@ -2023,7 +2023,7 @@ def plugin_loaded():
     plugin_logger.setLevel(settings().get("logger.plugin.level", "INFO"))
 
     client_logger.addHandler(console_logging_handler)
-    client_logger.setLevel(settings().get("logger.console.level", "INFO"))
+    client_logger.setLevel(settings().get("logger.client.level", "INFO"))
 
     plugin_logger.debug("loaded plugin")
 

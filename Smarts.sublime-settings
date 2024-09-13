@@ -1,6 +1,6 @@
 {
     "logger.plugin.level": "INFO",
-    "logger.console.level": "INFO",
+    "logger.client.level": "INFO",
 
     "editor.highlight_references": false,
     "editor.show_hover": false,
