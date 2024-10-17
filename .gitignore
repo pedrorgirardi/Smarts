@@ -2,3 +2,4 @@ Smarts.sublime-workspace
 .lsp
 .DS_Store
 .clj-kondo/
+.idea/
