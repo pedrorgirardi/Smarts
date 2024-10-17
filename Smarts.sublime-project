@@ -4,7 +4,9 @@
             "path": "."
         }
     ],
-    "smarts": {
-        "start": "Pyright"
+    "Smarts": {
+        "initialize": [
+            "Pyright"
+        ]
     }
 }

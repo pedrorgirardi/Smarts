@@ -88,7 +88,7 @@ def settings():
 
 def project_data(window):
     if project_data_ := window.project_data():
-        return project_data_.get("smarts")
+        return project_data_.get("Smarts")
 
     return None
 
@@ -123,6 +123,21 @@ def add_server(rootPath, started_server):
         started_servers_[server_name] = started_server
     else:
         _STARTED_SERVERS[rootPath] = {server_name: started_server}
+
+
+def initialize_project_servers(window):
+    """
+    Initialize Language Servers configured in a Sublime Project.
+    """
+    if project_data_ := project_data(window):
+        # It's expected a list of server names.
+        for server in project_data_.get("initialize", []):
+            window.run_command(
+                "pg_smarts_initialize",
+                {
+                    "server": server,
+                },
+            )
 
 
 def view_syntax(view) -> str:
@@ -2002,14 +2017,7 @@ class PgSmartsListener(sublime_plugin.EventListener):
         self.shutdown_servers(window)
 
     def on_load_project(self, window):
-        if project_data_ := project_data(window):
-            if start_ := project_data_.get("start"):
-                window.run_command(
-                    "pg_smarts_initialize",
-                    {
-                        "server": start_,
-                    },
-                )
+        initialize_project_servers(window)
 
     def on_pre_close_project(self, window):
         self.shutdown_servers(window)
@@ -2027,14 +2035,7 @@ def plugin_loaded():
 
     plugin_logger.debug("loaded plugin")
 
-    if project_data_ := project_data(sublime.active_window()):
-        if start_ := project_data_.get("start"):
-            sublime.active_window().run_command(
-                "pg_smarts_initialize",
-                {
-                    "server": start_,
-                },
-            )
+    initialize_project_servers(sublime.active_window())
 
 
 def plugin_unloaded():
