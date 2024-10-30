@@ -8,14 +8,16 @@
 
 ### [Project Python versions](https://docs.astral.sh/uv/concepts/python-versions/#project-python-versions)
 
-By default uv python install will verify that a managed Python version is installed or install the latest version.
+By default `uv python install` will verify that a managed Python version is installed or install the latest version.
 
-However, a project may include a .python-version file specifying a default Python version. If present, uv will install the Python version listed in the file.
+However, a project may include a `.python-version` file specifying a default Python version. If present, uv will install the Python version listed in the file.
 
 ### [Finding a Python executable](https://docs.astral.sh/uv/concepts/python-versions/#finding-a-python-executable)
 
-To find a Python executable, use the uv python find command:
+To find a Python executable, use the `uv python find` command:
 
 ```
 $ uv python find
 ```
+
+By default, this will display the path to the first available Python executable.
