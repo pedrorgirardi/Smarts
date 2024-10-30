@@ -1,0 +1,7 @@
+[project]
+name = "Smarts"
+version = "0.1.0"
+description = "Language Server Client for Sublime Text"
+readme = "README.md"
+requires-python = "~=3.8"
+dependencies = []
