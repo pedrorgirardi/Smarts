@@ -4,3 +4,5 @@ Smarts.sublime-workspace
 .clj-kondo/
 .idea/
 .venv/
+.mypy_cache/
+.ropeproject/
