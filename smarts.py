@@ -93,6 +93,13 @@ def project_data(window):
     return None
 
 
+def window_project_path(window):
+    if project_path := window.extract_variables().get("project_path"):
+        return Path(project_path)
+
+    return None
+
+
 def window_rootPath(window):
     return window.folders()[0] if window.folders() else None
 
@@ -130,6 +137,8 @@ def initialize_project_servers(window):
     Initialize Language Servers configured in a Sublime Project.
     """
     if project_data_ := project_data(window):
+        project_path = window_project_path(window)
+
         # It's expected a list of server (dict) with 'name', and 'rootPath' optionally.
         for server in project_data_.get("initialize", []):
             rootPath = server.get("rootPath")
@@ -137,15 +146,14 @@ def initialize_project_servers(window):
             if rootPath is not None:
                 rootPath = Path(rootPath)
 
-                if not rootPath.is_absolute():
-                    project_path = Path(window.extract_variables()["project_path"])
+                if not rootPath.is_absolute() and project_path is not None:
                     rootPath = (project_path / rootPath).resolve()
 
             window.run_command(
                 "pg_smarts_initialize",
                 {
                     "server": server.get("name"),
-                    "rootPath": rootPath.as_posix() if rootPath is not None else None
+                    "rootPath": rootPath.as_posix() if rootPath is not None else None,
                 },
             )
 
@@ -910,7 +918,7 @@ class LanguageServerClient:
         # Drop message if server is not ready - unless it's an initization message.
         if not self._server_initialized and not message["method"] == "initialize":
             self._logger.debug(
-                f'Server {self._server_name} is not initialized; Will drop {message["method"]}'
+                f"Server {self._server_name} is not initialized; Will drop {message['method']}"
             )
 
             return
@@ -1311,16 +1319,13 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
                 "name": "Smarts",
                 "version": "0.1.0",
             },
-
             # The rootPath of the workspace. Is null if no folder is open.
             # Deprecated in favour of rootUri.
             "rootPath": rootPath.as_posix() if rootPath is not None else None,
-
             # The rootUri of the workspace. Is null if no folder is open.
             # If both rootPath and rootUri are set rootUri wins.
             # Deprecated in favour of workspaceFolders.
             "rootUri": rootUri,
-
             # The workspace folders configured in the client when the server starts.
             "workspaceFolders": workspaceFolders,
             "trace": "verbose",
@@ -1437,7 +1442,7 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
                 )
 
                 # Server name & version
-                minihtml += f'<strong>{client._server_info["name"]}, version {client._server_info["version"]}</strong><br /><br />'
+                minihtml += f"<strong>{client._server_info['name']}, version {client._server_info['version']}</strong><br /><br />"
 
                 minihtml += "<ul class='m-0'>"
 
