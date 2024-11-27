@@ -130,12 +130,21 @@ def initialize_project_servers(window):
     Initialize Language Servers configured in a Sublime Project.
     """
     if project_data_ := project_data(window):
-        # It's expected a list of server names.
+        # It's expected a list of server (dict) with 'name', and 'rootPath' optionally.
         for server in project_data_.get("initialize", []):
+            rootPath = server.get("rootPath")
+
+            if rootPath is not None:
+                rootPath = Path(rootPath)
+
+                if not rootPath.is_absolute():
+                    rootPath = (Path(window.folders()[0]) / rootPath).resolve()
+
             window.run_command(
                 "pg_smarts_initialize",
                 {
-                    "server": server,
+                    "server": server.get("name"),
+                    "rootPath": rootPath.as_posix() if rootPath is not None else None
                 },
             )
 
@@ -1269,7 +1278,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
 
             return ServerInputHandler(sorted(available_servers_names))
 
-    def run(self, server):
+    def run(self, server, rootPath=None):
         available_servers_indexed = {
             config["name"]: config for config in available_servers()
         }
@@ -1284,18 +1293,15 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             on_receive=lambda message: on_receive_message(self.window, server, message),
         )
 
-        # The rootPath of the workspace. Is null if no folder is open.
-        # Deprecated in favour of rootUri.
-        rootPath = self.window.folders()[0] if self.window.folders() else None
+        if rootPath is None:
+            rootPath = self.window.folders()[0] if self.window.folders() else None
 
-        # The rootUri of the workspace. Is null if no folder is open.
-        # If both rootPath and rootUri are set rootUri wins.
-        # Deprecated in favour of workspaceFolders.
-        rootUri = Path(rootPath).as_uri() if rootPath else None
+        rootPath = Path(rootPath) if rootPath is not None else None
 
-        # The workspace folders configured in the client when the server starts.
+        rootUri = rootPath.as_uri() if rootPath else None
+
         workspaceFolders = (
-            [{"name": Path(rootPath).name, "uri": rootUri}] if rootPath else None
+            [{"name": rootPath.name, "uri": rootUri}] if rootPath else None
         )
 
         params = {
@@ -1304,8 +1310,17 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
                 "name": "Smarts",
                 "version": "0.1.0",
             },
-            "rootPath": rootPath,
+
+            # The rootPath of the workspace. Is null if no folder is open.
+            # Deprecated in favour of rootUri.
+            "rootPath": rootPath.as_posix() if rootPath is not None else None,
+
+            # The rootUri of the workspace. Is null if no folder is open.
+            # If both rootPath and rootUri are set rootUri wins.
+            # Deprecated in favour of workspaceFolders.
             "rootUri": rootUri,
+
+            # The workspace folders configured in the client when the server starts.
             "workspaceFolders": workspaceFolders,
             "trace": "verbose",
             "capabilities": {
