@@ -138,7 +138,8 @@ def initialize_project_servers(window):
                 rootPath = Path(rootPath)
 
                 if not rootPath.is_absolute():
-                    rootPath = (Path(window.folders()[0]) / rootPath).resolve()
+                    project_path = Path(window.extract_variables()["project_path"])
+                    rootPath = (project_path / rootPath).resolve()
 
             window.run_command(
                 "pg_smarts_initialize",
