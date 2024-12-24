@@ -7,11 +7,12 @@ import subprocess
 import tempfile
 import threading
 import uuid
+from itertools import groupby
 from pathlib import Path
 from queue import Queue
+from typing import cast, Union
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
-from itertools import groupby
 
 import sublime
 import sublime_plugin
@@ -89,25 +90,25 @@ _STARTED_SERVERS = {}
 ## -- API
 
 
-def settings():
+def settings() -> sublime.Settings:
     return sublime.load_settings("Smarts.sublime-settings")
 
 
-def project_data(window):
+def project_data(window) -> Union[dict, None]:
     if project_data_ := window.project_data():
         return project_data_.get("Smarts")
 
     return None
 
 
-def window_project_path(window):
+def window_project_path(window: sublime.Window) -> Union[Path, None]:
     if project_path := window.extract_variables().get("project_path"):
         return Path(project_path)
 
     return None
 
 
-def window_rootPath(window):
+def window_rootPath(window: sublime.Window) -> Union[str, None]:
     return window.folders()[0] if window.folders() else None
 
 
@@ -115,20 +116,20 @@ def available_servers():
     return settings().get(kSETTING_SERVERS, [])
 
 
-def started_servers(rootPath):
+def started_servers(rootPath: str):
     return _STARTED_SERVERS.get(rootPath)
 
 
-def started_servers_values(rootPath):
+def started_servers_values(rootPath: str):
     return _STARTED_SERVERS.get(rootPath, {}).values()
 
 
-def started_server(rootPath, server):
+def started_server(rootPath: str, server):
     if started_servers_ := started_servers(rootPath):
         return started_servers_.get(server)
 
 
-def add_server(rootPath, started_server):
+def add_server(rootPath: str, started_server):
     server_name = started_server["config"]["name"]
 
     global _STARTED_SERVERS
@@ -139,14 +140,14 @@ def add_server(rootPath, started_server):
         _STARTED_SERVERS[rootPath] = {server_name: started_server}
 
 
-def initialize_project_servers(window):
+def initialize_project_servers(window: sublime.Window):
     """
     Initialize Language Servers configured in a Sublime Project.
     """
     if project_data_ := project_data(window):
         project_path = window_project_path(window)
 
-        # It's expected a list of server (dict) with 'name', and 'rootPath' optionally.
+        # It's expected a list of server (dict) with 'name', and 'rootPath' optionally - 'rootPath' can be a relative.
         for server in project_data_.get("initialize", []):
             rootPath = server.get("rootPath")
 
@@ -165,36 +166,40 @@ def initialize_project_servers(window):
             )
 
 
-def view_syntax(view) -> str:
+def view_syntax(view: sublime.View) -> str:
     """
-    Returns syntax for view.
+    Returns a sublime-syntax for view.
 
     A syntax might be something like "Packages/Python/Python.sublime-syntax".
     """
     return view.settings().get("syntax")
 
 
-def view_applicable(config, view):
+def view_applicable(config, view: sublime.View):
     """
     Returns True if view is applicable.
 
-    View is applicable if its syntax is contained in the `applicable_to` setting.
+    View is applicable if a file is associated and its syntax is contained in the `applicable_to` setting.
     """
     applicable_to = set(config.get("applicable_to", []))
 
     return view.file_name() and view_syntax(view) in applicable_to
 
 
-def applicable_servers(view):
+def applicable_servers(view: sublime.View):
     """
     Returns started servers applicable to view.
     """
+    if not view.window():
+        return []
+
     servers = []
 
-    if not view.window():
-        return servers
+    window = cast(sublime.Window, view.window())
 
-    for started_server in started_servers_values(window_rootPath(view.window())):
+    rootPath = cast(str, window_rootPath(window))
+
+    for started_server in started_servers_values(rootPath):
         if view_applicable(started_server["config"], view):
             servers.append(started_server)
 

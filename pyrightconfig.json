@@ -1,6 +1,8 @@
 {
     "include": ["smarts.py"],
+    "extraPaths": ["./typings"],
     "reportMissingImports": false,
+    "reportMissingModuleSource": false,
     "reportOptionalMemberAccess": false,
     "reportOptionalSubscript": false
 }
