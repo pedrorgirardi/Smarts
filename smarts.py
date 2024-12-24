@@ -20,14 +20,19 @@ import sublime_plugin
 
 logging_formatter = logging.Formatter(fmt="[{name}] {levelname} {message}", style="{")
 
+# Handler to log on the Console.
 console_logging_handler = logging.StreamHandler()
 console_logging_handler.setFormatter(logging_formatter)
 
+# Logger used to log 'everything-plugin' - except LSP stuff. (See logger below)
 plugin_logger = logging.getLogger(__package__)
 plugin_logger.propagate = False
 
+# Logger used by the LSP client.
 client_logger = logging.getLogger(f"{__package__}.Client")
 client_logger.propagate = False
+
+# ---------------------------------------------------------------------------------------
 
 
 # -- CONSTANTS
@@ -72,6 +77,8 @@ kMINIHTML_STYLES = """
     color: color(var(--foreground) alpha(0.7));
 }
 """
+
+# ---------------------------------------------------------------------------------------
 
 
 # -- Global Variables
