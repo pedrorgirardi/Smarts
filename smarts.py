@@ -94,7 +94,7 @@ def settings() -> sublime.Settings:
     return sublime.load_settings("Smarts.sublime-settings")
 
 
-def project_data(window) -> Union[dict, None]:
+def window_project_data(window: sublime.Window) -> Union[dict, None]:
     if project_data_ := window.project_data():
         return project_data_.get("Smarts")
 
@@ -144,15 +144,15 @@ def initialize_project_servers(window: sublime.Window):
     """
     Initialize Language Servers configured in a Sublime Project.
     """
-    if project_data_ := project_data(window):
-        project_path = window_project_path(window)
-
+    if project_data_ := window_project_data(window):
         # It's expected a list of server (dict) with 'name', and 'rootPath' optionally - 'rootPath' can be a relative.
         for server in project_data_.get("initialize", []):
             rootPath = server.get("rootPath")
 
             if rootPath is not None:
                 rootPath = Path(rootPath)
+
+                project_path = window_project_path(window)
 
                 if not rootPath.is_absolute() and project_path is not None:
                     rootPath = (project_path / rootPath).resolve()
@@ -186,7 +186,7 @@ def view_applicable(config, view: sublime.View):
     return view.file_name() and view_syntax(view) in applicable_to
 
 
-def applicable_servers(view: sublime.View):
+def applicable_servers(view: sublime.View) -> list:
     """
     Returns started servers applicable to view.
     """
@@ -206,7 +206,7 @@ def applicable_servers(view: sublime.View):
     return servers
 
 
-def applicable_server(view):
+def applicable_server(view: sublime.View):
     """
     Returns the first started server applicable to view, or None.
     """
@@ -222,7 +222,7 @@ def text_to_html(s: str) -> str:
     return html
 
 
-def output_panel(window) -> sublime.View:
+def output_panel(window: sublime.Window) -> sublime.View:
     if panel_view := window.find_output_panel(kOUTPUT_PANEL_NAME):
         return panel_view
     else:
@@ -239,7 +239,7 @@ def output_panel(window) -> sublime.View:
         return panel_view
 
 
-def show_output_panel(window):
+def show_output_panel(window: sublime.Window):
     window.run_command(
         "show_panel",
         {
@@ -248,7 +248,7 @@ def show_output_panel(window):
     )
 
 
-def hide_output_panel(window):
+def hide_output_panel(window: sublime.Window):
     window.run_command(
         "hide_panel",
         {
@@ -257,7 +257,7 @@ def hide_output_panel(window):
     )
 
 
-def toggle_output_panel(window):
+def toggle_output_panel(window: sublime.Window):
     if window.active_panel() == kOUTPUT_PANEL_NAME_PREFIXED:
         hide_output_panel(window)
     else:
@@ -267,7 +267,7 @@ def toggle_output_panel(window):
         show_output_panel(window)
 
 
-def panel_log(window, text, show=False):
+def panel_log(window: sublime.Window, text: str, show=False):
     panel_view = output_panel(window)
     panel_view.run_command("insert", {"characters": text})
 
@@ -313,20 +313,20 @@ def show_hover_popup(view: sublime.View, result):
     view.show_popup(minihtml, location=location, max_width=860)
 
 
-def severity_name(severity):
-    if severity == 1:
+def severity_name(severity: int):
+    if severity == kDIAGNOSTIC_SEVERITY_ERROR:
         return "Error"
-    elif severity == 2:
+    elif severity == kDIAGNOSTIC_SEVERITY_WARNING:
         return "Warning"
-    elif severity == 3:
+    elif severity == kDIAGNOSTIC_SEVERITY_INFORMATION:
         return "Info"
-    elif severity == 4:
+    elif severity == kDIAGNOSTIC_SEVERITY_HINT:
         return "Hint"
     else:
         return f"Unknown {severity}"
 
 
-def severity_scope(severity):
+def severity_scope(severity: int):
     if severity == kDIAGNOSTIC_SEVERITY_ERROR:
         return "region.redish"
     elif severity == kDIAGNOSTIC_SEVERITY_WARNING:
@@ -339,7 +339,7 @@ def severity_scope(severity):
         return "invalid"
 
 
-def severity_annotation_color(view, severity):
+def severity_annotation_color(view: sublime.View, severity: int) -> Union[str, None]:
     scope = severity_scope(severity)
 
     style = view.style_for_scope(scope)
@@ -347,14 +347,14 @@ def severity_annotation_color(view, severity):
     return style.get("foreground")
 
 
-def severity_kind(severity):
-    if severity == 1:
+def severity_kind(severity: int):
+    if severity == kDIAGNOSTIC_SEVERITY_ERROR:
         return (sublime.KIND_ID_COLOR_REDISH, "E", "E")
-    elif severity == 2:
+    elif severity == kDIAGNOSTIC_SEVERITY_WARNING:
         return (sublime.KIND_ID_COLOR_ORANGISH, "W", "W")
-    elif severity == 3:
+    elif severity == kDIAGNOSTIC_SEVERITY_INFORMATION:
         return (sublime.KIND_ID_COLOR_BLUISH, "I", "I")
-    elif severity == 4:
+    elif severity == kDIAGNOSTIC_SEVERITY_HINT:
         return (sublime.KIND_ID_COLOR_PURPLISH, "H", "H")
     else:
         return (sublime.KIND_ID_AMBIGUOUS, "", "")
@@ -1370,12 +1370,13 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
                         "textDocument": view_text_document_item(view),
                     })
 
+        if not rootPath:
+            return
+
         client.initialize(params, callback)
 
-        rootPath = window_rootPath(self.window)
-
         add_server(
-            rootPath,
+            rootPath.as_posix(),
             {
                 "config": config,
                 "client": client,
@@ -1496,11 +1497,12 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
 
                 def callback(response):
                     if error := response.get("error"):
-                        panel_log(
-                            self.view.window(),
-                            f"Error: {error.get('code')} {error.get('message')}\n",
-                            show=True,
-                        )
+                        if window := self.view.window():
+                            panel_log(
+                                window,
+                                f"Error: {error.get('code')} {error.get('message')}\n",
+                                show=True,
+                            )
 
                     result = response.get("result")
 
@@ -1531,11 +1533,12 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
 
                 def callback(response):
                     if error := response.get("error"):
-                        panel_log(
-                            self.view.window(),
-                            f"Error: {error.get('code')} {error.get('message')}\n",
-                            show=True,
-                        )
+                        if window := self.view.window():
+                            panel_log(
+                                window,
+                                f"Error: {error.get('code')} {error.get('message')}\n",
+                                show=True,
+                            )
 
                     result = response.get("result")
 
@@ -1612,11 +1615,12 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
 
         def callback(response):
             if error := response.get("error"):
-                panel_log(
-                    self.view.window(),
-                    f"Error: {error.get('code')} {error.get('message')}\n",
-                    show=True,
-                )
+                if window := self.view.window():
+                    panel_log(
+                        window,
+                        f"Error: {error.get('code')} {error.get('message')}\n",
+                        show=True,
+                    )
 
             if result := response.get("result"):
                 restore_viewport_position = capture_viewport_position(self.view)
@@ -2046,11 +2050,11 @@ class PgSmartsListener(sublime_plugin.EventListener):
                 daemon=True,
             ).start()
 
-    def on_pre_close_window(self, window):
-        self.shutdown_servers(window)
-
     def on_load_project(self, window):
         initialize_project_servers(window)
+
+    def on_pre_close_window(self, window):
+        self.shutdown_servers(window)
 
     def on_pre_close_project(self, window):
         self.shutdown_servers(window)
