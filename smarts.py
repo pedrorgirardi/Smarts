@@ -1009,11 +1009,13 @@ class LanguageServerClient:
                 },
             )
 
-            self._put({
-                "jsonrpc": "2.0",
-                "method": "initialized",
-                "params": {},
-            })
+            self._put(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "initialized",
+                    "params": {},
+                }
+            )
 
             callback(response)
 
@@ -1065,11 +1067,13 @@ class LanguageServerClient:
         """
         self._logger.info(f"Exit {self._server_name}")
 
-        self._put({
-            "jsonrpc": "2.0",
-            "method": "exit",
-            "params": {},
-        })
+        self._put(
+            {
+                "jsonrpc": "2.0",
+                "method": "exit",
+                "params": {},
+            }
+        )
 
         self._server_shutdown.set()
 
@@ -1163,11 +1167,13 @@ class LanguageServerClient:
         if params["textDocument"]["uri"] not in self._open_documents:
             return
 
-        self._put({
-            "jsonrpc": "2.0",
-            "method": "textDocument/didChange",
-            "params": params,
-        })
+        self._put(
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/didChange",
+                "params": params,
+            }
+        )
 
     def textDocument_hover(self, params, callback):
         """
@@ -1366,9 +1372,11 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             # (Check if a view's syntax is valid for the server.)
             for view in self.window.views():
                 if view.file_name() and view_applicable(config, view):
-                    client.textDocument_didOpen({
-                        "textDocument": view_text_document_item(view),
-                    })
+                    client.textDocument_didOpen(
+                        {
+                            "textDocument": view_text_document_item(view),
+                        }
+                    )
 
         if not rootPath:
             return
@@ -1880,25 +1888,29 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
             contentChanges = []
 
             for change in changes:
-                contentChanges.append({
-                    "range": {
-                        "start": {
-                            "line": change.a.row,
-                            "character": change.a.col_utf16,
+                contentChanges.append(
+                    {
+                        "range": {
+                            "start": {
+                                "line": change.a.row,
+                                "character": change.a.col_utf16,
+                            },
+                            "end": {
+                                "line": change.b.row,
+                                "character": change.b.col_utf16,
+                            },
                         },
-                        "end": {
-                            "line": change.b.row,
-                            "character": change.b.col_utf16,
-                        },
-                    },
-                    "rangeLength": change.len_utf16,
-                    "text": change.str,
-                })
+                        "rangeLength": change.len_utf16,
+                        "text": change.str,
+                    }
+                )
 
-        language_client.textDocument_didChange({
-            "textDocument": textDocument,
-            "contentChanges": contentChanges,
-        })
+        language_client.textDocument_didChange(
+            {
+                "textDocument": textDocument,
+                "contentChanges": contentChanges,
+            }
+        )
 
 
 class PgSmartsViewListener(sublime_plugin.ViewEventListener):
@@ -1914,9 +1926,11 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 client = started_server["client"]
 
                 if view_applicable(config, self.view):
-                    client.textDocument_didOpen({
-                        "textDocument": view_text_document_item(self.view),
-                    })
+                    client.textDocument_didOpen(
+                        {
+                            "textDocument": view_text_document_item(self.view),
+                        }
+                    )
 
     def on_pre_close(self):
         if not self.view.file_name():
