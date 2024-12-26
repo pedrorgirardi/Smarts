@@ -1291,6 +1291,24 @@ class ServerInputHandler(sublime_plugin.ListInputHandler):
     def name(self):
         return "server"
 
+    def preview(self, arg):
+        for server in available_servers():
+            if server.get("name") == arg:
+                start = " ".join(server.get("start", ""))
+
+                return sublime.Html(
+                    f"""
+                    <style>
+                        {kMINIHTML_STYLES}
+                    </style>
+                    <body>
+                        <div><code>{start}</code></div>
+                    </body>
+                    """,
+                )
+
+        return ""
+
     def list_items(self):
         return self.items
 
@@ -1301,21 +1319,23 @@ class ServerInputHandler(sublime_plugin.ListInputHandler):
 class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "server" not in args:
-            available_servers_names = [config["name"] for config in available_servers()]
-
-            return ServerInputHandler(sorted(available_servers_names))
+            return ServerInputHandler(
+                sorted(
+                    [server["name"] for server in available_servers()],
+                )
+            )
 
     def run(self, server, rootPath=None):
         available_servers_indexed = {
-            config["name"]: config for config in available_servers()
+            server["name"]: server for server in available_servers()
         }
 
-        config = available_servers_indexed.get(server)
+        server_config = available_servers_indexed.get(server)
 
         client = LanguageServerClient(
             logger=client_logger,
-            server_name=server,
-            server_start=config["start"],
+            server_name=server_config["name"],
+            server_start=server_config["start"],
             on_send=lambda message: on_send_message(self.window, server, message),
             on_receive=lambda message: on_receive_message(self.window, server, message),
         )
@@ -1371,7 +1391,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             # Notify the server about current views.
             # (Check if a view's syntax is valid for the server.)
             for view in self.window.views():
-                if view.file_name() and view_applicable(config, view):
+                if view.file_name() and view_applicable(server_config, view):
                     client.textDocument_didOpen(
                         {
                             "textDocument": view_text_document_item(view),
@@ -1386,7 +1406,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
         add_server(
             rootPath.as_posix(),
             {
-                "config": config,
+                "config": server_config,
                 "client": client,
             },
         )
