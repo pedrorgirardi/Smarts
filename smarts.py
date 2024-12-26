@@ -10,12 +10,19 @@ import uuid
 from itertools import groupby
 from pathlib import Path
 from queue import Queue
-from typing import cast, Union
+from typing import cast, TypedDict, Union, List
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
 import sublime
 import sublime_plugin
+
+
+class ServerConfig(TypedDict):
+    name: str
+    start: List[str]
+    applicable_to: List[str]
+
 
 # -- Logging
 
@@ -112,7 +119,7 @@ def window_rootPath(window: sublime.Window) -> Union[str, None]:
     return window.folders()[0] if window.folders() else None
 
 
-def available_servers():
+def available_servers() -> List[ServerConfig]:
     return settings().get(kSETTING_SERVERS, [])
 
 
@@ -146,8 +153,8 @@ def initialize_project_servers(window: sublime.Window):
     """
     if project_data_ := window_project_data(window):
         # It's expected a list of server (dict) with 'name', and 'rootPath' optionally - 'rootPath' can be a relative.
-        for server in project_data_.get("initialize", []):
-            rootPath = server.get("rootPath")
+        for server_config in project_data_.get("initialize", []):
+            rootPath = server_config.get("rootPath")
 
             if rootPath is not None:
                 rootPath = Path(rootPath)
@@ -160,7 +167,7 @@ def initialize_project_servers(window: sublime.Window):
             window.run_command(
                 "pg_smarts_initialize",
                 {
-                    "server": server.get("name"),
+                    "server": server_config.get("name"),
                     "rootPath": rootPath.as_posix() if rootPath is not None else None,
                 },
             )
@@ -175,7 +182,7 @@ def view_syntax(view: sublime.View) -> str:
     return view.settings().get("syntax")
 
 
-def view_applicable(config, view: sublime.View):
+def view_applicable(config: ServerConfig, view: sublime.View) -> bool:
     """
     Returns True if view is applicable.
 
@@ -183,7 +190,7 @@ def view_applicable(config, view: sublime.View):
     """
     applicable_to = set(config.get("applicable_to", []))
 
-    return view.file_name() and view_syntax(view) in applicable_to
+    return view.file_name() is not None and view_syntax(view) in applicable_to
 
 
 def applicable_servers(view: sublime.View) -> list:
@@ -1325,31 +1332,19 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
                 )
             )
 
-    def run(self, server, rootPath=None):
-        available_servers_indexed = {
-            server["name"]: server for server in available_servers()
-        }
-
-        server_config = available_servers_indexed.get(server)
-
-        client = LanguageServerClient(
-            logger=client_logger,
-            server_name=server_config["name"],
-            server_start=server_config["start"],
-            on_send=lambda message: on_send_message(self.window, server, message),
-            on_receive=lambda message: on_receive_message(self.window, server, message),
-        )
-
+    def run(self, server: str, rootPath=None):
         if rootPath is None:
             rootPath = self.window.folders()[0] if self.window.folders() else None
 
-        rootPath = Path(rootPath) if rootPath is not None else None
+            if rootPath is None:
+                plugin_logger.error("Can't initialize server without a rootPath")
+                return
 
-        rootUri = rootPath.as_uri() if rootPath else None
+        rootPath = Path(rootPath)
 
-        workspaceFolders = (
-            [{"name": rootPath.name, "uri": rootUri}] if rootPath else None
-        )
+        rootUri = rootPath.as_uri()
+
+        workspaceFolders = [{"name": rootPath.name, "uri": rootUri}]
 
         params = {
             "processId": os.getpid(),
@@ -1359,7 +1354,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             },
             # The rootPath of the workspace. Is null if no folder is open.
             # Deprecated in favour of rootUri.
-            "rootPath": rootPath.as_posix() if rootPath is not None else None,
+            "rootPath": rootPath.as_posix(),
             # The rootUri of the workspace. Is null if no folder is open.
             # If both rootPath and rootUri are set rootUri wins.
             # Deprecated in favour of workspaceFolders.
@@ -1387,19 +1382,36 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             },
         }
 
+        server_config = None
+
+        for _server_config in available_servers():
+            if _server_config["name"] == server:
+                server_config = _server_config
+
+        if server_config is None:
+            plugin_logger.error(
+                f"Server {server} not found; Did you forget to configure Smarts.sublime-settings?"
+            )
+            return
+
+        client = LanguageServerClient(
+            logger=client_logger,
+            server_name=server_config["name"],
+            server_start=server_config["start"],
+            on_send=lambda message: on_send_message(self.window, server, message),
+            on_receive=lambda message: on_receive_message(self.window, server, message),
+        )
+
         def callback(response):
-            # Notify the server about current views.
+            # Notify the server about 'open documents'.
             # (Check if a view's syntax is valid for the server.)
             for view in self.window.views():
-                if view.file_name() and view_applicable(server_config, view):
+                if view_applicable(server_config, view):
                     client.textDocument_didOpen(
                         {
                             "textDocument": view_text_document_item(view),
                         }
                     )
-
-        if not rootPath:
-            return
 
         client.initialize(params, callback)
 
