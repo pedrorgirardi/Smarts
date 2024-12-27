@@ -10,7 +10,7 @@ import uuid
 from itertools import groupby
 from pathlib import Path
 from queue import Queue
-from typing import Callable, Optional, Any, TypedDict, Union, List
+from typing import Callable, Optional, Dict, Any, TypedDict, Union, List
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
@@ -741,12 +741,20 @@ def handle_textDocument_publishDiagnostics(window, message):
         view.set_status(kDIAGNOSTICS, ", ".join(diagnostics_status))
 
 
-def on_send_message(window, server, message):
+def on_send_message(
+    window: sublime.Window,
+    server: str,
+    message: Dict[str, Any],
+):
     # panel_log(window, f'{server} {message.get("method")}\n')
     pass
 
 
-def on_receive_message(window, server, message):
+def on_receive_message(
+    window: sublime.Window,
+    server: str,
+    message: Dict[str, Any],
+):
     message_method = message.get("method")
 
     if message_method == "$/logTrace":
@@ -774,8 +782,8 @@ class LanguageServerClient:
         self,
         logger: logging.Logger,
         config: SmartsServerConfig,
-        on_send = None,
-        on_receive = None,
+        on_send: Optional[Callable[[Dict[str, Any]], None]] = None,
+        on_receive: Optional[Callable[[Dict[str, Any]], None]] = None,
     ):
         self._logger = logger
         self._config = config
@@ -784,14 +792,14 @@ class LanguageServerClient:
         self._server_initialized = False
         self._server_info: Optional[dict] = None
         self._server_capabilities: Optional[dict] = None
-        self._on_send: Optional[Callable[[dict[str, Any]], None]] = on_send
-        self._on_receive: Optional[Callable[[dict[str, Any]], None]] = on_receive
+        self._on_send = on_send
+        self._on_receive = on_receive
         self._send_queue = Queue(maxsize=1)
         self._receive_queue = Queue(maxsize=1)
-        self._reader = None
-        self._writer = None
-        self._handler = None
-        self._request_callback = {}
+        self._reader: Optional[threading.Thread] = None
+        self._writer: Optional[threading.Thread] = None
+        self._handler: Optional[threading.Thread] = None
+        self._request_callback: Dict[str, Callable[[Dict], None]] = {}
         self._open_documents = set()
 
     def capabilities_textDocumentSync(self):
@@ -939,7 +947,12 @@ class LanguageServerClient:
 
         self._logger.debug(f"[{self._config['name']}] Handler stopped 🔴")
 
-    def _put(self, message, callback=None, on_put=None):
+    def _put(
+        self,
+        message: Dict[str, Any],
+        callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        on_put: Optional[Callable[[], None]] = None,
+    ):
         # Drop message if server is not ready - unless it's an initization message.
         if not self._server_initialized and not message["method"] == "initialize":
             self._logger.debug(
@@ -960,7 +973,8 @@ class LanguageServerClient:
             #
             # callback might not be called if there's an error reading the response,
             # or the server never returns a response.
-            self._request_callback[message_id] = callback
+            if callback:
+                self._request_callback[message_id] = callback
 
     def initialize(self, params, callback):
         """
