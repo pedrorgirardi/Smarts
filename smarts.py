@@ -104,6 +104,17 @@ def smarts_project_data(window: sublime.Window) -> Optional[SmartsProjectData]:
     return None
 
 
+def setting(window: sublime.Window, k: str, not_found: Any):
+    """
+    Get setting k from project's data or Smarts.sublime-settings.
+
+    Returns not_found if setting k is is not set.
+    """
+    v = smarts_project_data(window).get(k)
+
+    return v if v is not None else settings().get(k, not_found)
+
+
 def window_project_path(window: sublime.Window) -> Optional[Path]:
     if project_path := window.extract_variables().get("project_path"):
         return Path(project_path)
@@ -1509,7 +1520,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         self.pg_smarts_highlighter.start()
 
     def on_hover(self, point, hover_zone):
-        if not settings().get("editor.show_hover"):
+        if not setting(self.view.window(), "editor.show_hover", None):
             return
 
         if hover_zone == sublime.HOVER_TEXT:
