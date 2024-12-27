@@ -1,31 +1,20 @@
 import json
 import logging
-import os
-import pprint
-import re
 import subprocess
-import tempfile
 import threading
 import uuid
-from itertools import groupby
-from pathlib import Path
 from queue import Queue
-from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
-from urllib.parse import unquote, urlparse
-from zipfile import ZipFile
+from typing import Any, Callable, Dict, Optional
 
-import sublime
-import sublime_plugin
-
-from .smarts_model import SmartsInitializeData, SmartsProjectData, SmartsServerConfig
+from .smarts_typing import SmartsServerConfig, LSPMessage
 
 class LanguageServerClient:
     def __init__(
         self,
         logger: logging.Logger,
         config: SmartsServerConfig,
-        on_send: Optional[Callable[[Dict[str, Any]], None]] = None,
-        on_receive: Optional[Callable[[Dict[str, Any]], None]] = None,
+        on_send: Optional[Callable[[LSPMessage], None]] = None,
+        on_receive: Optional[Callable[[LSPMessage], None]] = None,
     ):
         self._logger = logger
         self._config = config
@@ -191,8 +180,8 @@ class LanguageServerClient:
 
     def _put(
         self,
-        message: Dict[str, Any],
-        callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        message: LSPMessage,
+        callback: Optional[Callable[[LSPMessage], None]] = None,
         on_put: Optional[Callable[[], None]] = None,
     ):
         # Drop message if server is not ready - unless it's an initization message.

@@ -17,7 +17,7 @@ from zipfile import ZipFile
 import sublime
 import sublime_plugin
 
-from .smarts_model import SmartsInitializeData, SmartsProjectData, SmartsServerConfig
+from .smarts_typing import SmartsInitializeData, SmartsProjectData, SmartsServerConfig, LSPMessage
 from .smarts_client import LanguageServerClient
 
 # -- Logging
@@ -742,7 +742,7 @@ def handle_textDocument_publishDiagnostics(window, message):
 def on_send_message(
     window: sublime.Window,
     server: str,
-    message: Dict[str, Any],
+    message: LSPMessage,
 ):
     # panel_log(window, f'{server} {message.get("method")}\n')
     pass
@@ -751,7 +751,7 @@ def on_send_message(
 def on_receive_message(
     window: sublime.Window,
     server: str,
-    message: Dict[str, Any],
+    message: LSPMessage,
 ):
     message_method = message.get("method")
 

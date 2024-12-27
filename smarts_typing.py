@@ -1,4 +1,4 @@
-from typing import TypedDict, List
+from typing import TypedDict, List, Dict, Any
 
 
 class SmartsServerConfig(TypedDict):
@@ -14,3 +14,6 @@ class SmartsInitializeData(TypedDict, total=False):
 
 class SmartsProjectData(TypedDict):
     initialize: List[SmartsInitializeData]
+
+
+LSPMessage = Dict[str, Any]
