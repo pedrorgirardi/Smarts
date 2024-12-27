@@ -10,7 +10,7 @@ import uuid
 from itertools import groupby
 from pathlib import Path
 from queue import Queue
-from typing import cast, TypedDict, Union, List
+from typing import Callable, Optional, Any, TypedDict, Union, List
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
@@ -110,21 +110,21 @@ def settings() -> sublime.Settings:
     return sublime.load_settings("Smarts.sublime-settings")
 
 
-def smarts_project_data(window: sublime.Window) -> Union[SmartsProjectData, None]:
+def smarts_project_data(window: sublime.Window) -> Optional[SmartsProjectData]:
     if project_data_ := window.project_data():
         return project_data_.get("Smarts")
 
     return None
 
 
-def window_project_path(window: sublime.Window) -> Union[Path, None]:
+def window_project_path(window: sublime.Window) -> Optional[Path]:
     if project_path := window.extract_variables().get("project_path"):
         return Path(project_path)
 
     return None
 
 
-def window_rootPath(window: sublime.Window) -> Union[str, None]:
+def window_rootPath(window: sublime.Window) -> Optional[str]:
     return window.folders()[0] if window.folders() else None
 
 
@@ -354,7 +354,7 @@ def severity_scope(severity: int):
         return "invalid"
 
 
-def severity_annotation_color(view: sublime.View, severity: int) -> Union[str, None]:
+def severity_annotation_color(view: sublime.View, severity: int) -> Optional[str]:
     scope = severity_scope(severity)
 
     style = view.style_for_scope(scope)
@@ -774,18 +774,18 @@ class LanguageServerClient:
         self,
         logger: logging.Logger,
         config: SmartsServerConfig,
-        on_send=None,
-        on_receive=None,
+        on_send = None,
+        on_receive = None,
     ):
         self._logger = logger
         self._config = config
-        self._server_process = None
+        self._server_process: Optional[subprocess.Popen] = None
         self._server_shutdown = threading.Event()
         self._server_initialized = False
-        self._server_info = None
-        self._server_capabilities = None
-        self._on_send = on_send
-        self._on_receive = on_receive
+        self._server_info: Optional[dict] = None
+        self._server_capabilities: Optional[dict] = None
+        self._on_send: Optional[Callable[[dict[str, Any]], None]] = on_send
+        self._on_receive: Optional[Callable[[dict[str, Any]], None]] = on_receive
         self._send_queue = Queue(maxsize=1)
         self._receive_queue = Queue(maxsize=1)
         self._reader = None
@@ -1014,13 +1014,7 @@ class LanguageServerClient:
         def _callback(response):
             self._server_initialized = True
             self._server_capabilities = response.get("result").get("capabilities")
-            self._server_info = response.get("result").get(
-                "serverInfo",
-                {
-                    "name": "-",
-                    "version": "-",
-                },
-            )
+            self._server_info = response.get("result").get("serverInfo")
 
             self._put(
                 {
@@ -1334,7 +1328,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
         if "server" not in args:
             return ServerInputHandler(
                 sorted(
-                    [server["name"] for server in available_servers()],
+                    [server_config["name"] for server_config in available_servers()],
                 )
             )
 
@@ -1500,7 +1494,8 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
                 )
 
                 # Server name & version
-                minihtml += f"<strong>{client._server_info['name']}, version {client._server_info['version']}</strong><br /><br />"
+                if server_info := client._server_info:
+                    minihtml += f"<strong>{server_info.get('name', '')}, version {server_info.get('version', '')}</strong><br /><br />"
 
                 minihtml += "<ul class='m-0'>"
 
