@@ -10,28 +10,14 @@ import uuid
 from itertools import groupby
 from pathlib import Path
 from queue import Queue
-from typing import Callable, Optional, Dict, Any, TypedDict, Union, List
+from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
 import sublime
 import sublime_plugin
 
-
-class SmartsServerConfig(TypedDict):
-    name: str
-    start: List[str]
-    applicable_to: List[str]
-
-
-class SmartsInitializeData(TypedDict, total=False):
-    name: str
-    rootPath: str  # Optional.
-
-
-class SmartsProjectData(TypedDict):
-    initialize: List[SmartsInitializeData]
-
+from .smarts_model import SmartsInitializeData, SmartsProjectData, SmartsServerConfig
 
 # -- Logging
 
