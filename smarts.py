@@ -18,10 +18,19 @@ import sublime
 import sublime_plugin
 
 
-class ServerConfig(TypedDict):
+class SmartsServerConfig(TypedDict):
     name: str
     start: List[str]
     applicable_to: List[str]
+
+
+class SmartsInitializeData(TypedDict, total=False):
+    name: str
+    rootPath: str  # Optional.
+
+
+class SmartsProjectData(TypedDict):
+    initialize: List[SmartsInitializeData]
 
 
 # -- Logging
@@ -101,7 +110,7 @@ def settings() -> sublime.Settings:
     return sublime.load_settings("Smarts.sublime-settings")
 
 
-def window_project_data(window: sublime.Window) -> Union[dict, None]:
+def smarts_project_data(window: sublime.Window) -> Union[SmartsProjectData, None]:
     if project_data_ := window.project_data():
         return project_data_.get("Smarts")
 
@@ -119,7 +128,7 @@ def window_rootPath(window: sublime.Window) -> Union[str, None]:
     return window.folders()[0] if window.folders() else None
 
 
-def available_servers() -> List[ServerConfig]:
+def available_servers() -> List[SmartsServerConfig]:
     return settings().get(kSETTING_SERVERS, [])
 
 
@@ -151,10 +160,10 @@ def initialize_project_servers(window: sublime.Window):
     """
     Initialize Language Servers configured in a Sublime Project.
     """
-    if project_data_ := window_project_data(window):
+    if project_data_ := smarts_project_data(window):
         # It's expected a list of server (dict) with 'name', and 'rootPath' optionally - 'rootPath' can be a relative.
-        for server_config in project_data_.get("initialize", []):
-            rootPath = server_config.get("rootPath")
+        for initialize_data in project_data_.get("initialize", []):
+            rootPath = initialize_data.get("rootPath")
 
             if rootPath is not None:
                 rootPath = Path(rootPath)
@@ -167,7 +176,7 @@ def initialize_project_servers(window: sublime.Window):
             window.run_command(
                 "pg_smarts_initialize",
                 {
-                    "server": server_config.get("name"),
+                    "server": initialize_data.get("name"),
                     "rootPath": rootPath.as_posix() if rootPath is not None else None,
                 },
             )
@@ -182,7 +191,7 @@ def view_syntax(view: sublime.View) -> str:
     return view.settings().get("syntax")
 
 
-def view_applicable(config: ServerConfig, view: sublime.View) -> bool:
+def view_applicable(config: SmartsServerConfig, view: sublime.View) -> bool:
     """
     Returns True if view is applicable.
 
@@ -193,22 +202,21 @@ def view_applicable(config: ServerConfig, view: sublime.View) -> bool:
     return view.file_name() is not None and view_syntax(view) in applicable_to
 
 
-def applicable_servers(view: sublime.View) -> list:
+def applicable_servers(view: sublime.View) -> List[SmartsServerConfig]:
     """
     Returns started servers applicable to view.
     """
-    if not view.window():
+    window = view.window()
+
+    if window is None:
         return []
 
     servers = []
 
-    window = cast(sublime.Window, view.window())
-
-    rootPath = cast(str, window_rootPath(window))
-
-    for started_server in started_servers_values(rootPath):
-        if view_applicable(started_server["config"], view):
-            servers.append(started_server)
+    if rootPath := window_rootPath(window):
+        for started_server in started_servers_values(rootPath):
+            if view_applicable(started_server["config"], view):
+                servers.append(started_server)
 
     return servers
 
@@ -764,15 +772,13 @@ def on_receive_message(window, server, message):
 class LanguageServerClient:
     def __init__(
         self,
-        logger,
-        server_name,
-        server_start,
+        logger: logging.Logger,
+        config: SmartsServerConfig,
         on_send=None,
         on_receive=None,
     ):
         self._logger = logger
-        self._server_name = server_name
-        self._server_start = server_start
+        self._config = config
         self._server_process = None
         self._server_shutdown = threading.Event()
         self._server_initialized = False
@@ -831,7 +837,7 @@ class LanguageServerClient:
         return b"".join(chunks)
 
     def _start_reader(self):
-        self._logger.debug(f"[{self._server_name}] Reader started 🟢")
+        self._logger.debug(f"[{self._config['name']}] Reader started 🟢")
 
         while not self._server_shutdown.is_set():
             out = self._server_process.stdout
@@ -871,10 +877,10 @@ class LanguageServerClient:
                     # is that an 'in-flight' request won't have its callback called.
                     self._logger.error(f"Failed to decode message: {content}")
 
-        self._logger.debug(f"[{self._server_name}] Reader stopped 🔴")
+        self._logger.debug(f"[{self._config['name']}] Reader stopped 🔴")
 
     def _start_writer(self):
-        self._logger.debug(f"[{self._server_name}] Writer started 🟢")
+        self._logger.debug(f"[{self._config['name']}] Writer started 🟢")
 
         while (message := self._send_queue.get()) is not None:
             try:
@@ -888,7 +894,7 @@ class LanguageServerClient:
                     self._server_process.stdin.flush()
                 except BrokenPipeError as e:
                     self._logger.error(
-                        f"{self._server_name} - Can't write to server's stdin: {e}"
+                        f"{self._config['name']} - Can't write to server's stdin: {e}"
                     )
 
                 if self._on_send:
@@ -903,10 +909,10 @@ class LanguageServerClient:
         # 'None Task' is complete.
         self._send_queue.task_done()
 
-        self._logger.debug(f"[{self._server_name}] Writer stopped 🔴")
+        self._logger.debug(f"[{self._config['name']}] Writer stopped 🔴")
 
     def _start_handler(self):
-        self._logger.debug(f"[{self._server_name}] Handler started 🟢")
+        self._logger.debug(f"[{self._config['name']}] Handler started 🟢")
 
         while (message := self._receive_queue.get()) is not None:  # noqa
             if self._on_receive:
@@ -921,7 +927,7 @@ class LanguageServerClient:
                         callback(message)
                     except Exception:
                         self._logger.exception(
-                            f"{self._server_name} - Request callback error"
+                            f"{self._config['name']} - Request callback error"
                         )
                     finally:
                         del self._request_callback[request_id]
@@ -931,13 +937,13 @@ class LanguageServerClient:
         # 'None Task' is complete.
         self._receive_queue.task_done()
 
-        self._logger.debug(f"[{self._server_name}] Handler stopped 🔴")
+        self._logger.debug(f"[{self._config['name']}] Handler stopped 🔴")
 
     def _put(self, message, callback=None, on_put=None):
         # Drop message if server is not ready - unless it's an initization message.
         if not self._server_initialized and not message["method"] == "initialize":
             self._logger.debug(
-                f"Server {self._server_name} is not initialized; Will drop {message['method']}"
+                f"Server {self._config['name']} is not initialized; Will drop {message['method']}"
             )
 
             return
@@ -968,17 +974,17 @@ class LanguageServerClient:
         if self._server_initialized:
             return
 
-        self._logger.debug(f"Initialize {self._server_name} {self._server_start}")
+        self._logger.debug(f"Initialize {self._config['name']} {self._config['start']}")
 
         self._server_process = subprocess.Popen(
-            self._server_start,
+            self._config["start"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
 
         self._logger.info(
-            f"{self._server_name} is up and running; PID {self._server_process.pid}"
+            f"{self._config['name']} is up and running; PID {self._server_process.pid}"
         )
 
         # Thread responsible for handling received messages.
@@ -1046,7 +1052,7 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
         """
 
-        self._logger.info(f"Shutdown {self._server_name}")
+        self._logger.info(f"Shutdown {self._config['name']}")
 
         def _callback(message):
             self.exit()
@@ -1072,7 +1078,7 @@ class LanguageServerClient:
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#exit
         """
-        self._logger.info(f"Exit {self._server_name}")
+        self._logger.info(f"Exit {self._config['name']}")
 
         self._put(
             {
@@ -1099,7 +1105,7 @@ class LanguageServerClient:
             returncode = self._server_process.wait()
 
         self._logger.info(
-            f"{self._server_name} terminated with returncode {returncode}"
+            f"{self._config['name']} terminated with returncode {returncode}"
         )
 
     def textDocument_didOpen(self, params):
@@ -1396,8 +1402,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
 
         client = LanguageServerClient(
             logger=client_logger,
-            server_name=server_config["name"],
-            server_start=server_config["start"],
+            config=server_config,
             on_send=lambda message: on_send_message(self.window, server, message),
             on_receive=lambda message: on_receive_message(self.window, server, message),
         )
