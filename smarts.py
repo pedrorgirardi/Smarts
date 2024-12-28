@@ -98,8 +98,6 @@ class ActiveSmart(TypedDict):
 
 # -- Global Variables
 
-_STARTED_SERVERS = {}
-
 _SMARTS: List[ActiveSmart] = []
 
 
@@ -138,31 +136,8 @@ def window_project_path(window: sublime.Window) -> Optional[Path]:
     return None
 
 
-def window_rootPath(window: sublime.Window) -> Optional[str]:
-    return window.folders()[0] if window.folders() else None
-
-
 def available_servers() -> List[SmartsServerConfig]:
     return settings().get(kSETTING_SERVERS, [])
-
-
-def started_servers(rootPath: str):
-    return _STARTED_SERVERS.get(rootPath)
-
-
-def started_servers_values(rootPath: str):
-    return _STARTED_SERVERS.get(rootPath, {}).values()
-
-
-def add_server(rootPath: str, started_server):
-    server_name = started_server["config"]["name"]
-
-    global _STARTED_SERVERS
-
-    if started_servers_ := _STARTED_SERVERS.get(rootPath):
-        started_servers_[server_name] = started_server
-    else:
-        _STARTED_SERVERS[rootPath] = {server_name: started_server}
 
 
 def add_smart(window: sublime.Window, client: LanguageServerClient):
@@ -181,6 +156,11 @@ def add_smart(window: sublime.Window, client: LanguageServerClient):
 
 def list_smarts(window: sublime.Window) -> List[ActiveSmart]:
     return [smart for smart in _SMARTS if smart["window"] == window.id()]
+
+
+def shutdown_smarts(window: sublime.Window):
+    for smart in list_smarts(window):
+        smart["client"].shutdown()
 
 
 def initialize_project_servers(window: sublime.Window):
@@ -229,7 +209,7 @@ def view_applicable(config: SmartsServerConfig, view: sublime.View) -> bool:
     return view.file_name() is not None and view_syntax(view) in applicable_to
 
 
-def applicable_servers(view: sublime.View) -> List[SmartsServerConfig]:
+def applicable_smarts(view: sublime.View) -> List[ActiveSmart]:
     """
     Returns started servers applicable to view.
     """
@@ -238,22 +218,26 @@ def applicable_servers(view: sublime.View) -> List[SmartsServerConfig]:
     if window is None:
         return []
 
-    servers = []
+    smarts = []
 
-    if rootPath := window_rootPath(window):
-        for started_server in started_servers_values(rootPath):
-            if view_applicable(started_server["config"], view):
-                servers.append(started_server)
+    for smart in list_smarts(window):
+        smart_client = smart["client"]
+        smart_client_config = smart_client._config
 
-    return servers
+        if view_applicable(smart_client_config, view):
+            smarts.append(smart)
+
+    return smarts
 
 
-def applicable_server(view: sublime.View):
+def applicable_smart(view: sublime.View) -> Optional[ActiveSmart]:
     """
     Returns the first started server applicable to view, or None.
     """
-    if applicable := applicable_servers(view):
+    if applicable := applicable_smarts(view):
         return applicable[0]
+
+    return None
 
 
 def text_to_html(s: str) -> str:
@@ -937,14 +921,6 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
 
         client.initialize(params, callback)
 
-        add_server(
-            rootPath.as_posix(),
-            {
-                "config": server_config,
-                "client": client,
-            },
-        )
-
 
 class PgSmartsShutdownCommand(sublime_plugin.WindowCommand):
     def input(self, args):
@@ -976,49 +952,46 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
 
         label_class = "text-foreground-07"
 
-        for rootPath, started_servers in _STARTED_SERVERS.items():
-            minihtml += f"<span class='font-bold {label_class}'>Root path:</span> <span>{rootPath}</span><br /><br />"
+        for smart in list_smarts(self.window):
+            client = smart["client"]
 
-            for started_server in started_servers.values():
-                client: LanguageServerClient = started_server["client"]
+            textDocumentSync = client.capabilities_textDocumentSync()
 
-                textDocumentSync = client.capabilities_textDocumentSync()
+            # Open and close notifications are sent to the server.
+            # If omitted open close notifications should not be sent.
+            textDocumentSync_openClose = textDocumentSync.get("openClose", "-")
 
-                # Open and close notifications are sent to the server.
-                # If omitted open close notifications should not be sent.
-                textDocumentSync_openClose = textDocumentSync.get("openClose", "-")
+            change: int = textDocumentSync.get("change", 0)
 
-                change: int = textDocumentSync.get("change", 0)
+            # Change notifications are sent to the server.
+            textDocumentSync_change = {
+                0: "0 - None",
+                1: "1 - Full",
+                2: "2 - Incremental",
+            }.get(
+                change,
+                change,
+            )
 
-                # Change notifications are sent to the server.
-                textDocumentSync_change = {
-                    0: "0 - None",
-                    1: "1 - Full",
-                    2: "2 - Incremental",
-                }.get(
-                    change,
-                    change,
-                )
+            documentSymbolProvider = client._server_capabilities.get(
+                "documentSymbolProvider", "-"
+            )
+            documentHighlightProvider = client._server_capabilities.get(
+                "documentHighlightProvider", "-"
+            )
 
-                documentSymbolProvider = client._server_capabilities.get(
-                    "documentSymbolProvider", "-"
-                )
-                documentHighlightProvider = client._server_capabilities.get(
-                    "documentHighlightProvider", "-"
-                )
+            # Server name & version
+            if server_info := client._server_info:
+                minihtml += f"<strong>{server_info.get('name', '')}, version {server_info.get('version', '')}</strong><br /><br />"
 
-                # Server name & version
-                if server_info := client._server_info:
-                    minihtml += f"<strong>{server_info.get('name', '')}, version {server_info.get('version', '')}</strong><br /><br />"
+            minihtml += "<ul class='m-0'>"
 
-                minihtml += "<ul class='m-0'>"
+            minihtml += f"<li><span class='{label_class}'>openClose:</span> {textDocumentSync_openClose}</li>"
+            minihtml += f"<li><span class='{label_class}'>change:</span> {textDocumentSync_change}</li>"
+            minihtml += f"<li><span class='{label_class}'>documentSymbolProvider:</span> {documentSymbolProvider}</li>"
+            minihtml += f"<li><span class='{label_class}'>documentHighlightProvider:</span> {documentHighlightProvider}</li>"
 
-                minihtml += f"<li><span class='{label_class}'>openClose:</span> {textDocumentSync_openClose}</li>"
-                minihtml += f"<li><span class='{label_class}'>change:</span> {textDocumentSync_change}</li>"
-                minihtml += f"<li><span class='{label_class}'>documentSymbolProvider:</span> {documentSymbolProvider}</li>"
-                minihtml += f"<li><span class='{label_class}'>documentHighlightProvider:</span> {documentHighlightProvider}</li>"
-
-                minihtml += "</ul><br /><br />"
+            minihtml += "</ul><br /><br />"
 
         if not minihtml:
             return
@@ -1041,78 +1014,71 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
 
 class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
     def run(self, _):
-        for started_server in started_servers_values(
-            window_rootPath(self.view.window())
-        ):
-            config = started_server["config"]
-            client = started_server["client"]
+        smart = applicable_smart(self.view)
 
-            if view_applicable(config, self.view):
+        if not smart:
+            return
 
-                def callback(response):
-                    if error := response.get("error"):
-                        if window := self.view.window():
-                            panel_log(
-                                window,
-                                f"Error: {error.get('code')} {error.get('message')}\n",
-                                show=True,
-                            )
+        params = view_textDocumentPositionParams(self.view)
 
-                    result = response.get("result")
+        def callback(response):
+            if error := response.get("error"):
+                if window := self.view.window():
+                    panel_log(
+                        window,
+                        f"Error: {error.get('code')} {error.get('message')}\n",
+                        show=True,
+                    )
 
-                    if not result:
-                        return
+            result = response.get("result")
 
-                    restore_view = capture_view(self.view)
+            if not result:
+                return
 
-                    locations = [result] if isinstance(result, dict) else result
+            restore_view = capture_view(self.view)
 
-                    goto_location(self.view.window(), locations, on_cancel=restore_view)
+            locations = [result] if isinstance(result, dict) else result
 
-                client.textDocument_definition(
-                    view_textDocumentPositionParams(self.view),
-                    callback,
-                )
+            goto_location(self.view.window(), locations, on_cancel=restore_view)
+
+        smart["client"].textDocument_definition(params, callback)
 
 
 class PgSmartsGotoReference(sublime_plugin.TextCommand):
     def run(self, _):
-        for started_server in started_servers_values(
-            window_rootPath(self.view.window())
-        ):
-            config = started_server["config"]
-            client = started_server["client"]
+        smart = applicable_smart(self.view)
 
-            if view_applicable(config, self.view):
+        if not smart:
+            return
 
-                def callback(response):
-                    if error := response.get("error"):
-                        if window := self.view.window():
-                            panel_log(
-                                window,
-                                f"Error: {error.get('code')} {error.get('message')}\n",
-                                show=True,
-                            )
+        def callback(response):
+            if error := response.get("error"):
+                if window := self.view.window():
+                    panel_log(
+                        window,
+                        f"Error: {error.get('code')} {error.get('message')}\n",
+                        show=True,
+                    )
 
-                    result = response.get("result")
+            result = response.get("result")
 
-                    if not result:
-                        return
+            if not result:
+                return
 
-                    restore_view = capture_view(self.view)
+            restore_view = capture_view(self.view)
 
-                    goto_location(self.view.window(), result, on_cancel=restore_view)
+            goto_location(self.view.window(), result, on_cancel=restore_view)
 
-                params = {
-                    **view_textDocumentPositionParams(self.view),
-                    **{
-                        "context": {
-                            "includeDeclaration": False,
-                        },
-                    },
-                }
+        params = {
+            **view_textDocumentPositionParams(self.view),
+            **{
+                "context": {
+                    "includeDeclaration": False,
+                },
+            },
+        }
 
-                client.textDocument_references(params, callback)
+        smart["client"].textDocument_references(params, callback)
 
 
 class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
@@ -1162,7 +1128,7 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
 
 class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
     def run(self, _):
-        applicable_server_ = applicable_server(self.view)
+        applicable_server_ = applicable_smart(self.view)
 
         if not applicable_server_:
             return
@@ -1311,7 +1277,7 @@ class PgSmartsJumpCommand(sublime_plugin.TextCommand):
 
 class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
     def run(self, _):
-        if applicable_server_ := applicable_server(self.view):
+        if applicable_server_ := applicable_smart(self.view):
             params = view_textDocumentPositionParams(self.view)
 
             def callback(response):
@@ -1333,7 +1299,7 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
         if not self.view.file_name():
             return
 
-        if applicable_server_ := applicable_server(self.view):
+        if applicable_server_ := applicable_smart(self.view):
             settings = self.view.settings()
 
             params = {
@@ -1386,7 +1352,7 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
 
         language_client = None
 
-        if applicable_server_ := applicable_server(view):
+        if applicable_server_ := applicable_smart(view):
             language_client = applicable_server_["client"]
 
         if not language_client:
@@ -1511,7 +1477,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         self.view.settings().erase(kSMARTS_HIGHLIGHTS)
 
     def highlight(self):
-        applicable_server_ = applicable_server(self.view)
+        applicable_server_ = applicable_smart(self.view)
 
         if not applicable_server_:
             return
@@ -1568,59 +1534,45 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         self.pg_smarts_highlighter.start()
 
     def on_hover(self, point, hover_zone):
-        if not setting(self.view.window(), "editor.show_hover", None):
+        window = self.view.window()
+
+        if not window:
+            return
+
+        if not setting(window, "editor.show_hover", None):
             return
 
         if hover_zone == sublime.HOVER_TEXT:
-            for started_server in started_servers_values(
-                window_rootPath(self.view.window())
-            ):
-                config = started_server["config"]
-                client = started_server["client"]
+            smart = applicable_smart(self.view)
 
-                if view_applicable(config, self.view):
-                    params = view_textDocumentPositionParams(self.view, point)
+            if not smart:
+                return
 
-                    def callback(response):
-                        if error := response.get("error"):
-                            panel_log(
-                                self.view.window(),
-                                f"Error: {error.get('code')} {error.get('message')}\n",
-                                show=True,
-                            )
+            params = view_textDocumentPositionParams(self.view, point)
 
-                        if result := response["result"]:
-                            show_hover_popup(self.view, result)
+            def callback(response):
+                if error := response.get("error"):
+                    panel_log(
+                        window,
+                        f"Error: {error.get('code')} {error.get('message')}\n",
+                        show=True,
+                    )
 
-                    client.textDocument_hover(params, callback)
+                if result := response["result"]:
+                    show_hover_popup(self.view, result)
+
+            smart["client"].textDocument_hover(params, callback)
 
 
 class PgSmartsListener(sublime_plugin.EventListener):
-    def shutdown_servers(self, window):
-        def shutdown(rootPath, started_servers):
-            for started_server in started_servers.values():
-                started_server["client"].shutdown()
-
-            global _STARTED_SERVERS
-            del _STARTED_SERVERS[rootPath]
-
-        rootPath = window_rootPath(window)
-
-        if started_servers_ := started_servers(rootPath):
-            threading.Thread(
-                name="PreCloseShutdown",
-                target=lambda: shutdown(rootPath, started_servers_),
-                daemon=True,
-            ).start()
-
     def on_load_project(self, window):
         initialize_project_servers(window)
 
     def on_pre_close_window(self, window):
-        self.shutdown_servers(window)
+        shutdown_smarts(window)
 
     def on_pre_close_project(self, window):
-        self.shutdown_servers(window)
+        shutdown_smarts(window)
 
 
 # -- PLUGIN LIFECYLE
@@ -1639,18 +1591,7 @@ def plugin_loaded():
 
 
 def plugin_unloaded():
-    if _STARTED_SERVERS:
-
-        def shutdown_servers():
-            for rootPath, servers in _STARTED_SERVERS.items():
-                for server_name, started_server in servers.items():
-                    started_server["client"].shutdown()
-
-        threading.Thread(
-            name="Unloaded",
-            target=lambda: shutdown_servers(),
-            daemon=True,
-        ).start()
+    shutdown_smarts(sublime.active_window())
 
     plugin_logger.debug("unloaded plugin")
 
