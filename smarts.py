@@ -224,6 +224,10 @@ def applicable_smarts(view: sublime.View) -> List[ActiveSmart]:
         smart_client = smart["client"]
         smart_client_config = smart_client._config
 
+        # Skip a possible applicable smart if server is shutdown.
+        if smart_client._server_shutdown.is_set():
+            continue
+
         if view_applicable(smart_client_config, view):
             smarts.append(smart)
 
