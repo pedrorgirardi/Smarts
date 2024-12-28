@@ -1,23 +1,24 @@
-import json
 import logging
 import os
 import pprint
 import re
-import subprocess
 import tempfile
 import threading
 import uuid
 from itertools import groupby
 from pathlib import Path
-from queue import Queue
-from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
+from typing import Any, List, Optional, TypedDict, Tuple
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
 import sublime
 import sublime_plugin
 
-from .smarts_typing import SmartsInitializeData, SmartsProjectData, SmartsServerConfig, LSPMessage
+from .smarts_typing import (
+    SmartsProjectData,
+    SmartsServerConfig,
+    LSPMessage,
+)
 from .smarts_client import LanguageServerClient
 
 # -- Logging
@@ -82,12 +83,27 @@ kMINIHTML_STYLES = """
 }
 """
 
+
+# ---------------------------------------------------------------------------------------
+
+
+class ActiveSmart(TypedDict):
+    uuid: str
+    window: int  # Window ID
+    client: LanguageServerClient
+
+
 # ---------------------------------------------------------------------------------------
 
 
 # -- Global Variables
 
 _STARTED_SERVERS = {}
+
+_SMARTS: List[ActiveSmart] = []
+
+
+# ---------------------------------------------------------------------------------------
 
 
 ## -- API
@@ -152,6 +168,24 @@ def add_server(rootPath: str, started_server):
         started_servers_[server_name] = started_server
     else:
         _STARTED_SERVERS[rootPath] = {server_name: started_server}
+
+
+def add_smart(window: sublime.Window, client: LanguageServerClient):
+    global _SMARTS
+
+    _SMARTS.append(
+        {
+            "uuid": str(uuid.uuid4()),
+            "window": window.id(),
+            "client": client,
+        }
+    )
+
+    return _SMARTS
+
+
+def list_smarts(window: sublime.Window) -> List[ActiveSmart]:
+    return [smart for smart in _SMARTS if smart["window"] == window.id()]
 
 
 def initialize_project_servers(window: sublime.Window):
@@ -789,6 +823,32 @@ class ServerInputHandler(sublime_plugin.ListInputHandler):
         return self.items
 
 
+class SmartsInputHandler(sublime_plugin.ListInputHandler):
+    def __init__(self, items: List[ActiveSmart]):
+        self.items = items
+
+    def placeholder(self):
+        return "Server"
+
+    def name(self):
+        return "smart_uuid"
+
+    def list_items(self):
+        items = []
+
+        for smart in self.items:
+            is_shutdown = "[Shutdown] " if smart["client"]._server_shutdown.is_set() else ""
+
+            items.append(
+                (
+                    f'{is_shutdown}{smart["client"]._config["name"]}',
+                    smart["uuid"],
+                )
+            )
+
+        return items
+
+
 # -- COMMANDS
 
 
@@ -870,6 +930,8 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             on_receive=lambda message: on_receive_message(self.window, server, message),
         )
 
+        add_smart(self.window, client)
+
         def callback(response):
             # Notify the server about 'open documents'.
             # (Check if a view's syntax is valid for the server.)
@@ -894,23 +956,14 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
 
 class PgSmartsShutdownCommand(sublime_plugin.WindowCommand):
     def input(self, args):
-        if "server" not in args:
-            rootPath = window_rootPath(self.window)
+        if "smart_uuid" not in args:
+            return SmartsInputHandler(list_smarts(self.window))
 
-            started_servers_ = started_servers(rootPath)
-
-            return ServerInputHandler(
-                sorted(started_servers_.keys()) if started_servers_ else []
-            )
-
-    def run(self, server):
-        rootPath = window_rootPath(self.window)
-
-        if started_server_ := started_server(rootPath, server):
-            started_server_["client"].shutdown()
-
-            global _STARTED_SERVERS
-            del _STARTED_SERVERS[rootPath][server]
+    def run(self, smart_uuid):
+        for smart in list_smarts(self.window):
+            if smart["uuid"] == smart_uuid:
+                smart["client"].shutdown()
+                return
 
 
 class PgSmartsToggleOutputPanelCommand(sublime_plugin.WindowCommand):

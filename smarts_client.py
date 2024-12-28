@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, Optional
 
 from .smarts_typing import SmartsServerConfig, LSPMessage
 
+
 class LanguageServerClient:
     def __init__(
         self,
@@ -290,6 +291,10 @@ class LanguageServerClient:
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
         """
+
+        if self._server_shutdown.is_set():
+            self._logger.info(f"Server {self._config['name']} is down")
+            return
 
         self._logger.info(f"Shutdown {self._config['name']}")
 
