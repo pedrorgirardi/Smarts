@@ -187,8 +187,16 @@ class LanguageServerClient:
     ):
         # Drop message if server is not ready - unless it's an initization message.
         if not self._server_initialized and not message["method"] == "initialize":
-            self._logger.debug(
+            self._logger.warn(
                 f"Server {self._config['name']} is not initialized; Will drop {message['method']}"
+            )
+
+            return
+
+        # Drop message if server was shutdown.
+        if self._server_shutdown.is_set():
+            self._logger.warn(
+                f"Server {self._config['name']} was shutdown; Will drop {message['method']}"
             )
 
             return
@@ -291,10 +299,6 @@ class LanguageServerClient:
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
         """
-
-        if self._server_shutdown.is_set():
-            self._logger.info(f"Server {self._config['name']} is down")
-            return
 
         self._logger.info(f"Shutdown {self._config['name']}")
 
