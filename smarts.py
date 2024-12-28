@@ -154,11 +154,6 @@ def started_servers_values(rootPath: str):
     return _STARTED_SERVERS.get(rootPath, {}).values()
 
 
-def started_server(rootPath: str, server):
-    if started_servers_ := started_servers(rootPath):
-        return started_servers_.get(server)
-
-
 def add_server(rootPath: str, started_server):
     server_name = started_server["config"]["name"]
 
@@ -1469,43 +1464,46 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if not self.view.file_name():
             return
 
-        rootPath = window_rootPath(self.view.window())
+        window = self.view.window()
 
-        if started_servers_ := started_servers(rootPath):
-            for started_server in started_servers_.values():
-                config = started_server["config"]
-                client = started_server["client"]
+        if not window:
+            return
 
-                if view_applicable(config, self.view):
-                    client.textDocument_didOpen(
-                        {
-                            "textDocument": view_text_document_item(self.view),
-                        }
-                    )
+        for smart in list_smarts(window):
+            smart_client = smart["client"]
+            smart_client_config = smart_client._config
+
+            if view_applicable(smart_client_config, self.view):
+                smart_client.textDocument_didOpen(
+                    {
+                        "textDocument": view_text_document_item(self.view),
+                    }
+                )
 
     def on_pre_close(self):
-        if not self.view.file_name():
+        view_file_name = self.view.file_name()
+
+        if not view_file_name:
             return
 
         # When the window is closed, there's no window 'attached' to view.
-        if not self.view.window():
+        window = self.view.window()
+
+        if not window:
             return
 
-        rootPath = window_rootPath(self.view.window())
+        for smart in list_smarts(window):
+            smart_client = smart["client"]
+            smart_client_config = smart_client._config
 
-        if started_servers_ := started_servers(rootPath):
-            for started_server in started_servers_.values():
-                config = started_server["config"]
-                client = started_server["client"]
-
-                if view_applicable(config, self.view):
-                    client.textDocument_didClose(
-                        {
-                            "textDocument": {
-                                "uri": path_to_uri(self.view.file_name()),
-                            },
-                        },
-                    )
+            if view_applicable(smart_client_config, self.view):
+                smart_client.textDocument_didClose(
+                    {
+                        "textDocument": {
+                            "uri": path_to_uri(view_file_name),
+                        }
+                    }
+                )
 
     def erase_highlights(self):
         self.view.erase_regions(kSMARTS_HIGHLIGHTS)
