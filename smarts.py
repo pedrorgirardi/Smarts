@@ -837,14 +837,11 @@ class SmartsInputHandler(sublime_plugin.ListInputHandler):
         items = []
 
         for smart in self.items:
-            is_shutdown = "[Shutdown] " if smart["client"]._server_shutdown.is_set() else ""
+            if not smart["client"]._server_shutdown.is_set():
+                smart_uuid = smart["uuid"]
+                smart_server_name = smart["client"]._config["name"]
 
-            items.append(
-                (
-                    f'{is_shutdown}{smart["client"]._config["name"]}',
-                    smart["uuid"],
-                )
-            )
+                items.append((f"{smart_server_name} {smart_uuid}", smart_uuid))
 
         return items
 
