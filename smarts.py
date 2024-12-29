@@ -1286,11 +1286,12 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
 
             def callback(response):
                 if error := response.get("error"):
-                    panel_log(
-                        self.view.window(),
-                        f"Error: {error.get('code')} {error.get('message')}\n",
-                        show=True,
-                    )
+                    if window := self.view.window():
+                        panel_log(
+                            window,
+                            f"Error: {error.get('code')} {error.get('message')}\n",
+                            show=True,
+                        )
 
                 if result := response["result"]:
                     show_hover_popup(self.view, result)
@@ -1300,29 +1301,30 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
 
 class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
     def run(self, _):
-        if not self.view.file_name():
+        view_file_name = self.view.file_name()
+
+        if not view_file_name:
             return
 
         if applicable_server_ := applicable_smart(self.view):
-            settings = self.view.settings()
-
             params = {
                 "textDocument": {
-                    "uri": path_to_uri(self.view.file_name()),
+                    "uri": path_to_uri(view_file_name),
                 },
                 "options": {
-                    "tabSize": settings.get("tab_size"),
+                    "tabSize": self.view.settings().get("tab_size"),
                     "insertSpaces": True,
                 },
             }
 
             def callback(response):
                 if error := response.get("error"):
-                    panel_log(
-                        self.view.window(),
-                        f"Error: {error.get('code')} {error.get('message')}\n",
-                        show=True,
-                    )
+                    if window := self.view.window():
+                        panel_log(
+                            window,
+                            f"Error: {error.get('code')} {error.get('message')}\n",
+                            show=True,
+                        )
 
                 if textEdits := response.get("result"):
                     self.view.run_command(
@@ -1351,7 +1353,9 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
     def on_text_changed_async(self, changes):
         view = self.buffer.primary_view()
 
-        if not view.file_name():
+        view_file_name = view.file_name()
+
+        if not view_file_name:
             return
 
         language_client = None
@@ -1373,7 +1377,7 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
         #
         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#versionedTextDocumentIdentifier
         textDocument = {
-            "uri": path_to_uri(view.file_name()),
+            "uri": path_to_uri(view_file_name),
             "version": view.change_count(),
         }
 
