@@ -1,21 +1,25 @@
-import json
 import logging
 import os
 import pprint
 import re
-import subprocess
 import tempfile
 import threading
 import uuid
 from itertools import groupby
 from pathlib import Path
-from queue import Queue
-from typing import cast, Union
+from typing import Any, List, Optional, TypedDict, Tuple, Callable
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
 import sublime
 import sublime_plugin
+
+from .smarts_typing import (
+    SmartsProjectData,
+    SmartsServerConfig,
+    LSPMessage,
+)
+from .smarts_client import LanguageServerClient
 
 # -- Logging
 
@@ -79,12 +83,25 @@ kMINIHTML_STYLES = """
 }
 """
 
+
+# ---------------------------------------------------------------------------------------
+
+
+class Smart(TypedDict):
+    uuid: str
+    window: int  # Window ID
+    client: LanguageServerClient
+
+
 # ---------------------------------------------------------------------------------------
 
 
 # -- Global Variables
 
-_STARTED_SERVERS = {}
+_SMARTS: List[Smart] = []
+
+
+# ---------------------------------------------------------------------------------------
 
 
 ## -- API
@@ -94,65 +111,71 @@ def settings() -> sublime.Settings:
     return sublime.load_settings("Smarts.sublime-settings")
 
 
-def project_data(window) -> Union[dict, None]:
+def smarts_project_data(window: sublime.Window) -> Optional[SmartsProjectData]:
     if project_data_ := window.project_data():
         return project_data_.get("Smarts")
 
     return None
 
 
-def window_project_path(window: sublime.Window) -> Union[Path, None]:
+def setting(window: sublime.Window, k: str, not_found: Any):
+    """
+    Get setting k from project's data or Smarts.sublime-settings.
+
+    Returns not_found if setting k is is not set.
+    """
+    v = smarts_project_data(window).get(k)
+
+    return v if v is not None else settings().get(k, not_found)
+
+
+def window_project_path(window: sublime.Window) -> Optional[Path]:
     if project_path := window.extract_variables().get("project_path"):
         return Path(project_path)
 
     return None
 
 
-def window_rootPath(window: sublime.Window) -> Union[str, None]:
-    return window.folders()[0] if window.folders() else None
-
-
-def available_servers():
+def available_servers() -> List[SmartsServerConfig]:
     return settings().get(kSETTING_SERVERS, [])
 
 
-def started_servers(rootPath: str):
-    return _STARTED_SERVERS.get(rootPath)
+def add_smart(window: sublime.Window, client: LanguageServerClient):
+    global _SMARTS
+
+    _SMARTS.append(
+        {
+            "uuid": str(uuid.uuid4()),
+            "window": window.id(),
+            "client": client,
+        }
+    )
+
+    return _SMARTS
 
 
-def started_servers_values(rootPath: str):
-    return _STARTED_SERVERS.get(rootPath, {}).values()
+def list_smarts(window: sublime.Window) -> List[Smart]:
+    return [smart for smart in _SMARTS if smart["window"] == window.id()]
 
 
-def started_server(rootPath: str, server):
-    if started_servers_ := started_servers(rootPath):
-        return started_servers_.get(server)
-
-
-def add_server(rootPath: str, started_server):
-    server_name = started_server["config"]["name"]
-
-    global _STARTED_SERVERS
-
-    if started_servers_ := _STARTED_SERVERS.get(rootPath):
-        started_servers_[server_name] = started_server
-    else:
-        _STARTED_SERVERS[rootPath] = {server_name: started_server}
+def shutdown_smarts(window: sublime.Window):
+    for smart in list_smarts(window):
+        smart["client"].shutdown()
 
 
 def initialize_project_servers(window: sublime.Window):
     """
     Initialize Language Servers configured in a Sublime Project.
     """
-    if project_data_ := project_data(window):
-        project_path = window_project_path(window)
-
+    if project_data_ := smarts_project_data(window):
         # It's expected a list of server (dict) with 'name', and 'rootPath' optionally - 'rootPath' can be a relative.
-        for server in project_data_.get("initialize", []):
-            rootPath = server.get("rootPath")
+        for initialize_data in project_data_.get("initialize", []):
+            rootPath = initialize_data.get("rootPath")
 
             if rootPath is not None:
                 rootPath = Path(rootPath)
+
+                project_path = window_project_path(window)
 
                 if not rootPath.is_absolute() and project_path is not None:
                     rootPath = (project_path / rootPath).resolve()
@@ -160,7 +183,7 @@ def initialize_project_servers(window: sublime.Window):
             window.run_command(
                 "pg_smarts_initialize",
                 {
-                    "server": server.get("name"),
+                    "server": initialize_data.get("name"),
                     "rootPath": rootPath.as_posix() if rootPath is not None else None,
                 },
             )
@@ -175,7 +198,7 @@ def view_syntax(view: sublime.View) -> str:
     return view.settings().get("syntax")
 
 
-def view_applicable(config, view: sublime.View):
+def view_applicable(config: SmartsServerConfig, view: sublime.View) -> bool:
     """
     Returns True if view is applicable.
 
@@ -183,35 +206,42 @@ def view_applicable(config, view: sublime.View):
     """
     applicable_to = set(config.get("applicable_to", []))
 
-    return view.file_name() and view_syntax(view) in applicable_to
+    return view.file_name() is not None and view_syntax(view) in applicable_to
 
 
-def applicable_servers(view: sublime.View):
+def applicable_smarts(view: sublime.View) -> List[Smart]:
     """
     Returns started servers applicable to view.
     """
-    if not view.window():
+    window = view.window()
+
+    if window is None:
         return []
 
-    servers = []
+    smarts = []
 
-    window = cast(sublime.Window, view.window())
+    for smart in list_smarts(window):
+        smart_client = smart["client"]
+        smart_client_config = smart_client._config
 
-    rootPath = cast(str, window_rootPath(window))
+        # Skip a possible applicable smart if server is shutdown.
+        if smart_client._server_shutdown.is_set():
+            continue
 
-    for started_server in started_servers_values(rootPath):
-        if view_applicable(started_server["config"], view):
-            servers.append(started_server)
+        if view_applicable(smart_client_config, view):
+            smarts.append(smart)
 
-    return servers
+    return smarts
 
 
-def applicable_server(view):
+def applicable_smart(view: sublime.View) -> Optional[Smart]:
     """
     Returns the first started server applicable to view, or None.
     """
-    if applicable := applicable_servers(view):
+    if applicable := applicable_smarts(view):
         return applicable[0]
+
+    return None
 
 
 def text_to_html(s: str) -> str:
@@ -222,7 +252,7 @@ def text_to_html(s: str) -> str:
     return html
 
 
-def output_panel(window) -> sublime.View:
+def output_panel(window: sublime.Window) -> sublime.View:
     if panel_view := window.find_output_panel(kOUTPUT_PANEL_NAME):
         return panel_view
     else:
@@ -239,7 +269,7 @@ def output_panel(window) -> sublime.View:
         return panel_view
 
 
-def show_output_panel(window):
+def show_output_panel(window: sublime.Window):
     window.run_command(
         "show_panel",
         {
@@ -248,7 +278,7 @@ def show_output_panel(window):
     )
 
 
-def hide_output_panel(window):
+def hide_output_panel(window: sublime.Window):
     window.run_command(
         "hide_panel",
         {
@@ -257,7 +287,7 @@ def hide_output_panel(window):
     )
 
 
-def toggle_output_panel(window):
+def toggle_output_panel(window: sublime.Window):
     if window.active_panel() == kOUTPUT_PANEL_NAME_PREFIXED:
         hide_output_panel(window)
     else:
@@ -267,7 +297,7 @@ def toggle_output_panel(window):
         show_output_panel(window)
 
 
-def panel_log(window, text, show=False):
+def panel_log(window: sublime.Window, text: str, show=False):
     panel_view = output_panel(window)
     panel_view.run_command("insert", {"characters": text})
 
@@ -313,20 +343,20 @@ def show_hover_popup(view: sublime.View, result):
     view.show_popup(minihtml, location=location, max_width=860)
 
 
-def severity_name(severity):
-    if severity == 1:
+def severity_name(severity: int):
+    if severity == kDIAGNOSTIC_SEVERITY_ERROR:
         return "Error"
-    elif severity == 2:
+    elif severity == kDIAGNOSTIC_SEVERITY_WARNING:
         return "Warning"
-    elif severity == 3:
+    elif severity == kDIAGNOSTIC_SEVERITY_INFORMATION:
         return "Info"
-    elif severity == 4:
+    elif severity == kDIAGNOSTIC_SEVERITY_HINT:
         return "Hint"
     else:
         return f"Unknown {severity}"
 
 
-def severity_scope(severity):
+def severity_scope(severity: int):
     if severity == kDIAGNOSTIC_SEVERITY_ERROR:
         return "region.redish"
     elif severity == kDIAGNOSTIC_SEVERITY_WARNING:
@@ -339,7 +369,7 @@ def severity_scope(severity):
         return "invalid"
 
 
-def severity_annotation_color(view, severity):
+def severity_annotation_color(view: sublime.View, severity: int) -> Optional[str]:
     scope = severity_scope(severity)
 
     style = view.style_for_scope(scope)
@@ -347,14 +377,14 @@ def severity_annotation_color(view, severity):
     return style.get("foreground")
 
 
-def severity_kind(severity):
-    if severity == 1:
+def severity_kind(severity: int):
+    if severity == kDIAGNOSTIC_SEVERITY_ERROR:
         return (sublime.KIND_ID_COLOR_REDISH, "E", "E")
-    elif severity == 2:
+    elif severity == kDIAGNOSTIC_SEVERITY_WARNING:
         return (sublime.KIND_ID_COLOR_ORANGISH, "W", "W")
-    elif severity == 3:
+    elif severity == kDIAGNOSTIC_SEVERITY_INFORMATION:
         return (sublime.KIND_ID_COLOR_BLUISH, "I", "I")
-    elif severity == 4:
+    elif severity == kDIAGNOSTIC_SEVERITY_HINT:
         return (sublime.KIND_ID_COLOR_PURPLISH, "H", "H")
     else:
         return (sublime.KIND_ID_AMBIGUOUS, "", "")
@@ -444,21 +474,28 @@ def uri_to_path(uri: str) -> str:
     return unquote(urlparse(uri).path)
 
 
-def view_text_document_item(view):
+def view_file_name_uri(view: sublime.View) -> str:
+    if file_name := view.file_name():
+        return path_to_uri(file_name)
+    else:
+        return f"untitled://{view.id()}"
+
+
+def view_text_document_item(view: sublime.View) -> dict:
     """
     An item to transfer a text document from the client to the server.
 
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentItem
     """
     return {
-        "uri": path_to_uri(view.file_name()),
+        "uri": view_file_name_uri(view),
         "languageId": syntax_languageId(view_syntax(view)),
         "version": view.change_count(),
         "text": view.substr(sublime.Region(0, view.size())),
     }
 
 
-def open_location_jar(window, location, flags):
+def open_location_jar(window: sublime.Window, location, flags):
     """
     Open JAR `fname` and call `f` with the path of the temporary file.
     """
@@ -484,7 +521,7 @@ def open_location_jar(window, location, flags):
             open_location(window, new_location, flags)
 
 
-def open_location(window, location, flags=sublime.ENCODED_POSITION):
+def open_location(window: sublime.Window, location, flags=sublime.ENCODED_POSITION):
     fname = uri_to_path(location["uri"])
 
     if ".jar:" in fname:
@@ -496,7 +533,7 @@ def open_location(window, location, flags=sublime.ENCODED_POSITION):
         window.open_file(f"{fname}:{row}:{col}", flags)
 
 
-def capture_view(view):
+def capture_view(view: sublime.View) -> Callable:
     regions = [region for region in view.sel()]
 
     viewport_position = view.viewport_position()
@@ -514,7 +551,7 @@ def capture_view(view):
     return restore
 
 
-def capture_viewport_position(view):
+def capture_viewport_position(view: sublime.View) -> Callable:
     viewport_position = view.viewport_position()
 
     def restore():
@@ -559,15 +596,18 @@ def goto_location(window, locations, on_cancel=None):
 # -- LSP
 
 
-def view_textDocumentParams(view):
+def view_textDocumentIdentifier(view: sublime.View):
+    """
+    Text documents are identified using a URI. On the protocol level, URIs are passed as strings.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentIdentifier
+    """
     return {
-        "textDocument": {
-            "uri": Path(view.file_name()).as_uri(),
-        }
+        "uri": view_file_name_uri(view),
     }
 
 
-def view_textDocumentPositionParams(view, point=None):
+def view_textDocumentPositionParams(view: sublime.View, point=None):
     """
     A parameter literal used in requests to pass a text document and a position inside that document.
 
@@ -578,9 +618,7 @@ def view_textDocumentPositionParams(view, point=None):
     line, character = view.rowcol(point or default_point)
 
     return {
-        "textDocument": {
-            "uri": path_to_uri(view.file_name()),
-        },
+        "textDocument": view_textDocumentIdentifier(view),
         "position": {
             "line": line,
             "character": character,
@@ -726,12 +764,20 @@ def handle_textDocument_publishDiagnostics(window, message):
         view.set_status(kDIAGNOSTICS, ", ".join(diagnostics_status))
 
 
-def on_send_message(window, server, message):
+def on_send_message(
+    window: sublime.Window,
+    server: str,
+    message: LSPMessage,
+):
     # panel_log(window, f'{server} {message.get("method")}\n')
     pass
 
 
-def on_receive_message(window, server, message):
+def on_receive_message(
+    window: sublime.Window,
+    server: str,
+    message: LSPMessage,
+):
     message_method = message.get("method")
 
     if message_method == "$/logTrace":
@@ -751,527 +797,6 @@ def on_receive_message(window, server, message):
         panel_log(window, f"{pprint.pformat(message)}\n\n")
 
 
-# -- CLIENT
-
-
-class LanguageServerClient:
-    def __init__(
-        self,
-        logger,
-        server_name,
-        server_start,
-        on_send=None,
-        on_receive=None,
-    ):
-        self._logger = logger
-        self._server_name = server_name
-        self._server_start = server_start
-        self._server_process = None
-        self._server_shutdown = threading.Event()
-        self._server_initialized = False
-        self._server_info = None
-        self._server_capabilities = None
-        self._on_send = on_send
-        self._on_receive = on_receive
-        self._send_queue = Queue(maxsize=1)
-        self._receive_queue = Queue(maxsize=1)
-        self._reader = None
-        self._writer = None
-        self._handler = None
-        self._request_callback = {}
-        self._open_documents = set()
-
-    def capabilities_textDocumentSync(self):
-        """
-        Defines how text documents are synced.
-
-        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentSyncOptions
-        """
-        if capabilities := self._server_capabilities:
-            # If omitted it defaults to `TextDocumentSyncKind.None`.
-            textDocumentSync = capabilities.get(
-                "textDocumentSync",
-                {
-                    "change": 0,
-                },
-            )
-
-            # Is either a detailed structure defining each notification
-            # or for backwards compatibility the TextDocumentSyncKind number.
-            if not isinstance(textDocumentSync, dict):
-                textDocumentSync = {
-                    "change": textDocumentSync,
-                }
-
-            return textDocumentSync
-
-    def _read(self, out, n):
-        remaining = n
-
-        chunks = []
-
-        while remaining > 0:
-            chunk = out.read(remaining)
-
-            # End of file or stream
-            if not chunk:
-                break
-
-            chunks.append(chunk)
-
-            remaining -= len(chunk)
-
-        return b"".join(chunks)
-
-    def _start_reader(self):
-        self._logger.debug(f"[{self._server_name}] Reader started 🟢")
-
-        while not self._server_shutdown.is_set():
-            out = self._server_process.stdout
-
-            # The base protocol consists of a header and a content part (comparable to HTTP).
-            # The header and content part are separated by a ‘\r\n’.
-            #
-            # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#baseProtocol
-
-            # -- HEADER
-
-            headers = {}
-
-            while True:
-                line = out.readline().decode("ascii").strip()
-
-                if line == "":
-                    break
-
-                k, v = line.split(": ", 1)
-
-                headers[k] = v
-
-            # -- CONTENT
-
-            if content_length := headers.get("Content-Length"):
-                content = self._read(out, int(content_length)).decode("utf-8").strip()
-
-                try:
-                    message = json.loads(content)
-
-                    # Enqueue message; Blocks if queue is full.
-                    self._receive_queue.put(message)
-
-                except json.JSONDecodeError:
-                    # The effect of not being able to decode a message,
-                    # is that an 'in-flight' request won't have its callback called.
-                    self._logger.error(f"Failed to decode message: {content}")
-
-        self._logger.debug(f"[{self._server_name}] Reader stopped 🔴")
-
-    def _start_writer(self):
-        self._logger.debug(f"[{self._server_name}] Writer started 🟢")
-
-        while (message := self._send_queue.get()) is not None:
-            try:
-                content = json.dumps(message)
-
-                header = f"Content-Length: {len(content)}\r\n\r\n"
-
-                try:
-                    encoded = header.encode("ascii") + content.encode("utf-8")
-                    self._server_process.stdin.write(encoded)
-                    self._server_process.stdin.flush()
-                except BrokenPipeError as e:
-                    self._logger.error(
-                        f"{self._server_name} - Can't write to server's stdin: {e}"
-                    )
-
-                if self._on_send:
-                    try:
-                        self._on_send(message)
-                    except Exception:
-                        self._logger.exception("Error handling sent message")
-
-            finally:
-                self._send_queue.task_done()
-
-        # 'None Task' is complete.
-        self._send_queue.task_done()
-
-        self._logger.debug(f"[{self._server_name}] Writer stopped 🔴")
-
-    def _start_handler(self):
-        self._logger.debug(f"[{self._server_name}] Handler started 🟢")
-
-        while (message := self._receive_queue.get()) is not None:  # noqa
-            if self._on_receive:
-                try:
-                    self._on_receive(message)
-                except Exception:
-                    self._logger.exception("Error handling received message")
-
-            if request_id := message.get("id"):
-                if callback := self._request_callback.get(request_id):
-                    try:
-                        callback(message)
-                    except Exception:
-                        self._logger.exception(
-                            f"{self._server_name} - Request callback error"
-                        )
-                    finally:
-                        del self._request_callback[request_id]
-
-            self._receive_queue.task_done()
-
-        # 'None Task' is complete.
-        self._receive_queue.task_done()
-
-        self._logger.debug(f"[{self._server_name}] Handler stopped 🔴")
-
-    def _put(self, message, callback=None, on_put=None):
-        # Drop message if server is not ready - unless it's an initization message.
-        if not self._server_initialized and not message["method"] == "initialize":
-            self._logger.debug(
-                f"Server {self._server_name} is not initialized; Will drop {message['method']}"
-            )
-
-            return
-
-        self._send_queue.put(message)
-
-        if on_put:
-            on_put()
-
-        if message_id := message.get("id"):
-            # A mapping of request ID to callback.
-            #
-            # callback will be called once the response for the request is received.
-            #
-            # callback might not be called if there's an error reading the response,
-            # or the server never returns a response.
-            self._request_callback[message_id] = callback
-
-    def initialize(self, params, callback):
-        """
-        The initialize request is sent as the first request from the client to the server.
-        Until the server has responded to the initialize request with an InitializeResult,
-        the client must not send any additional requests or notifications to the server.
-
-        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
-        """
-
-        if self._server_initialized:
-            return
-
-        self._logger.debug(f"Initialize {self._server_name} {self._server_start}")
-
-        self._server_process = subprocess.Popen(
-            self._server_start,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-
-        self._logger.info(
-            f"{self._server_name} is up and running; PID {self._server_process.pid}"
-        )
-
-        # Thread responsible for handling received messages.
-        self._handler = threading.Thread(
-            name="Handler",
-            target=self._start_handler,
-            daemon=True,
-        )
-        self._handler.start()
-
-        # Thread responsible for sending/writing messages.
-        self._writer = threading.Thread(
-            name="Writer",
-            target=self._start_writer,
-            daemon=True,
-        )
-        self._writer.start()
-
-        # Thread responsible for reading messages.
-        self._reader = threading.Thread(
-            name="Reader",
-            target=self._start_reader,
-            daemon=True,
-        )
-        self._reader.start()
-
-        def _callback(response):
-            self._server_initialized = True
-            self._server_capabilities = response.get("result").get("capabilities")
-            self._server_info = response.get("result").get(
-                "serverInfo",
-                {
-                    "name": "-",
-                    "version": "-",
-                },
-            )
-
-            self._put({
-                "jsonrpc": "2.0",
-                "method": "initialized",
-                "params": {},
-            })
-
-            callback(response)
-
-        self._put(
-            {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "initialize",
-                "params": params,
-            },
-            _callback,
-        )
-
-    def shutdown(self, callback=None):
-        """
-        The shutdown request is sent from the client to the server.
-        It asks the server to shut down,
-        but to not exit (otherwise the response might not be delivered correctly to the client).
-        There is a separate exit notification that asks the server to exit.
-
-        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
-        """
-
-        self._logger.info(f"Shutdown {self._server_name}")
-
-        def _callback(message):
-            self.exit()
-
-            if callback:
-                callback(message)
-
-        self._put(
-            {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "shutdown",
-                "params": {},
-            },
-            _callback,
-        )
-
-    def exit(self):
-        """
-        A notification to ask the server to exit its process.
-        The server should exit with success code 0 if the shutdown request has been received before;
-        otherwise with error code 1.
-
-        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#exit
-        """
-        self._logger.info(f"Exit {self._server_name}")
-
-        self._put({
-            "jsonrpc": "2.0",
-            "method": "exit",
-            "params": {},
-        })
-
-        self._server_shutdown.set()
-
-        # Enqueue `None` to signal that workers must stop:
-        self._send_queue.put(None)
-        self._receive_queue.put(None)
-
-        returncode = None
-
-        try:
-            returncode = self._server_process.wait(30)
-        except subprocess.TimeoutExpired:
-            # Explicitly kill the process if it did not terminate.
-            self._server_process.kill()
-
-            returncode = self._server_process.wait()
-
-        self._logger.info(
-            f"{self._server_name} terminated with returncode {returncode}"
-        )
-
-    def textDocument_didOpen(self, params):
-        """
-        The document open notification is sent from the client to the server
-        to signal newly opened text documents.
-
-        The document’s content is now managed by the client
-        and the server must not try to read the document’s content using the document’s Uri.
-
-        Open in this sense means it is managed by the client.
-        It doesn’t necessarily mean that its content is presented in an editor.
-
-        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didOpen
-        """
-
-        # An open notification must not be sent more than once without a corresponding close notification send before.
-        # This means open and close notification must be balanced and the max open count for a particular textDocument is one.
-        textDocument_uri = params["textDocument"]["uri"]
-
-        if textDocument_uri in self._open_documents:
-            return
-
-        self._put(
-            {
-                "jsonrpc": "2.0",
-                "method": "textDocument/didOpen",
-                "params": params,
-            },
-            on_put=lambda: self._open_documents.add(textDocument_uri),
-        )
-
-    def textDocument_didClose(self, params):
-        """
-        The document close notification is sent from the client to the server
-        when the document got closed in the client.
-
-        The document’s master now exists where
-        the document’s Uri points to (e.g. if the document’s Uri is a file Uri the master now exists on disk).
-
-        As with the open notification the close notification
-        is about managing the document’s content.
-        Receiving a close notification doesn’t mean that the document was open in an editor before.
-
-        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didClose
-        """
-
-        textDocument_uri = params["textDocument"]["uri"]
-
-        # A close notification requires a previous open notification to be sent.
-        if textDocument_uri not in self._open_documents:
-            return
-
-        self._put(
-            {
-                "jsonrpc": "2.0",
-                "method": "textDocument/didClose",
-                "params": params,
-            },
-            on_put=lambda: self._open_documents.remove(textDocument_uri),
-        )
-
-    def textDocument_didChange(self, params):
-        """
-        The document change notification is sent from the client to the server to signal changes to a text document.
-
-        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didChange
-        """
-
-        # Before a client can change a text document it must claim
-        # ownership of its content using the textDocument/didOpen notification.
-        if params["textDocument"]["uri"] not in self._open_documents:
-            return
-
-        self._put({
-            "jsonrpc": "2.0",
-            "method": "textDocument/didChange",
-            "params": params,
-        })
-
-    def textDocument_hover(self, params, callback):
-        """
-        The hover request is sent from the client to the server to request
-        hover information at a given text document position.
-
-        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_hover
-        """
-        self._put(
-            {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "textDocument/hover",
-                "params": params,
-            },
-            callback,
-        )
-
-    def textDocument_definition(self, params, callback):
-        """
-        The go to definition request is sent from the client to the server
-        to resolve the definition location of a symbol at a given text document position.
-
-        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_definition
-        """
-        self._put(
-            {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "textDocument/definition",
-                "params": params,
-            },
-            callback,
-        )
-
-    def textDocument_references(self, params, callback):
-        """
-        The references request is sent from the client to the server
-        to resolve project-wide references for the symbol denoted by the given text document position.
-
-        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_references
-        """
-        self._put(
-            {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "textDocument/references",
-                "params": params,
-            },
-            callback,
-        )
-
-    def textDocument_documentHighlight(self, params, callback):
-        """
-        The document highlight request is sent from the client to
-        the server to resolve document highlights for a given text document position.
-
-        For programming languages this usually highlights all references to the symbol scoped to this file.
-
-        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentHighlight
-        """
-        self._put(
-            {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "textDocument/documentHighlight",
-                "params": params,
-            },
-            callback,
-        )
-
-    def textDocument_documentSymbol(self, params, callback):
-        """
-        The document symbol request is sent from the client to the server.
-
-        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
-        """
-        self._put(
-            {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "textDocument/documentSymbol",
-                "params": params,
-            },
-            callback,
-        )
-
-    def textDocument_formatting(self, params, callback):
-        """
-        The document formatting request is sent from the client to the server to format a whole document.
-
-        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_formatting
-        """
-        self._put(
-            {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "textDocument/formatting",
-                "params": params,
-            },
-            callback,
-        )
-
-
 # -- INPUT HANDLERS
 
 
@@ -1289,41 +814,54 @@ class ServerInputHandler(sublime_plugin.ListInputHandler):
         return self.items
 
 
+class SmartsInputHandler(sublime_plugin.ListInputHandler):
+    def __init__(self, items: List[Smart]):
+        self.items = items
+
+    def placeholder(self):
+        return "Server"
+
+    def name(self):
+        return "smart_uuid"
+
+    def list_items(self):
+        items = []
+
+        for smart in self.items:
+            if not smart["client"]._server_shutdown.is_set():
+                smart_uuid = smart["uuid"]
+                smart_server_name = smart["client"]._config["name"]
+
+                items.append((f"{smart_server_name} {smart_uuid}", smart_uuid))
+
+        return items
+
+
 # -- COMMANDS
 
 
 class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "server" not in args:
-            available_servers_names = [config["name"] for config in available_servers()]
+            return ServerInputHandler(
+                sorted(
+                    [server_config["name"] for server_config in available_servers()],
+                )
+            )
 
-            return ServerInputHandler(sorted(available_servers_names))
-
-    def run(self, server, rootPath=None):
-        available_servers_indexed = {
-            config["name"]: config for config in available_servers()
-        }
-
-        config = available_servers_indexed.get(server)
-
-        client = LanguageServerClient(
-            logger=client_logger,
-            server_name=server,
-            server_start=config["start"],
-            on_send=lambda message: on_send_message(self.window, server, message),
-            on_receive=lambda message: on_receive_message(self.window, server, message),
-        )
-
+    def run(self, server: str, rootPath=None):
         if rootPath is None:
             rootPath = self.window.folders()[0] if self.window.folders() else None
 
-        rootPath = Path(rootPath) if rootPath is not None else None
+            if rootPath is None:
+                plugin_logger.error("Can't initialize server without a rootPath")
+                return
 
-        rootUri = rootPath.as_uri() if rootPath else None
+        rootPath = Path(rootPath)
 
-        workspaceFolders = (
-            [{"name": rootPath.name, "uri": rootUri}] if rootPath else None
-        )
+        rootUri = rootPath.as_uri()
+
+        workspaceFolders = [{"name": rootPath.name, "uri": rootUri}]
 
         params = {
             "processId": os.getpid(),
@@ -1333,7 +871,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             },
             # The rootPath of the workspace. Is null if no folder is open.
             # Deprecated in favour of rootUri.
-            "rootPath": rootPath.as_posix() if rootPath is not None else None,
+            "rootPath": rootPath.as_posix(),
             # The rootUri of the workspace. Is null if no folder is open.
             # If both rootPath and rootUri are set rootUri wins.
             # Deprecated in favour of workspaceFolders.
@@ -1361,47 +899,51 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             },
         }
 
+        server_config = None
+
+        for _server_config in available_servers():
+            if _server_config["name"] == server:
+                server_config = _server_config
+
+        if server_config is None:
+            plugin_logger.error(
+                f"Server {server} not found; Did you forget to configure Smarts.sublime-settings?"
+            )
+            return
+
+        client = LanguageServerClient(
+            logger=client_logger,
+            config=server_config,
+            on_send=lambda message: on_send_message(self.window, server, message),
+            on_receive=lambda message: on_receive_message(self.window, server, message),
+        )
+
+        add_smart(self.window, client)
+
         def callback(response):
-            # Notify the server about current views.
+            # Notify the server about 'open documents'.
             # (Check if a view's syntax is valid for the server.)
             for view in self.window.views():
-                if view.file_name() and view_applicable(config, view):
-                    client.textDocument_didOpen({
-                        "textDocument": view_text_document_item(view),
-                    })
+                if view_applicable(server_config, view):
+                    client.textDocument_didOpen(
+                        {
+                            "textDocument": view_text_document_item(view),
+                        }
+                    )
 
         client.initialize(params, callback)
-
-        rootPath = window_rootPath(self.window)
-
-        add_server(
-            rootPath,
-            {
-                "config": config,
-                "client": client,
-            },
-        )
 
 
 class PgSmartsShutdownCommand(sublime_plugin.WindowCommand):
     def input(self, args):
-        if "server" not in args:
-            rootPath = window_rootPath(self.window)
+        if "smart_uuid" not in args:
+            return SmartsInputHandler(list_smarts(self.window))
 
-            started_servers_ = started_servers(rootPath)
-
-            return ServerInputHandler(
-                sorted(started_servers_.keys()) if started_servers_ else []
-            )
-
-    def run(self, server):
-        rootPath = window_rootPath(self.window)
-
-        if started_server_ := started_server(rootPath, server):
-            started_server_["client"].shutdown()
-
-            global _STARTED_SERVERS
-            del _STARTED_SERVERS[rootPath][server]
+    def run(self, smart_uuid):
+        for smart in list_smarts(self.window):
+            if smart["uuid"] == smart_uuid:
+                smart["client"].shutdown()
+                return
 
 
 class PgSmartsToggleOutputPanelCommand(sublime_plugin.WindowCommand):
@@ -1422,48 +964,46 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
 
         label_class = "text-foreground-07"
 
-        for rootPath, started_servers in _STARTED_SERVERS.items():
-            minihtml += f"<span class='font-bold {label_class}'>Root path:</span> <span>{rootPath}</span><br /><br />"
+        for smart in list_smarts(self.window):
+            client = smart["client"]
 
-            for started_server in started_servers.values():
-                client: LanguageServerClient = started_server["client"]
+            textDocumentSync = client.capabilities_textDocumentSync()
 
-                textDocumentSync = client.capabilities_textDocumentSync()
+            # Open and close notifications are sent to the server.
+            # If omitted open close notifications should not be sent.
+            textDocumentSync_openClose = textDocumentSync.get("openClose", "-")
 
-                # Open and close notifications are sent to the server.
-                # If omitted open close notifications should not be sent.
-                textDocumentSync_openClose = textDocumentSync.get("openClose", "-")
+            change: int = textDocumentSync.get("change", 0)
 
-                change: int = textDocumentSync.get("change", 0)
+            # Change notifications are sent to the server.
+            textDocumentSync_change = {
+                0: "0 - None",
+                1: "1 - Full",
+                2: "2 - Incremental",
+            }.get(
+                change,
+                change,
+            )
 
-                # Change notifications are sent to the server.
-                textDocumentSync_change = {
-                    0: "0 - None",
-                    1: "1 - Full",
-                    2: "2 - Incremental",
-                }.get(
-                    change,
-                    change,
-                )
+            documentSymbolProvider = client._server_capabilities.get(
+                "documentSymbolProvider", "-"
+            )
+            documentHighlightProvider = client._server_capabilities.get(
+                "documentHighlightProvider", "-"
+            )
 
-                documentSymbolProvider = client._server_capabilities.get(
-                    "documentSymbolProvider", "-"
-                )
-                documentHighlightProvider = client._server_capabilities.get(
-                    "documentHighlightProvider", "-"
-                )
+            # Server name & version
+            if server_info := client._server_info:
+                minihtml += f"<strong>{server_info.get('name', '')}, version {server_info.get('version', '')}</strong><br /><br />"
 
-                # Server name & version
-                minihtml += f"<strong>{client._server_info['name']}, version {client._server_info['version']}</strong><br /><br />"
+            minihtml += "<ul class='m-0'>"
 
-                minihtml += "<ul class='m-0'>"
+            minihtml += f"<li><span class='{label_class}'>openClose:</span> {textDocumentSync_openClose}</li>"
+            minihtml += f"<li><span class='{label_class}'>change:</span> {textDocumentSync_change}</li>"
+            minihtml += f"<li><span class='{label_class}'>documentSymbolProvider:</span> {documentSymbolProvider}</li>"
+            minihtml += f"<li><span class='{label_class}'>documentHighlightProvider:</span> {documentHighlightProvider}</li>"
 
-                minihtml += f"<li><span class='{label_class}'>openClose:</span> {textDocumentSync_openClose}</li>"
-                minihtml += f"<li><span class='{label_class}'>change:</span> {textDocumentSync_change}</li>"
-                minihtml += f"<li><span class='{label_class}'>documentSymbolProvider:</span> {documentSymbolProvider}</li>"
-                minihtml += f"<li><span class='{label_class}'>documentHighlightProvider:</span> {documentHighlightProvider}</li>"
-
-                minihtml += "</ul><br /><br />"
+            minihtml += "</ul><br /><br />"
 
         if not minihtml:
             return
@@ -1486,76 +1026,71 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
 
 class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
     def run(self, _):
-        for started_server in started_servers_values(
-            window_rootPath(self.view.window())
-        ):
-            config = started_server["config"]
-            client = started_server["client"]
+        smart = applicable_smart(self.view)
 
-            if view_applicable(config, self.view):
+        if not smart:
+            return
 
-                def callback(response):
-                    if error := response.get("error"):
-                        panel_log(
-                            self.view.window(),
-                            f"Error: {error.get('code')} {error.get('message')}\n",
-                            show=True,
-                        )
+        params = view_textDocumentPositionParams(self.view)
 
-                    result = response.get("result")
+        def callback(response):
+            if error := response.get("error"):
+                if window := self.view.window():
+                    panel_log(
+                        window,
+                        f"Error: {error.get('code')} {error.get('message')}\n",
+                        show=True,
+                    )
 
-                    if not result:
-                        return
+            result = response.get("result")
 
-                    restore_view = capture_view(self.view)
+            if not result:
+                return
 
-                    locations = [result] if isinstance(result, dict) else result
+            restore_view = capture_view(self.view)
 
-                    goto_location(self.view.window(), locations, on_cancel=restore_view)
+            locations = [result] if isinstance(result, dict) else result
 
-                client.textDocument_definition(
-                    view_textDocumentPositionParams(self.view),
-                    callback,
-                )
+            goto_location(self.view.window(), locations, on_cancel=restore_view)
+
+        smart["client"].textDocument_definition(params, callback)
 
 
 class PgSmartsGotoReference(sublime_plugin.TextCommand):
     def run(self, _):
-        for started_server in started_servers_values(
-            window_rootPath(self.view.window())
-        ):
-            config = started_server["config"]
-            client = started_server["client"]
+        smart = applicable_smart(self.view)
 
-            if view_applicable(config, self.view):
+        if not smart:
+            return
 
-                def callback(response):
-                    if error := response.get("error"):
-                        panel_log(
-                            self.view.window(),
-                            f"Error: {error.get('code')} {error.get('message')}\n",
-                            show=True,
-                        )
+        def callback(response):
+            if error := response.get("error"):
+                if window := self.view.window():
+                    panel_log(
+                        window,
+                        f"Error: {error.get('code')} {error.get('message')}\n",
+                        show=True,
+                    )
 
-                    result = response.get("result")
+            result = response.get("result")
 
-                    if not result:
-                        return
+            if not result:
+                return
 
-                    restore_view = capture_view(self.view)
+            restore_view = capture_view(self.view)
 
-                    goto_location(self.view.window(), result, on_cancel=restore_view)
+            goto_location(self.view.window(), result, on_cancel=restore_view)
 
-                params = {
-                    **view_textDocumentPositionParams(self.view),
-                    **{
-                        "context": {
-                            "includeDeclaration": False,
-                        },
-                    },
-                }
+        params = {
+            **view_textDocumentPositionParams(self.view),
+            **{
+                "context": {
+                    "includeDeclaration": False,
+                },
+            },
+        }
 
-                client.textDocument_references(params, callback)
+        smart["client"].textDocument_references(params, callback)
 
 
 class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
@@ -1605,18 +1140,19 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
 
 class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
     def run(self, _):
-        applicable_server_ = applicable_server(self.view)
+        applicable_server_ = applicable_smart(self.view)
 
         if not applicable_server_:
             return
 
         def callback(response):
             if error := response.get("error"):
-                panel_log(
-                    self.view.window(),
-                    f"Error: {error.get('code')} {error.get('message')}\n",
-                    show=True,
-                )
+                if window := self.view.window():
+                    panel_log(
+                        window,
+                        f"Error: {error.get('code')} {error.get('message')}\n",
+                        show=True,
+                    )
 
             if result := response.get("result"):
                 restore_viewport_position = capture_viewport_position(self.view)
@@ -1680,7 +1216,9 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                     on_highlight=on_highlight,
                 )
 
-        params = view_textDocumentParams(self.view)
+        params = {
+            "textDocument": view_textDocumentIdentifier(self.view),
+        }
 
         applicable_server_["client"].textDocument_documentSymbol(params, callback)
 
@@ -1753,16 +1291,17 @@ class PgSmartsJumpCommand(sublime_plugin.TextCommand):
 
 class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
     def run(self, _):
-        if applicable_server_ := applicable_server(self.view):
+        if applicable_server_ := applicable_smart(self.view):
             params = view_textDocumentPositionParams(self.view)
 
             def callback(response):
                 if error := response.get("error"):
-                    panel_log(
-                        self.view.window(),
-                        f"Error: {error.get('code')} {error.get('message')}\n",
-                        show=True,
-                    )
+                    if window := self.view.window():
+                        panel_log(
+                            window,
+                            f"Error: {error.get('code')} {error.get('message')}\n",
+                            show=True,
+                        )
 
                 if result := response["result"]:
                     show_hover_popup(self.view, result)
@@ -1772,29 +1311,28 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
 
 class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
     def run(self, _):
-        if not self.view.file_name():
+        view_file_name = self.view.file_name()
+
+        if not view_file_name:
             return
 
-        if applicable_server_ := applicable_server(self.view):
-            settings = self.view.settings()
-
+        if applicable_server_ := applicable_smart(self.view):
             params = {
-                "textDocument": {
-                    "uri": path_to_uri(self.view.file_name()),
-                },
+                "textDocument": view_textDocumentIdentifier(self.view),
                 "options": {
-                    "tabSize": settings.get("tab_size"),
+                    "tabSize": self.view.settings().get("tab_size"),
                     "insertSpaces": True,
                 },
             }
 
             def callback(response):
                 if error := response.get("error"):
-                    panel_log(
-                        self.view.window(),
-                        f"Error: {error.get('code')} {error.get('message')}\n",
-                        show=True,
-                    )
+                    if window := self.view.window():
+                        panel_log(
+                            window,
+                            f"Error: {error.get('code')} {error.get('message')}\n",
+                            show=True,
+                        )
 
                 if textEdits := response.get("result"):
                     self.view.run_command(
@@ -1823,12 +1361,14 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
     def on_text_changed_async(self, changes):
         view = self.buffer.primary_view()
 
-        if not view.file_name():
+        view_file_name = view.file_name()
+
+        if not view_file_name:
             return
 
         language_client = None
 
-        if applicable_server_ := applicable_server(view):
+        if applicable_server_ := applicable_smart(view):
             language_client = applicable_server_["client"]
 
         if not language_client:
@@ -1845,7 +1385,7 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
         #
         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#versionedTextDocumentIdentifier
         textDocument = {
-            "uri": path_to_uri(view.file_name()),
+            "uri": path_to_uri(view_file_name),
             "version": view.change_count(),
         }
 
@@ -1876,67 +1416,79 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
             contentChanges = []
 
             for change in changes:
-                contentChanges.append({
-                    "range": {
-                        "start": {
-                            "line": change.a.row,
-                            "character": change.a.col_utf16,
+                contentChanges.append(
+                    {
+                        "range": {
+                            "start": {
+                                "line": change.a.row,
+                                "character": change.a.col_utf16,
+                            },
+                            "end": {
+                                "line": change.b.row,
+                                "character": change.b.col_utf16,
+                            },
                         },
-                        "end": {
-                            "line": change.b.row,
-                            "character": change.b.col_utf16,
-                        },
-                    },
-                    "rangeLength": change.len_utf16,
-                    "text": change.str,
-                })
+                        "rangeLength": change.len_utf16,
+                        "text": change.str,
+                    }
+                )
 
-        language_client.textDocument_didChange({
-            "textDocument": textDocument,
-            "contentChanges": contentChanges,
-        })
+        language_client.textDocument_didChange(
+            {
+                "textDocument": textDocument,
+                "contentChanges": contentChanges,
+            }
+        )
 
 
 class PgSmartsViewListener(sublime_plugin.ViewEventListener):
     def on_load_async(self):
-        if not self.view.file_name():
+        window = self.view.window()
+
+        if not window:
             return
 
-        rootPath = window_rootPath(self.view.window())
+        for smart in list_smarts(window):
+            smart_client = smart["client"]
+            smart_client_config = smart_client._config
 
-        if started_servers_ := started_servers(rootPath):
-            for started_server in started_servers_.values():
-                config = started_server["config"]
-                client = started_server["client"]
+            # Skip server if not initialized.
+            if not smart_client._server_initialized:
+                continue
 
-                if view_applicable(config, self.view):
-                    client.textDocument_didOpen({
+            if view_applicable(smart_client_config, self.view):
+                smart_client.textDocument_didOpen(
+                    {
                         "textDocument": view_text_document_item(self.view),
-                    })
+                    }
+                )
 
     def on_pre_close(self):
-        if not self.view.file_name():
+        view_file_name = self.view.file_name()
+
+        if not view_file_name:
             return
 
         # When the window is closed, there's no window 'attached' to view.
-        if not self.view.window():
+        window = self.view.window()
+
+        if not window:
             return
 
-        rootPath = window_rootPath(self.view.window())
+        for smart in list_smarts(window):
+            smart_client = smart["client"]
+            smart_client_config = smart_client._config
 
-        if started_servers_ := started_servers(rootPath):
-            for started_server in started_servers_.values():
-                config = started_server["config"]
-                client = started_server["client"]
+            # Skip server if not initialized.
+            if not smart_client._server_initialized:
+                continue
 
-                if view_applicable(config, self.view):
-                    client.textDocument_didClose(
-                        {
-                            "textDocument": {
-                                "uri": path_to_uri(self.view.file_name()),
-                            },
-                        },
-                    )
+            if view_applicable(smart_client_config, self.view):
+                smart_client.textDocument_didClose(
+                    {
+                        "textDocument": view_textDocumentIdentifier(self.view),
+                    }
+                )
 
     def erase_highlights(self):
         self.view.erase_regions(kSMARTS_HIGHLIGHTS)
@@ -1944,18 +1496,19 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         self.view.settings().erase(kSMARTS_HIGHLIGHTS)
 
     def highlight(self):
-        applicable_server_ = applicable_server(self.view)
+        applicable_server_ = applicable_smart(self.view)
 
         if not applicable_server_:
             return
 
         def callback(response):
             if error := response.get("error"):
-                panel_log(
-                    self.view.window(),
-                    f"Error: {error.get('code')} {error.get('message')}\n",
-                    show=True,
-                )
+                if window := self.view.window():
+                    panel_log(
+                        window,
+                        f"Error: {error.get('code')} {error.get('message')}\n",
+                        show=True,
+                    )
 
             result = response.get("result")
 
@@ -1994,66 +1547,57 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if highlighter := getattr(self, "pg_smarts_highlighter", None):
             highlighter.cancel()
 
-        if not settings().get("editor.highlight_references"):
+        window = self.view.window()
+
+        if not window:
+            return
+
+        if not setting(window, "editor.highlight_references", False):
             return
 
         self.pg_smarts_highlighter = threading.Timer(0.3, self.highlight)
         self.pg_smarts_highlighter.start()
 
     def on_hover(self, point, hover_zone):
-        if not settings().get("editor.show_hover"):
+        window = self.view.window()
+
+        if not window:
+            return
+
+        if not setting(window, "editor.show_hover", False):
             return
 
         if hover_zone == sublime.HOVER_TEXT:
-            for started_server in started_servers_values(
-                window_rootPath(self.view.window())
-            ):
-                config = started_server["config"]
-                client = started_server["client"]
+            smart = applicable_smart(self.view)
 
-                if view_applicable(config, self.view):
-                    params = view_textDocumentPositionParams(self.view, point)
+            if not smart:
+                return
 
-                    def callback(response):
-                        if error := response.get("error"):
-                            panel_log(
-                                self.view.window(),
-                                f"Error: {error.get('code')} {error.get('message')}\n",
-                                show=True,
-                            )
+            params = view_textDocumentPositionParams(self.view, point)
 
-                        if result := response["result"]:
-                            show_hover_popup(self.view, result)
+            def callback(response):
+                if error := response.get("error"):
+                    panel_log(
+                        window,
+                        f"Error: {error.get('code')} {error.get('message')}\n",
+                        show=True,
+                    )
 
-                    client.textDocument_hover(params, callback)
+                if result := response["result"]:
+                    show_hover_popup(self.view, result)
+
+            smart["client"].textDocument_hover(params, callback)
 
 
 class PgSmartsListener(sublime_plugin.EventListener):
-    def shutdown_servers(self, window):
-        def shutdown(rootPath, started_servers):
-            for started_server in started_servers.values():
-                started_server["client"].shutdown()
-
-            global _STARTED_SERVERS
-            del _STARTED_SERVERS[rootPath]
-
-        rootPath = window_rootPath(window)
-
-        if started_servers_ := started_servers(rootPath):
-            threading.Thread(
-                name="PreCloseShutdown",
-                target=lambda: shutdown(rootPath, started_servers_),
-                daemon=True,
-            ).start()
-
-    def on_pre_close_window(self, window):
-        self.shutdown_servers(window)
-
     def on_load_project(self, window):
         initialize_project_servers(window)
 
+    def on_pre_close_window(self, window):
+        shutdown_smarts(window)
+
     def on_pre_close_project(self, window):
-        self.shutdown_servers(window)
+        shutdown_smarts(window)
 
 
 # -- PLUGIN LIFECYLE
@@ -2072,18 +1616,7 @@ def plugin_loaded():
 
 
 def plugin_unloaded():
-    if _STARTED_SERVERS:
-
-        def shutdown_servers():
-            for rootPath, servers in _STARTED_SERVERS.items():
-                for server_name, started_server in servers.items():
-                    started_server["client"].shutdown()
-
-        threading.Thread(
-            name="Unloaded",
-            target=lambda: shutdown_servers(),
-            daemon=True,
-        ).start()
+    shutdown_smarts(sublime.active_window())
 
     plugin_logger.debug("unloaded plugin")
 
