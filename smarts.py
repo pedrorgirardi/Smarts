@@ -474,14 +474,21 @@ def uri_to_path(uri: str) -> str:
     return unquote(urlparse(uri).path)
 
 
-def view_text_document_item(view):
+def view_file_name_uri(view: sublime.View) -> str:
+    if file_name := view.file_name():
+        return path_to_uri(file_name)
+    else:
+        return f"untitled://{view.id()}"
+
+
+def view_text_document_item(view: sublime.View) -> dict:
     """
     An item to transfer a text document from the client to the server.
 
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentItem
     """
     return {
-        "uri": path_to_uri(view.file_name()),
+        "uri": view_file_name_uri(view),
         "languageId": syntax_languageId(view_syntax(view)),
         "version": view.change_count(),
         "text": view.substr(sublime.Region(0, view.size())),
