@@ -7,7 +7,7 @@ import threading
 import uuid
 from itertools import groupby
 from pathlib import Path
-from typing import Any, List, Optional, TypedDict, Tuple
+from typing import Any, List, Optional, TypedDict, Tuple, Callable
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
@@ -495,7 +495,7 @@ def view_text_document_item(view: sublime.View) -> dict:
     }
 
 
-def open_location_jar(window, location, flags):
+def open_location_jar(window: sublime.Window, location, flags):
     """
     Open JAR `fname` and call `f` with the path of the temporary file.
     """
@@ -521,7 +521,7 @@ def open_location_jar(window, location, flags):
             open_location(window, new_location, flags)
 
 
-def open_location(window, location, flags=sublime.ENCODED_POSITION):
+def open_location(window: sublime.Window, location, flags=sublime.ENCODED_POSITION):
     fname = uri_to_path(location["uri"])
 
     if ".jar:" in fname:
@@ -533,7 +533,7 @@ def open_location(window, location, flags=sublime.ENCODED_POSITION):
         window.open_file(f"{fname}:{row}:{col}", flags)
 
 
-def capture_view(view):
+def capture_view(view: sublime.View) -> Callable:
     regions = [region for region in view.sel()]
 
     viewport_position = view.viewport_position()
@@ -551,7 +551,7 @@ def capture_view(view):
     return restore
 
 
-def capture_viewport_position(view):
+def capture_viewport_position(view: sublime.View) -> Callable:
     viewport_position = view.viewport_position()
 
     def restore():
@@ -596,15 +596,18 @@ def goto_location(window, locations, on_cancel=None):
 # -- LSP
 
 
-def view_textDocumentParams(view):
+def view_textDocumentIdentifier(view: sublime.View):
+    """
+    Text documents are identified using a URI. On the protocol level, URIs are passed as strings.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentIdentifier
+    """
     return {
-        "textDocument": {
-            "uri": Path(view.file_name()).as_uri(),
-        }
+        "uri": view_file_name_uri(view),
     }
 
 
-def view_textDocumentPositionParams(view, point=None):
+def view_textDocumentPositionParams(view: sublime.View, point=None):
     """
     A parameter literal used in requests to pass a text document and a position inside that document.
 
@@ -615,9 +618,7 @@ def view_textDocumentPositionParams(view, point=None):
     line, character = view.rowcol(point or default_point)
 
     return {
-        "textDocument": {
-            "uri": path_to_uri(view.file_name()),
-        },
+        "textDocument": view_textDocumentIdentifier(view),
         "position": {
             "line": line,
             "character": character,
@@ -1215,7 +1216,9 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                     on_highlight=on_highlight,
                 )
 
-        params = view_textDocumentParams(self.view)
+        params = {
+            "textDocument": view_textDocumentIdentifier(self.view),
+        }
 
         applicable_server_["client"].textDocument_documentSymbol(params, callback)
 
@@ -1315,9 +1318,7 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
 
         if applicable_server_ := applicable_smart(self.view):
             params = {
-                "textDocument": {
-                    "uri": path_to_uri(view_file_name),
-                },
+                "textDocument": view_textDocumentIdentifier(self.view),
                 "options": {
                     "tabSize": self.view.settings().get("tab_size"),
                     "insertSpaces": True,
@@ -1485,9 +1486,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             if view_applicable(smart_client_config, self.view):
                 smart_client.textDocument_didClose(
                     {
-                        "textDocument": {
-                            "uri": path_to_uri(view_file_name),
-                        }
+                        "textDocument": view_textDocumentIdentifier(self.view),
                     }
                 )
 
