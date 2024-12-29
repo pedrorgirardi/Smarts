@@ -87,7 +87,7 @@ kMINIHTML_STYLES = """
 # ---------------------------------------------------------------------------------------
 
 
-class ActiveSmart(TypedDict):
+class Smart(TypedDict):
     uuid: str
     window: int  # Window ID
     client: LanguageServerClient
@@ -98,7 +98,7 @@ class ActiveSmart(TypedDict):
 
 # -- Global Variables
 
-_SMARTS: List[ActiveSmart] = []
+_SMARTS: List[Smart] = []
 
 
 # ---------------------------------------------------------------------------------------
@@ -154,7 +154,7 @@ def add_smart(window: sublime.Window, client: LanguageServerClient):
     return _SMARTS
 
 
-def list_smarts(window: sublime.Window) -> List[ActiveSmart]:
+def list_smarts(window: sublime.Window) -> List[Smart]:
     return [smart for smart in _SMARTS if smart["window"] == window.id()]
 
 
@@ -209,7 +209,7 @@ def view_applicable(config: SmartsServerConfig, view: sublime.View) -> bool:
     return view.file_name() is not None and view_syntax(view) in applicable_to
 
 
-def applicable_smarts(view: sublime.View) -> List[ActiveSmart]:
+def applicable_smarts(view: sublime.View) -> List[Smart]:
     """
     Returns started servers applicable to view.
     """
@@ -234,7 +234,7 @@ def applicable_smarts(view: sublime.View) -> List[ActiveSmart]:
     return smarts
 
 
-def applicable_smart(view: sublime.View) -> Optional[ActiveSmart]:
+def applicable_smart(view: sublime.View) -> Optional[Smart]:
     """
     Returns the first started server applicable to view, or None.
     """
@@ -807,7 +807,7 @@ class ServerInputHandler(sublime_plugin.ListInputHandler):
 
 
 class SmartsInputHandler(sublime_plugin.ListInputHandler):
-    def __init__(self, items: List[ActiveSmart]):
+    def __init__(self, items: List[Smart]):
         self.items = items
 
     def placeholder(self):
