@@ -1431,9 +1431,6 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
 
 class PgSmartsViewListener(sublime_plugin.ViewEventListener):
     def on_load_async(self):
-        if not self.view.file_name():
-            return
-
         window = self.view.window()
 
         if not window:
@@ -1442,6 +1439,10 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         for smart in list_smarts(window):
             smart_client = smart["client"]
             smart_client_config = smart_client._config
+
+            # Skip server if not initialized.
+            if not smart_client._server_initialized:
+                continue
 
             if view_applicable(smart_client_config, self.view):
                 smart_client.textDocument_didOpen(
@@ -1466,6 +1467,10 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             smart_client = smart["client"]
             smart_client_config = smart_client._config
 
+            # Skip server if not initialized.
+            if not smart_client._server_initialized:
+                continue
+
             if view_applicable(smart_client_config, self.view):
                 smart_client.textDocument_didClose(
                     {
@@ -1488,11 +1493,12 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         def callback(response):
             if error := response.get("error"):
-                panel_log(
-                    self.view.window(),
-                    f"Error: {error.get('code')} {error.get('message')}\n",
-                    show=True,
-                )
+                if window := self.view.window():
+                    panel_log(
+                        window,
+                        f"Error: {error.get('code')} {error.get('message')}\n",
+                        show=True,
+                    )
 
             result = response.get("result")
 
@@ -1531,7 +1537,12 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if highlighter := getattr(self, "pg_smarts_highlighter", None):
             highlighter.cancel()
 
-        if not settings().get("editor.highlight_references"):
+        window = self.view.window()
+
+        if not window:
+            return
+
+        if not setting(window, "editor.highlight_references", False):
             return
 
         self.pg_smarts_highlighter = threading.Timer(0.3, self.highlight)
@@ -1543,7 +1554,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if not window:
             return
 
-        if not setting(window, "editor.show_hover", None):
+        if not setting(window, "editor.show_hover", False):
             return
 
         if hover_zone == sublime.HOVER_TEXT:
