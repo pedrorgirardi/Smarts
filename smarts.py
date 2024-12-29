@@ -124,9 +124,13 @@ def setting(window: sublime.Window, k: str, not_found: Any):
 
     Returns not_found if setting k is is not set.
     """
-    v = smarts_project_data(window).get(k)
+    if project_data := smarts_project_data(window):
+        try:
+            return project_data[k]
+        except KeyError:
+            return settings().get(k, not_found)
 
-    return v if v is not None else settings().get(k, not_found)
+    return settings().get(k, not_found)
 
 
 def window_project_path(window: sublime.Window) -> Optional[Path]:
