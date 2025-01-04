@@ -7,7 +7,7 @@ import threading
 import uuid
 from itertools import groupby
 from pathlib import Path
-from typing import Any, List, Optional, TypedDict, Tuple, Callable
+from typing import Any, List, Optional, TypedDict, Tuple, Callable, Set
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
@@ -169,13 +169,26 @@ def add_smart(window: sublime.Window, client: LanguageServerClient):
     return _SMARTS
 
 
+def remove_smarts(uuids: Set[str]):
+    global _SMARTS
+
+    _SMARTS = [smart for smart in _SMARTS if smart["uuid"] not in uuids]
+
+
 def list_smarts(window: sublime.Window) -> List[Smart]:
     return [smart for smart in _SMARTS if smart["window"] == window.id()]
 
 
 def shutdown_smarts(window: sublime.Window):
+    shutdown_uuids = set()
+
     for smart in list_smarts(window):
-        smart["client"].shutdown()
+        if not smart["client"]._server_shutdown.is_set():
+            smart["client"].shutdown()
+
+            shutdown_uuids.add(smart["uuid"])
+
+    remove_smarts(shutdown_uuids)
 
 
 def initialize_project_smarts(window: sublime.Window):
@@ -1594,17 +1607,16 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
 class PgSmartsListener(sublime_plugin.EventListener):
     def on_load_project(self, window):
+        plugin_logger.debug("Load project; Shutdown previous Smarts...")
+
+        shutdown_smarts(window)
+
         plugin_logger.debug("Load project; Initialize Smarts...")
 
         initialize_project_smarts(window)
 
     def on_pre_close_window(self, window):
         plugin_logger.debug("Pre-close window; Shutdown Smarts...")
-
-        shutdown_smarts(window)
-
-    def on_pre_close_project(self, window):
-        plugin_logger.debug("Pre-close project; Shutdown Smarts...")
 
         shutdown_smarts(window)
 
