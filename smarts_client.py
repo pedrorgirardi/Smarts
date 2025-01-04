@@ -309,7 +309,7 @@ class LanguageServerClient:
                 self._server_capabilities = response.get("result").get("capabilities")
                 self._server_info = response.get("result").get("serverInfo")
 
-                self._put(notification("initialized"))
+                self._put(notification("initialized", {}))
 
             callback(response)
 
