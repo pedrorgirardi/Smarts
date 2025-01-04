@@ -244,7 +244,11 @@ class LanguageServerClient:
             if callback:
                 self._request_callback[message_id] = callback
 
-    def initialize(self, params, callback):
+    def initialize(
+        self,
+        params,
+        callback: Callable[[LSPResponseMessage], None],
+    ):
         """
         The initialize request is sent as the first request from the client to the server.
         Until the server has responded to the initialize request with an InitializeResult,
@@ -293,12 +297,14 @@ class LanguageServerClient:
         )
         self._reader.start()
 
-        def _callback(response):
-            self._server_initialized = True
-            self._server_capabilities = response.get("result").get("capabilities")
-            self._server_info = response.get("result").get("serverInfo")
+        def _callback(response: LSPResponseMessage):
+            # The server should not be considered 'initialized' if there's an error.
+            if not response.get("error"):
+                self._server_initialized = True
+                self._server_capabilities = response.get("result").get("capabilities")
+                self._server_info = response.get("result").get("serverInfo")
 
-            self._put(notification("initialized"))
+                self._put(notification("initialized"))
 
             callback(response)
 

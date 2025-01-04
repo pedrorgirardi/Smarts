@@ -930,15 +930,19 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
         add_smart(self.window, client)
 
         def callback(response: LSPResponseMessage):
-            # Notify the server about 'open documents'.
-            # (Check if a view's syntax is valid for the server.)
-            for view in self.window.views():
-                if view_applicable(server_config, view):
-                    client.textDocument_didOpen(
-                        {
-                            "textDocument": view_text_document_item(view),
-                        }
-                    )
+            if error := response.get("error"):
+                if window := self.window:
+                    panel_log_error(window, error)
+            else:
+                # Notify the server about 'open documents'.
+                # (Check if a view's syntax is valid for the server.)
+                for view in self.window.views():
+                    if view_applicable(server_config, view):
+                        client.textDocument_didOpen(
+                            {
+                                "textDocument": view_text_document_item(view),
+                            }
+                        )
 
         client.initialize(params, callback)
 
