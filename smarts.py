@@ -157,7 +157,6 @@ def available_servers() -> List[SmartsServerConfig]:
 
 def add_smart(window: sublime.Window, client: LanguageServerClient):
     global _SMARTS
-
     _SMARTS.append(
         {
             "uuid": str(uuid.uuid4()),
@@ -170,9 +169,18 @@ def add_smart(window: sublime.Window, client: LanguageServerClient):
 
 
 def remove_smarts(uuids: Set[str]):
-    global _SMARTS
+    plugin_logger.debug(f"Remove Smarts {uuids}")
 
+    global _SMARTS
     _SMARTS = [smart for smart in _SMARTS if smart["uuid"] not in uuids]
+
+
+def find_smart(uuid: str) -> Optional[Smart]:
+    for smart in _SMARTS:
+        if smart["uuid"] == uuid:
+            return smart
+
+    return None
 
 
 def list_smarts(window: sublime.Window) -> List[Smart]:
@@ -978,10 +986,9 @@ class PgSmartsShutdownCommand(sublime_plugin.WindowCommand):
             return SmartsInputHandler(list_smarts(self.window))
 
     def run(self, smart_uuid):
-        for smart in list_smarts(self.window):
-            if smart["uuid"] == smart_uuid:
-                smart["client"].shutdown()
-                return
+        if smart := find_smart(smart_uuid):
+            smart["client"].shutdown()
+            remove_smarts({smart_uuid})
 
 
 class PgSmartsToggleOutputPanelCommand(sublime_plugin.WindowCommand):
