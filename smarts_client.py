@@ -14,8 +14,7 @@ class LanguageServerClient:
         self,
         logger: logging.Logger,
         config: SmartsServerConfig,
-        on_send: Optional[Callable[[LSPMessage], None]] = None,
-        on_receive: Optional[Callable[[LSPMessage], None]] = None,
+        notification_handler: Optional[Callable[[LSPMessage], None]] = None,
     ):
         self._logger = logger
         self._config = config
@@ -24,8 +23,7 @@ class LanguageServerClient:
         self._server_initialized = False
         self._server_info: Optional[dict] = None
         self._server_capabilities: Optional[dict] = None
-        self._on_send = on_send
-        self._on_receive = on_receive
+        self._notification_handler = notification_handler
         self._send_queue = Queue(maxsize=1)
         self._receive_queue = Queue(maxsize=1)
         self._reader: Optional[threading.Thread] = None
@@ -137,12 +135,6 @@ class LanguageServerClient:
                         f"{self._config['name']} - Can't write to server's stdin: {e}"
                     )
 
-                if self._on_send:
-                    try:
-                        self._on_send(message)
-                    except Exception:
-                        self._logger.exception("Error handling sent message")
-
             finally:
                 self._send_queue.task_done()
 
@@ -155,12 +147,13 @@ class LanguageServerClient:
         self._logger.debug(f"[{self._config['name']}] Handler started 🟢")
 
         while (message := self._receive_queue.get()) is not None:  # noqa
-            if self._on_receive:
-                try:
-                    self._on_receive(message)
-                except Exception:
-                    self._logger.exception("Error handling received message")
-
+            # A Response Message sent as a result of a request.
+            #
+            # If a request doesn’t provide a result value the receiver of a request
+            # still needs to return a response message to conform to the JSON-RPC specification.
+            # The result property of the ResponseMessage should be set to null in this case to signal a successful request.
+            #
+            # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#responseMessage
             if request_id := message.get("id"):
                 if callback := self._request_callback.get(request_id):
                     try:
@@ -171,6 +164,14 @@ class LanguageServerClient:
                         )
                     finally:
                         del self._request_callback[request_id]
+            else:
+                if self._notification_handler:
+                    try:
+                        self._notification_handler(message)
+                    except Exception:
+                        self._logger.exception(
+                            f"{self._config['name']} - Notification handler error"
+                        )
 
             self._receive_queue.task_done()
 

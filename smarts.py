@@ -768,15 +768,6 @@ def handle_textDocument_publishDiagnostics(window, message):
         view.set_status(kDIAGNOSTICS, ", ".join(diagnostics_status))
 
 
-def on_send_message(
-    window: sublime.Window,
-    server: str,
-    message: LSPMessage,
-):
-    # panel_log(window, f'{server} {message.get("method")}\n')
-    pass
-
-
 def on_receive_message(
     window: sublime.Window,
     server: str,
@@ -796,8 +787,7 @@ def on_receive_message(
     elif message_method == "textDocument/publishDiagnostics":
         handle_textDocument_publishDiagnostics(window, message)
 
-    # Log unhanled methods
-    elif message_method:
+    else:
         panel_log(window, f"{pprint.pformat(message)}\n\n")
 
 
@@ -918,8 +908,9 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
         client = LanguageServerClient(
             logger=client_logger,
             config=server_config,
-            on_send=lambda message: on_send_message(self.window, server, message),
-            on_receive=lambda message: on_receive_message(self.window, server, message),
+            notification_handler=lambda message: on_receive_message(
+                self.window, server, message
+            ),
         )
 
         add_smart(self.window, client)
