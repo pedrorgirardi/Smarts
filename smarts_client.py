@@ -310,7 +310,7 @@ class LanguageServerClient:
 
         self._put(request("initialize", params), _callback)
 
-    def shutdown(self, callback=None):
+    def shutdown(self):
         """
         The shutdown request is sent from the client to the server.
         It asks the server to shut down,
@@ -324,9 +324,6 @@ class LanguageServerClient:
 
         def _callback(message):
             self.exit()
-
-            if callback:
-                callback(message)
 
         self._put(request("shutdown"), _callback)
 
@@ -435,7 +432,7 @@ class LanguageServerClient:
     def textDocument_hover(
         self,
         params,
-        callback: Optional[Callable[[LSPResponseMessage], None]],
+        callback: Callable[[LSPResponseMessage], None],
     ):
         """
         The hover request is sent from the client to the server to request
@@ -449,7 +446,7 @@ class LanguageServerClient:
     def textDocument_definition(
         self,
         params,
-        callback: Optional[Callable[[LSPResponseMessage], None]],
+        callback: Callable[[LSPResponseMessage], None],
     ):
         """
         The go to definition request is sent from the client to the server
@@ -463,7 +460,7 @@ class LanguageServerClient:
     def textDocument_references(
         self,
         params,
-        callback: Optional[Callable[[LSPResponseMessage], None]],
+        callback: Callable[[LSPResponseMessage], None],
     ):
         """
         The references request is sent from the client to the server
@@ -477,7 +474,7 @@ class LanguageServerClient:
     def textDocument_documentHighlight(
         self,
         params,
-        callback: Optional[Callable[[LSPResponseMessage], None]],
+        callback: Callable[[LSPResponseMessage], None],
     ):
         """
         The document highlight request is sent from the client to
@@ -493,7 +490,7 @@ class LanguageServerClient:
     def textDocument_documentSymbol(
         self,
         params,
-        callback: Optional[Callable[[LSPResponseMessage], None]],
+        callback: Callable[[LSPResponseMessage], None],
     ):
         """
         The document symbol request is sent from the client to the server.
@@ -506,7 +503,7 @@ class LanguageServerClient:
     def textDocument_formatting(
         self,
         params,
-        callback: Optional[Callable[[LSPResponseMessage], None]],
+        callback: Callable[[LSPResponseMessage], None],
     ):
         """
         The document formatting request is sent from the client to the server to format a whole document.
