@@ -351,8 +351,14 @@ class LanguageServerClient:
         returncode = None
 
         try:
+            self._logger.info(f"Waiting for server {self._config['name']} to terminate")
+
             returncode = self._server_process.wait(30)
         except subprocess.TimeoutExpired:
+            self._logger.info(
+                f"Terminate timeout expired; Will explicitly kill server {self._config['name']}"
+            )
+
             # Explicitly kill the process if it did not terminate.
             self._server_process.kill()
 
