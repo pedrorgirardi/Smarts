@@ -15,6 +15,29 @@ from .smarts_typing import (
 )
 
 
+def request_message(
+    method: str,
+    params: Optional[Any] = None,
+) -> LSPRequestMessage:
+    return {
+        "jsonrpc": "2.0",
+        "id": str(uuid.uuid4()),
+        "method": method,
+        "params": params,
+    }
+
+
+def notification_message(
+    method: str,
+    params: Optional[Any] = None,
+) -> LSPNotificationMessage:
+    return {
+        "jsonrpc": "2.0",
+        "method": method,
+        "params": params,
+    }
+
+
 class LanguageServerClient:
     def __init__(
         self,
@@ -192,7 +215,6 @@ class LanguageServerClient:
         self,
         message: Union[LSPNotificationMessage, LSPRequestMessage],
         callback: Optional[Callable[[LSPResponseMessage], None]] = None,
-        on_put: Optional[Callable[[], None]] = None,
     ):
         # Drop message if server is not ready - unless it's an initization message.
         if not self._server_initialized and not message["method"] == "initialize":
@@ -211,9 +233,6 @@ class LanguageServerClient:
             return
 
         self._send_queue.put(message)
-
-        if on_put:
-            on_put()
 
         if message_id := message.get("id"):
             # A mapping of request ID to callback.
@@ -280,22 +299,13 @@ class LanguageServerClient:
             self._server_info = response.get("result").get("serverInfo")
 
             self._put_message(
-                {
-                    "jsonrpc": "2.0",
-                    "method": "initialized",
-                    "params": {},
-                }
+                notification_message("initialized", {}),
             )
 
             callback(response)
 
         self._put_message(
-            {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "initialize",
-                "params": params,
-            },
+            request_message("initialize", params),
             _callback,
         )
 
@@ -317,15 +327,7 @@ class LanguageServerClient:
             if callback:
                 callback(message)
 
-        self._put_message(
-            {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "shutdown",
-                "params": {},
-            },
-            _callback,
-        )
+        self._put_message(request_message("shutdown"), _callback)
 
     def exit(self):
         """
@@ -337,13 +339,7 @@ class LanguageServerClient:
         """
         self._logger.info(f"Exit {self._config['name']}")
 
-        self._put_message(
-            {
-                "jsonrpc": "2.0",
-                "method": "exit",
-                "params": {},
-            }
-        )
+        self._put_message(notification_message("exit"))
 
         self._server_shutdown.set()
 
@@ -387,13 +383,10 @@ class LanguageServerClient:
             return
 
         self._put_message(
-            {
-                "jsonrpc": "2.0",
-                "method": "textDocument/didOpen",
-                "params": params,
-            },
-            on_put=lambda: self._open_documents.add(textDocument_uri),
+            notification_message("textDocument/didOpen", params),
         )
+
+        self._open_documents.add(textDocument_uri)
 
     def textDocument_didClose(self, params):
         """
@@ -417,13 +410,10 @@ class LanguageServerClient:
             return
 
         self._put_message(
-            {
-                "jsonrpc": "2.0",
-                "method": "textDocument/didClose",
-                "params": params,
-            },
-            on_put=lambda: self._open_documents.remove(textDocument_uri),
+            notification_message("textDocument/didClose", params),
         )
+
+        self._open_documents.remove(textDocument_uri)
 
     def textDocument_didChange(self, params):
         """
@@ -438,11 +428,7 @@ class LanguageServerClient:
             return
 
         self._put_message(
-            {
-                "jsonrpc": "2.0",
-                "method": "textDocument/didChange",
-                "params": params,
-            }
+            notification_message("textDocument/didChange", params),
         )
 
     def textDocument_hover(
@@ -456,13 +442,9 @@ class LanguageServerClient:
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_hover
         """
+
         self._put_message(
-            {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "textDocument/hover",
-                "params": params,
-            },
+            request_message("textDocument/hover", params),
             callback,
         )
 
@@ -477,13 +459,9 @@ class LanguageServerClient:
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_definition
         """
+
         self._put_message(
-            {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "textDocument/definition",
-                "params": params,
-            },
+            request_message("textDocument/definition", params),
             callback,
         )
 
@@ -498,13 +476,9 @@ class LanguageServerClient:
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_references
         """
+
         self._put_message(
-            {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "textDocument/references",
-                "params": params,
-            },
+            request_message("textDocument/references", params),
             callback,
         )
 
@@ -521,13 +495,9 @@ class LanguageServerClient:
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentHighlight
         """
+
         self._put_message(
-            {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "textDocument/documentHighlight",
-                "params": params,
-            },
+            request_message("textDocument/documentHighlight", params),
             callback,
         )
 
@@ -541,13 +511,9 @@ class LanguageServerClient:
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
         """
+
         self._put_message(
-            {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "textDocument/documentSymbol",
-                "params": params,
-            },
+            request_message("textDocument/documentSymbol", params),
             callback,
         )
 
@@ -562,11 +528,6 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_formatting
         """
         self._put_message(
-            {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "textDocument/formatting",
-                "params": params,
-            },
+            request_message("textDocument/formatting", params),
             callback,
         )
