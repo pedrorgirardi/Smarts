@@ -178,7 +178,7 @@ def shutdown_smarts(window: sublime.Window):
         smart["client"].shutdown()
 
 
-def initialize_project_servers(window: sublime.Window):
+def initialize_project_smarts(window: sublime.Window):
     """
     Initialize Language Servers configured in a Sublime Project.
     """
@@ -1594,12 +1594,18 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
 class PgSmartsListener(sublime_plugin.EventListener):
     def on_load_project(self, window):
-        initialize_project_servers(window)
+        plugin_logger.debug("Load project; Initialize Smarts...")
+
+        initialize_project_smarts(window)
 
     def on_pre_close_window(self, window):
+        plugin_logger.debug("Pre-close window; Shutdown Smarts...")
+
         shutdown_smarts(window)
 
     def on_pre_close_project(self, window):
+        plugin_logger.debug("Pre-close project; Shutdown Smarts...")
+
         shutdown_smarts(window)
 
 
@@ -1613,15 +1619,15 @@ def plugin_loaded():
     client_logger.addHandler(console_logging_handler)
     client_logger.setLevel(settings().get("logger.client.level", "INFO"))
 
-    plugin_logger.debug("loaded plugin")
+    plugin_logger.debug("Plugin loaded; Initialize Smarts...")
 
-    initialize_project_servers(sublime.active_window())
+    initialize_project_smarts(sublime.active_window())
 
 
 def plugin_unloaded():
-    shutdown_smarts(sublime.active_window())
+    plugin_logger.debug("Plugin unloaded; Shutdown Smarts...")
 
-    plugin_logger.debug("unloaded plugin")
+    shutdown_smarts(sublime.active_window())
 
     plugin_logger.removeHandler(console_logging_handler)
     client_logger.removeHandler(console_logging_handler)
