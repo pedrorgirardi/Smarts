@@ -4,9 +4,15 @@ import subprocess
 import threading
 import uuid
 from queue import Queue
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Union
 
-from .smarts_typing import SmartsServerConfig, LSPMessage
+from .smarts_typing import (
+    SmartsServerConfig,
+    LSPMessage,
+    LSPResponseMessage,
+    LSPNotificationMessage,
+    LSPRequestMessage,
+)
 
 
 class LanguageServerClient:
@@ -29,7 +35,9 @@ class LanguageServerClient:
         self._reader: Optional[threading.Thread] = None
         self._writer: Optional[threading.Thread] = None
         self._handler: Optional[threading.Thread] = None
-        self._request_callback: Dict[str, Callable[[Dict], None]] = {}
+        self._request_callback: Dict[
+            Union[int, str], Callable[[LSPResponseMessage], None]
+        ] = {}
         self._open_documents = set()
 
     def capabilities_textDocumentSync(self):
@@ -180,10 +188,10 @@ class LanguageServerClient:
 
         self._logger.debug(f"[{self._config['name']}] Handler stopped 🔴")
 
-    def _put(
+    def _put_message(
         self,
-        message: LSPMessage,
-        callback: Optional[Callable[[LSPMessage], None]] = None,
+        message: Union[LSPNotificationMessage, LSPRequestMessage],
+        callback: Optional[Callable[[LSPResponseMessage], None]] = None,
         on_put: Optional[Callable[[], None]] = None,
     ):
         # Drop message if server is not ready - unless it's an initization message.
@@ -271,7 +279,7 @@ class LanguageServerClient:
             self._server_capabilities = response.get("result").get("capabilities")
             self._server_info = response.get("result").get("serverInfo")
 
-            self._put(
+            self._put_message(
                 {
                     "jsonrpc": "2.0",
                     "method": "initialized",
@@ -281,7 +289,7 @@ class LanguageServerClient:
 
             callback(response)
 
-        self._put(
+        self._put_message(
             {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
@@ -309,7 +317,7 @@ class LanguageServerClient:
             if callback:
                 callback(message)
 
-        self._put(
+        self._put_message(
             {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
@@ -329,7 +337,7 @@ class LanguageServerClient:
         """
         self._logger.info(f"Exit {self._config['name']}")
 
-        self._put(
+        self._put_message(
             {
                 "jsonrpc": "2.0",
                 "method": "exit",
@@ -378,7 +386,7 @@ class LanguageServerClient:
         if textDocument_uri in self._open_documents:
             return
 
-        self._put(
+        self._put_message(
             {
                 "jsonrpc": "2.0",
                 "method": "textDocument/didOpen",
@@ -408,7 +416,7 @@ class LanguageServerClient:
         if textDocument_uri not in self._open_documents:
             return
 
-        self._put(
+        self._put_message(
             {
                 "jsonrpc": "2.0",
                 "method": "textDocument/didClose",
@@ -429,7 +437,7 @@ class LanguageServerClient:
         if params["textDocument"]["uri"] not in self._open_documents:
             return
 
-        self._put(
+        self._put_message(
             {
                 "jsonrpc": "2.0",
                 "method": "textDocument/didChange",
@@ -437,14 +445,18 @@ class LanguageServerClient:
             }
         )
 
-    def textDocument_hover(self, params, callback):
+    def textDocument_hover(
+        self,
+        params,
+        callback: Optional[Callable[[LSPResponseMessage], None]],
+    ):
         """
         The hover request is sent from the client to the server to request
         hover information at a given text document position.
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_hover
         """
-        self._put(
+        self._put_message(
             {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
@@ -454,14 +466,18 @@ class LanguageServerClient:
             callback,
         )
 
-    def textDocument_definition(self, params, callback):
+    def textDocument_definition(
+        self,
+        params,
+        callback: Optional[Callable[[LSPResponseMessage], None]],
+    ):
         """
         The go to definition request is sent from the client to the server
         to resolve the definition location of a symbol at a given text document position.
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_definition
         """
-        self._put(
+        self._put_message(
             {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
@@ -471,14 +487,18 @@ class LanguageServerClient:
             callback,
         )
 
-    def textDocument_references(self, params, callback):
+    def textDocument_references(
+        self,
+        params,
+        callback: Optional[Callable[[LSPResponseMessage], None]],
+    ):
         """
         The references request is sent from the client to the server
         to resolve project-wide references for the symbol denoted by the given text document position.
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_references
         """
-        self._put(
+        self._put_message(
             {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
@@ -488,7 +508,11 @@ class LanguageServerClient:
             callback,
         )
 
-    def textDocument_documentHighlight(self, params, callback):
+    def textDocument_documentHighlight(
+        self,
+        params,
+        callback: Optional[Callable[[LSPResponseMessage], None]],
+    ):
         """
         The document highlight request is sent from the client to
         the server to resolve document highlights for a given text document position.
@@ -497,7 +521,7 @@ class LanguageServerClient:
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentHighlight
         """
-        self._put(
+        self._put_message(
             {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
@@ -507,13 +531,17 @@ class LanguageServerClient:
             callback,
         )
 
-    def textDocument_documentSymbol(self, params, callback):
+    def textDocument_documentSymbol(
+        self,
+        params,
+        callback: Optional[Callable[[LSPResponseMessage], None]],
+    ):
         """
         The document symbol request is sent from the client to the server.
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
         """
-        self._put(
+        self._put_message(
             {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
@@ -523,13 +551,17 @@ class LanguageServerClient:
             callback,
         )
 
-    def textDocument_formatting(self, params, callback):
+    def textDocument_formatting(
+        self,
+        params,
+        callback: Optional[Callable[[LSPResponseMessage], None]],
+    ):
         """
         The document formatting request is sent from the client to the server to format a whole document.
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_formatting
         """
-        self._put(
+        self._put_message(
             {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),

@@ -18,6 +18,8 @@ from .smarts_typing import (
     SmartsProjectData,
     SmartsServerConfig,
     LSPMessage,
+    LSPResponseMessage,
+    LSPResponseError,
 )
 from .smarts_client import LanguageServerClient
 
@@ -307,6 +309,18 @@ def panel_log(window: sublime.Window, text: str, show=False):
 
     if show:
         show_output_panel(window)
+
+
+def panel_log_error(
+    window: sublime.Window,
+    error: LSPResponseError,
+    show=True,
+):
+    panel_log(
+        window,
+        f"Error: {error.get('code')} {error.get('message')} {error.get('data')}\n",
+        show=show,
+    )
 
 
 def show_hover_popup(view: sublime.View, result):
@@ -915,7 +929,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
 
         add_smart(self.window, client)
 
-        def callback(response):
+        def callback(response: LSPResponseMessage):
             # Notify the server about 'open documents'.
             # (Check if a view's syntax is valid for the server.)
             for view in self.window.views():
@@ -1028,14 +1042,10 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
 
         params = view_textDocumentPositionParams(self.view)
 
-        def callback(response):
+        def callback(response: LSPResponseMessage):
             if error := response.get("error"):
                 if window := self.view.window():
-                    panel_log(
-                        window,
-                        f"Error: {error.get('code')} {error.get('message')}\n",
-                        show=True,
-                    )
+                    panel_log_error(window, error)
 
             result = response.get("result")
 
@@ -1058,14 +1068,10 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
         if not smart:
             return
 
-        def callback(response):
+        def callback(response: LSPResponseMessage):
             if error := response.get("error"):
                 if window := self.view.window():
-                    panel_log(
-                        window,
-                        f"Error: {error.get('code')} {error.get('message')}\n",
-                        show=True,
-                    )
+                    panel_log_error(window, error)
 
             result = response.get("result")
 
@@ -1140,14 +1146,10 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
         if not applicable_server_:
             return
 
-        def callback(response):
+        def callback(response: LSPResponseMessage):
             if error := response.get("error"):
                 if window := self.view.window():
-                    panel_log(
-                        window,
-                        f"Error: {error.get('code')} {error.get('message')}\n",
-                        show=True,
-                    )
+                    panel_log_error(window, error)
 
             if result := response.get("result"):
                 restore_viewport_position = capture_viewport_position(self.view)
@@ -1289,14 +1291,10 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
         if applicable_server_ := applicable_smart(self.view):
             params = view_textDocumentPositionParams(self.view)
 
-            def callback(response):
+            def callback(response: LSPResponseMessage):
                 if error := response.get("error"):
                     if window := self.view.window():
-                        panel_log(
-                            window,
-                            f"Error: {error.get('code')} {error.get('message')}\n",
-                            show=True,
-                        )
+                        panel_log_error(window, error)
 
                 if result := response["result"]:
                     show_hover_popup(self.view, result)
@@ -1320,14 +1318,10 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
                 },
             }
 
-            def callback(response):
+            def callback(response: LSPResponseMessage):
                 if error := response.get("error"):
                     if window := self.view.window():
-                        panel_log(
-                            window,
-                            f"Error: {error.get('code')} {error.get('message')}\n",
-                            show=True,
-                        )
+                        panel_log_error(window, error)
 
                 if textEdits := response.get("result"):
                     self.view.run_command(
@@ -1496,14 +1490,10 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if not applicable_server_:
             return
 
-        def callback(response):
+        def callback(response: LSPResponseMessage):
             if error := response.get("error"):
                 if window := self.view.window():
-                    panel_log(
-                        window,
-                        f"Error: {error.get('code')} {error.get('message')}\n",
-                        show=True,
-                    )
+                    panel_log_error(window, error)
 
             result = response.get("result")
 
@@ -1570,13 +1560,9 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
             params = view_textDocumentPositionParams(self.view, point)
 
-            def callback(response):
+            def callback(response: LSPResponseMessage):
                 if error := response.get("error"):
-                    panel_log(
-                        window,
-                        f"Error: {error.get('code')} {error.get('message')}\n",
-                        show=True,
-                    )
+                    panel_log_error(window, error)
 
                 if result := response["result"]:
                     show_hover_popup(self.view, result)
