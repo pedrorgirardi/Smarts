@@ -93,6 +93,19 @@ class LSPVersionedTextDocumentIdentifier(LSPTextDocumentIdentifier):
     version: int
 
 
+class LSPTextDocumentItem(TypedDict):
+    """
+    An item to transfer a text document from the client to the server.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentItem
+    """
+
+    uri: str
+    languageId: str
+    version: int
+    text: str
+
+
 class LSPPosition(TypedDict):
     """
     Position in a text document expressed as zero-based line and zero-based character offset.
@@ -108,6 +121,69 @@ class LSPPosition(TypedDict):
     character: int
 
 
+class LSPFormattingOptions(TypedDict):
+    """
+    Value-object describing what options formatting should use.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#formattingOptions
+    """
+
+    tabSize: int
+    insertSpaces: bool
+    insertFinalNewline: Optional[bool]
+    trimTrailingWhitespace: Optional[bool]
+    trimFinalNewlines: Optional[bool]
+
+
+class LSPRange(TypedDict):
+    """
+    A range in a text document expressed as (zero-based) start and end positions.
+
+    A range is comparable to a selection in an editor. Therefore, the end position is exclusive.
+
+    If you want to specify a range that contains a line including the line ending character(s)
+    then use an end position denoting the start of the next line
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#range
+    """
+
+    start: LSPPosition
+    end: LSPPosition
+
+
+class LSPTextDocumentContentChangeEventFull(TypedDict):
+    """
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentContentChangeEvent
+    """
+
+    text: str
+
+
+class LSPTextDocumentContentChangeEventIncremental(TypedDict):
+    """
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentContentChangeEvent
+    """
+
+    range: LSPRange
+    rangeLength: Optional[int]
+    text: str
+
+
+LSPTextDocumentContentChangeEvent = Union[
+    LSPTextDocumentContentChangeEventFull,
+    LSPTextDocumentContentChangeEventIncremental,
+]
+
+
+class LSPDidChangeTextDocumentParams(TypedDict):
+    """
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#didChangeTextDocumentParams
+    """
+
+    textDocument: LSPVersionedTextDocumentIdentifier
+    contentChanges: List[LSPTextDocumentContentChangeEvent]
+
+
 class LSPTextDocumentPositionParams(TypedDict):
     """
     A parameter literal used in requests to pass a text document and a position inside that document.
@@ -120,3 +196,28 @@ class LSPTextDocumentPositionParams(TypedDict):
 
     textDocument: LSPTextDocumentIdentifier
     position: LSPPosition
+
+
+class LSPDidOpenTextDocumentParams(TypedDict):
+    """
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#didOpenTextDocumentParams
+    """
+
+    textDocument: LSPTextDocumentItem
+
+
+class LSPDidCloseTextDocumentParams(TypedDict):
+    """
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#didCloseTextDocumentParams
+    """
+
+    textDocument: LSPTextDocumentIdentifier
+
+
+class LSPDocumentFormattingParams(TypedDict):
+    """
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#documentFormattingParams
+    """
+
+    textDocument: LSPTextDocumentIdentifier
+    options: LSPFormattingOptions

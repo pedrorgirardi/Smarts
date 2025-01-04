@@ -13,6 +13,10 @@ from .smarts_typing import (
     LSPNotificationMessage,
     LSPRequestMessage,
     LSPTextDocumentPositionParams,
+    LSPDidOpenTextDocumentParams,
+    LSPDidCloseTextDocumentParams,
+    LSPDocumentFormattingParams,
+    LSPDidChangeTextDocumentParams,
 )
 
 
@@ -366,7 +370,10 @@ class LanguageServerClient:
             f"{self._config['name']} terminated with returncode {returncode}"
         )
 
-    def textDocument_didOpen(self, params):
+    def textDocument_didOpen(
+        self,
+        params: LSPDidOpenTextDocumentParams,
+    ):
         """
         The document open notification is sent from the client to the server
         to signal newly opened text documents.
@@ -391,7 +398,10 @@ class LanguageServerClient:
 
         self._open_documents.add(textDocument_uri)
 
-    def textDocument_didClose(self, params):
+    def textDocument_didClose(
+        self,
+        params: LSPDidCloseTextDocumentParams,
+    ):
         """
         The document close notification is sent from the client to the server
         when the document got closed in the client.
@@ -416,7 +426,10 @@ class LanguageServerClient:
 
         self._open_documents.remove(textDocument_uri)
 
-    def textDocument_didChange(self, params):
+    def textDocument_didChange(
+        self,
+        params: LSPDidChangeTextDocumentParams,
+    ):
         """
         The document change notification is sent from the client to the server to signal changes to a text document.
 
@@ -503,7 +516,7 @@ class LanguageServerClient:
 
     def textDocument_formatting(
         self,
-        params,
+        params: LSPDocumentFormattingParams,
         callback: Callable[[LSPResponseMessage], None],
     ):
         """

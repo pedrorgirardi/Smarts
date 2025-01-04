@@ -23,6 +23,12 @@ from .smarts_typing import (
     LSPTextDocumentIdentifier,
     LSPVersionedTextDocumentIdentifier,
     LSPTextDocumentPositionParams,
+    LSPDocumentFormattingParams,
+    LSPDidOpenTextDocumentParams,
+    LSPDidCloseTextDocumentParams,
+    LSPTextDocumentItem,
+    LSPTextDocumentContentChangeEvent,
+    LSPDidChangeTextDocumentParams,
 )
 from .smarts_client import LanguageServerClient
 
@@ -502,7 +508,7 @@ def view_file_name_uri(view: sublime.View) -> str:
         return f"untitled://{view.id()}"
 
 
-def view_text_document_item(view: sublime.View) -> dict:
+def view_text_document_item(view: sublime.View) -> LSPTextDocumentItem:
     """
     An item to transfer a text document from the client to the server.
 
@@ -944,11 +950,11 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
                 # (Check if a view's syntax is valid for the server.)
                 for view in self.window.views():
                     if view_applicable(server_config, view):
-                        client.textDocument_didOpen(
-                            {
-                                "textDocument": view_text_document_item(view),
-                            }
-                        )
+                        params: LSPDidOpenTextDocumentParams = {
+                            "textDocument": view_text_document_item(view),
+                        }
+
+                        client.textDocument_didOpen(params)
 
         client.initialize(params, callback)
 
@@ -1323,11 +1329,14 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
             return
 
         if applicable_server_ := applicable_smart(self.view):
-            params = {
+            params: LSPDocumentFormattingParams = {
                 "textDocument": view_textDocumentIdentifier(self.view),
                 "options": {
                     "tabSize": self.view.settings().get("tab_size"),
                     "insertSpaces": True,
+                    "insertFinalNewline": None,
+                    "trimTrailingWhitespace": None,
+                    "trimFinalNewlines": None,
                 },
             }
 
@@ -1400,7 +1409,7 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
         # If only a text is provided it is considered to be the full content of the document.
         #
         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentContentChangeEvent
-        contentChanges = None
+        contentChanges: List[LSPTextDocumentContentChangeEvent] = []
 
         # Full
         # Documents are synced by always sending the full content of the document.
@@ -1435,12 +1444,12 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
                     }
                 )
 
-        language_client.textDocument_didChange(
-            {
-                "textDocument": textDocument,
-                "contentChanges": contentChanges,
-            }
-        )
+        params: LSPDidChangeTextDocumentParams = {
+            "textDocument": textDocument,
+            "contentChanges": contentChanges,
+        }
+
+        language_client.textDocument_didChange(params)
 
 
 class PgSmartsViewListener(sublime_plugin.ViewEventListener):
