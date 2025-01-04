@@ -20,6 +20,7 @@ from .smarts_typing import (
     LSPMessage,
     LSPResponseMessage,
     LSPResponseError,
+    LSPTextDocumentIdentifier,
 )
 from .smarts_client import LanguageServerClient
 
@@ -614,7 +615,7 @@ def goto_location(window, locations, on_cancel=None):
 # -- LSP
 
 
-def view_textDocumentIdentifier(view: sublime.View):
+def view_textDocumentIdentifier(view: sublime.View) -> LSPTextDocumentIdentifier:
     """
     Text documents are identified using a URI. On the protocol level, URIs are passed as strings.
 

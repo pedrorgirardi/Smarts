@@ -69,3 +69,13 @@ class LSPResponseMessage(TypedDict):
     id: Optional[Union[int, str]]
     result: Optional[Any]
     error: Optional[LSPResponseError]
+
+
+class LSPTextDocumentIdentifier(TypedDict):
+    """
+    Text documents are identified using a URI. On the protocol level, URIs are passed as strings.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentIdentifier
+    """
+
+    uri: str
