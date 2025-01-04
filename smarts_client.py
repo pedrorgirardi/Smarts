@@ -15,7 +15,7 @@ from .smarts_typing import (
 )
 
 
-def request_message(
+def request(
     method: str,
     params: Optional[Any] = None,
 ) -> LSPRequestMessage:
@@ -27,7 +27,7 @@ def request_message(
     }
 
 
-def notification_message(
+def notification(
     method: str,
     params: Optional[Any] = None,
 ) -> LSPNotificationMessage:
@@ -211,7 +211,7 @@ class LanguageServerClient:
 
         self._logger.debug(f"[{self._config['name']}] Handler stopped 🔴")
 
-    def _put_message(
+    def _put(
         self,
         message: Union[LSPNotificationMessage, LSPRequestMessage],
         callback: Optional[Callable[[LSPResponseMessage], None]] = None,
@@ -298,16 +298,11 @@ class LanguageServerClient:
             self._server_capabilities = response.get("result").get("capabilities")
             self._server_info = response.get("result").get("serverInfo")
 
-            self._put_message(
-                notification_message("initialized", {}),
-            )
+            self._put(notification("initialized"))
 
             callback(response)
 
-        self._put_message(
-            request_message("initialize", params),
-            _callback,
-        )
+        self._put(request("initialize", params), _callback)
 
     def shutdown(self, callback=None):
         """
@@ -327,7 +322,7 @@ class LanguageServerClient:
             if callback:
                 callback(message)
 
-        self._put_message(request_message("shutdown"), _callback)
+        self._put(request("shutdown"), _callback)
 
     def exit(self):
         """
@@ -339,7 +334,7 @@ class LanguageServerClient:
         """
         self._logger.info(f"Exit {self._config['name']}")
 
-        self._put_message(notification_message("exit"))
+        self._put(notification("exit"))
 
         self._server_shutdown.set()
 
@@ -382,9 +377,7 @@ class LanguageServerClient:
         if textDocument_uri in self._open_documents:
             return
 
-        self._put_message(
-            notification_message("textDocument/didOpen", params),
-        )
+        self._put(notification("textDocument/didOpen", params))
 
         self._open_documents.add(textDocument_uri)
 
@@ -409,9 +402,7 @@ class LanguageServerClient:
         if textDocument_uri not in self._open_documents:
             return
 
-        self._put_message(
-            notification_message("textDocument/didClose", params),
-        )
+        self._put(notification("textDocument/didClose", params))
 
         self._open_documents.remove(textDocument_uri)
 
@@ -427,9 +418,7 @@ class LanguageServerClient:
         if params["textDocument"]["uri"] not in self._open_documents:
             return
 
-        self._put_message(
-            notification_message("textDocument/didChange", params),
-        )
+        self._put(notification("textDocument/didChange", params))
 
     def textDocument_hover(
         self,
@@ -443,10 +432,7 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_hover
         """
 
-        self._put_message(
-            request_message("textDocument/hover", params),
-            callback,
-        )
+        self._put(request("textDocument/hover", params), callback)
 
     def textDocument_definition(
         self,
@@ -460,10 +446,7 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_definition
         """
 
-        self._put_message(
-            request_message("textDocument/definition", params),
-            callback,
-        )
+        self._put(request("textDocument/definition", params), callback)
 
     def textDocument_references(
         self,
@@ -477,10 +460,7 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_references
         """
 
-        self._put_message(
-            request_message("textDocument/references", params),
-            callback,
-        )
+        self._put(request("textDocument/references", params), callback)
 
     def textDocument_documentHighlight(
         self,
@@ -496,10 +476,7 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentHighlight
         """
 
-        self._put_message(
-            request_message("textDocument/documentHighlight", params),
-            callback,
-        )
+        self._put(request("textDocument/documentHighlight", params), callback)
 
     def textDocument_documentSymbol(
         self,
@@ -512,10 +489,7 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
         """
 
-        self._put_message(
-            request_message("textDocument/documentSymbol", params),
-            callback,
-        )
+        self._put(request("textDocument/documentSymbol", params), callback)
 
     def textDocument_formatting(
         self,
@@ -527,7 +501,4 @@ class LanguageServerClient:
 
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_formatting
         """
-        self._put_message(
-            request_message("textDocument/formatting", params),
-            callback,
-        )
+        self._put(request("textDocument/formatting", params), callback)
