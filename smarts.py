@@ -856,9 +856,6 @@ class ServerInputHandler(sublime_plugin.ListInputHandler):
 
 
 class SmartsInputHandler(sublime_plugin.ListInputHandler):
-    def __init__(self, items: List[Smart]):
-        self.items = items
-
     def placeholder(self):
         return "Server"
 
@@ -868,7 +865,7 @@ class SmartsInputHandler(sublime_plugin.ListInputHandler):
     def list_items(self):
         items = []
 
-        for smart in self.items:
+        for smart in list_smarts(sublime.active_window()):
             if not smart["client"]._server_shutdown.is_set():
                 smart_uuid = smart["uuid"]
                 smart_server_name = smart["client"]._config["name"]
@@ -983,7 +980,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
 class PgSmartsShutdownCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "smart_uuid" not in args:
-            return SmartsInputHandler(list_smarts(self.window))
+            return SmartsInputHandler()
 
     def run(self, smart_uuid):
         if smart := find_smart(smart_uuid):
