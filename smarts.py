@@ -21,6 +21,7 @@ from .smarts_typing import (
     LSPResponseMessage,
     LSPResponseError,
     LSPTextDocumentIdentifier,
+    LSPTextDocumentPositionParams,
 )
 from .smarts_client import LanguageServerClient
 
@@ -626,7 +627,10 @@ def view_textDocumentIdentifier(view: sublime.View) -> LSPTextDocumentIdentifier
     }
 
 
-def view_textDocumentPositionParams(view: sublime.View, point=None):
+def view_textDocumentPositionParams(
+    view: sublime.View,
+    point=None,
+) -> LSPTextDocumentPositionParams:
     """
     A parameter literal used in requests to pass a text document and a position inside that document.
 

@@ -12,6 +12,7 @@ from .smarts_typing import (
     LSPResponseMessage,
     LSPNotificationMessage,
     LSPRequestMessage,
+    LSPTextDocumentPositionParams,
 )
 
 
@@ -431,7 +432,7 @@ class LanguageServerClient:
 
     def textDocument_hover(
         self,
-        params,
+        params: LSPTextDocumentPositionParams,
         callback: Callable[[LSPResponseMessage], None],
     ):
         """
@@ -445,7 +446,7 @@ class LanguageServerClient:
 
     def textDocument_definition(
         self,
-        params,
+        params: LSPTextDocumentPositionParams,
         callback: Callable[[LSPResponseMessage], None],
     ):
         """
@@ -473,7 +474,7 @@ class LanguageServerClient:
 
     def textDocument_documentHighlight(
         self,
-        params,
+        params: LSPTextDocumentPositionParams,
         callback: Callable[[LSPResponseMessage], None],
     ):
         """
