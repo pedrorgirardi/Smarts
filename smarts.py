@@ -975,48 +975,51 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
     def run(self):
         minihtml = ""
 
-        label_class = "text-foreground-07"
-
         for smart in list_smarts(self.window):
             client = smart["client"]
 
-            textDocumentSync = client.capabilities_textDocumentSync()
+            status = "Stopped" if client._server_shutdown.is_set() else "Running"
 
-            # Open and close notifications are sent to the server.
-            # If omitted open close notifications should not be sent.
-            textDocumentSync_openClose = textDocumentSync.get("openClose", "-")
-
-            change: int = textDocumentSync.get("change", 0)
-
-            # Change notifications are sent to the server.
-            textDocumentSync_change = {
-                0: "0 - None",
-                1: "1 - Full",
-                2: "2 - Incremental",
-            }.get(
-                change,
-                change,
+            minihtml += (
+                f"<strong>{client._config['name']} ({status})</strong><br /><br />"
             )
 
-            documentSymbolProvider = client._server_capabilities.get(
-                "documentSymbolProvider", "-"
-            )
-            documentHighlightProvider = client._server_capabilities.get(
-                "documentHighlightProvider", "-"
-            )
+            if client._server_initialized:
+                textDocumentSync = client.capabilities_textDocumentSync()
 
-            # Server name & version
-            if server_info := client._server_info:
-                minihtml += f"<strong>{server_info.get('name', '')}, version {server_info.get('version', '')}</strong><br /><br />"
+                # Open and close notifications are sent to the server.
+                # If omitted open close notifications should not be sent.
+                textDocumentSync_openClose = textDocumentSync.get("openClose", "-")
 
-            minihtml += "<ul class='m-0'>"
+                change: int = textDocumentSync.get("change", 0)
 
-            minihtml += f"<li><span class='{label_class}'>openClose:</span> {textDocumentSync_openClose}</li>"
-            minihtml += f"<li><span class='{label_class}'>change:</span> {textDocumentSync_change}</li>"
-            minihtml += f"<li><span class='{label_class}'>documentSymbolProvider:</span> {documentSymbolProvider}</li>"
-            minihtml += f"<li><span class='{label_class}'>documentHighlightProvider:</span> {documentHighlightProvider}</li>"
+                # Change notifications are sent to the server.
+                textDocumentSync_change = {
+                    0: "0 - None",
+                    1: "1 - Full",
+                    2: "2 - Incremental",
+                }.get(
+                    change,
+                    change,
+                )
 
-            minihtml += "</ul><br /><br />"
+                documentSymbolProvider = client._server_capabilities.get(
+                    "documentSymbolProvider", "-"
+                )
+                documentHighlightProvider = client._server_capabilities.get(
+                    "documentHighlightProvider", "-"
+                )
+
+                minihtml += "<ul class='m-0'>"
+
+                label_class = "text-foreground-07"
+
+                minihtml += f"<li><span class='{label_class}'>openClose:</span> {textDocumentSync_openClose}</li>"
+                minihtml += f"<li><span class='{label_class}'>change:</span> {textDocumentSync_change}</li>"
+                minihtml += f"<li><span class='{label_class}'>documentSymbolProvider:</span> {documentSymbolProvider}</li>"
+                minihtml += f"<li><span class='{label_class}'>documentHighlightProvider:</span> {documentHighlightProvider}</li>"
+
+                minihtml += "</ul><br /><br />"
 
         if not minihtml:
             return

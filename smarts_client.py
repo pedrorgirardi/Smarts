@@ -63,7 +63,7 @@ class LanguageServerClient:
         ] = {}
         self._open_documents = set()
 
-    def capabilities_textDocumentSync(self):
+    def capabilities_textDocumentSync(self) -> Optional[Dict[str, Any]]:
         """
         Defines how text documents are synced.
 
