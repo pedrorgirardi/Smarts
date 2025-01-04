@@ -81,6 +81,18 @@ class LSPTextDocumentIdentifier(TypedDict):
     uri: str
 
 
+class LSPVersionedTextDocumentIdentifier(LSPTextDocumentIdentifier):
+    """
+    An identifier to denote a specific version of a text document.
+
+    This information usually flows from the client to the server.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#versionedTextDocumentIdentifier
+    """
+
+    version: int
+
+
 class LSPPosition(TypedDict):
     """
     Position in a text document expressed as zero-based line and zero-based character offset.

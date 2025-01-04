@@ -21,6 +21,7 @@ from .smarts_typing import (
     LSPResponseMessage,
     LSPResponseError,
     LSPTextDocumentIdentifier,
+    LSPVersionedTextDocumentIdentifier,
     LSPTextDocumentPositionParams,
 )
 from .smarts_client import LanguageServerClient
@@ -1385,7 +1386,7 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
         # after all provided content changes have been applied.
         #
         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#versionedTextDocumentIdentifier
-        textDocument = {
+        textDocument: LSPVersionedTextDocumentIdentifier = {
             "uri": path_to_uri(view_file_name),
             "version": view.change_count(),
         }
