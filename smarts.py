@@ -243,10 +243,7 @@ def view_applicable(config: SmartsServerConfig, view: sublime.View) -> bool:
     return view.file_name() is not None and view_syntax(view) in applicable_to
 
 
-def applicable_smarts(view: sublime.View) -> List[Smart]:
-    """
-    Returns started servers applicable to view.
-    """
+def view_smarts(view: sublime.View) -> List[Smart]:
     window = view.window()
 
     if window is None:
@@ -256,11 +253,28 @@ def applicable_smarts(view: sublime.View) -> List[Smart]:
 
     for smart in list_smarts(window):
         smart_client = smart["client"]
-        smart_client_config = smart_client._config
 
-        # Skip a possible applicable smart if server is shutdown.
+        if not smart_client._server_initialized:
+            continue
+
         if smart_client._server_shutdown.is_set():
             continue
+
+        smarts.append(smart)
+
+    return smarts
+
+
+# TODO: Replace by applicable_smarts2
+def applicable_smarts(view: sublime.View) -> List[Smart]:
+    """
+    Returns started servers applicable to view.
+    """
+    smarts = []
+
+    for smart in view_smarts(view):
+        smart_client = smart["client"]
+        smart_client_config = smart_client._config
 
         if view_applicable(smart_client_config, view):
             smarts.append(smart)
@@ -272,20 +286,11 @@ def applicable_smarts2(view: sublime.View, method: str) -> List[Smart]:
     """
     Returns Smarts applicable to view.
     """
-    window = view.window()
-
-    if window is None:
-        return []
-
     smarts = []
 
-    for smart in list_smarts(window):
+    for smart in view_smarts(view):
         smart_client = smart["client"]
         smart_client_config = smart_client._config
-
-        # Skip a possible applicable Smart if server is shutdown.
-        if smart_client._server_shutdown.is_set():
-            continue
 
         if not view_applicable(smart_client_config, view):
             continue
@@ -297,16 +302,6 @@ def applicable_smarts2(view: sublime.View, method: str) -> List[Smart]:
                 smarts.append(smart)
 
     return smarts
-
-
-def applicable_smart(view: sublime.View) -> Optional[Smart]:
-    """
-    Returns the first Smart applicable to view, or None.
-    """
-    if applicable := applicable_smarts(view):
-        return applicable[0]
-
-    return None
 
 
 def applicable_smart2(view: sublime.View, method: str) -> Optional[Smart]:
@@ -1413,123 +1408,86 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
         if not view_file_name:
             return
 
-        language_client = None
+        for smart in applicable_smarts(view):
+            language_client = smart["client"]
 
-        if applicable_server_ := applicable_smart(view):
-            language_client = applicable_server_["client"]
+            textDocumentSync = language_client.capabilities_textDocumentSync()
 
-        if not language_client:
-            return
+            if not textDocumentSync:
+                return
 
-        textDocumentSync = language_client.capabilities_textDocumentSync()
+            # The document that did change.
+            # The version number points to the version
+            # after all provided content changes have been applied.
+            #
+            # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#versionedTextDocumentIdentifier
+            textDocument: LSPVersionedTextDocumentIdentifier = {
+                "uri": path_to_uri(view_file_name),
+                "version": view.change_count(),
+            }
 
-        if not textDocumentSync:
-            return
+            # The actual content changes.
+            # The content changes describe single state changes to the document.
+            # So if there are two content changes c1 (at array index 0) and c2 (at array index 1)
+            # for a document in state S then c1 moves the document from S to S' and
+            # c2 from S' to S''. So c1 is computed on the state S and c2 is computed on the state S'.
+            #
+            # If only a text is provided it is considered to be the full content of the document.
+            #
+            # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentContentChangeEvent
+            contentChanges: List[LSPTextDocumentContentChangeEvent] = []
 
-        # The document that did change.
-        # The version number points to the version
-        # after all provided content changes have been applied.
-        #
-        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#versionedTextDocumentIdentifier
-        textDocument: LSPVersionedTextDocumentIdentifier = {
-            "uri": path_to_uri(view_file_name),
-            "version": view.change_count(),
-        }
+            # Full
+            # Documents are synced by always sending the full content of the document.
+            if textDocumentSync["change"] == 1:
+                contentChanges = [
+                    {
+                        "text": view.substr(sublime.Region(0, view.size())),
+                    }
+                ]
 
-        # The actual content changes.
-        # The content changes describe single state changes to the document.
-        # So if there are two content changes c1 (at array index 0) and c2 (at array index 1)
-        # for a document in state S then c1 moves the document from S to S' and
-        # c2 from S' to S''. So c1 is computed on the state S and c2 is computed on the state S'.
-        #
-        # If only a text is provided it is considered to be the full content of the document.
-        #
-        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentContentChangeEvent
-        contentChanges: List[LSPTextDocumentContentChangeEvent] = []
+            # Incremental
+            # Documents are synced by sending the full content on open.
+            # After that only incremental updates to the document are sent.
+            elif textDocumentSync["change"] == 2:
+                contentChanges = []
 
-        # Full
-        # Documents are synced by always sending the full content of the document.
-        if textDocumentSync["change"] == 1:
-            contentChanges = [
-                {
-                    "text": view.substr(sublime.Region(0, view.size())),
-                }
-            ]
-
-        # Incremental
-        # Documents are synced by sending the full content on open.
-        # After that only incremental updates to the document are sent.
-        elif textDocumentSync["change"] == 2:
-            contentChanges = []
-
-            for change in changes:
-                contentChanges.append({
-                    "range": {
-                        "start": {
-                            "line": change.a.row,
-                            "character": change.a.col_utf16,
+                for change in changes:
+                    contentChanges.append({
+                        "range": {
+                            "start": {
+                                "line": change.a.row,
+                                "character": change.a.col_utf16,
+                            },
+                            "end": {
+                                "line": change.b.row,
+                                "character": change.b.col_utf16,
+                            },
                         },
-                        "end": {
-                            "line": change.b.row,
-                            "character": change.b.col_utf16,
-                        },
-                    },
-                    "rangeLength": change.len_utf16,
-                    "text": change.str,
-                })
+                        "rangeLength": change.len_utf16,
+                        "text": change.str,
+                    })
 
-        params: LSPDidChangeTextDocumentParams = {
-            "textDocument": textDocument,
-            "contentChanges": contentChanges,
-        }
+            params: LSPDidChangeTextDocumentParams = {
+                "textDocument": textDocument,
+                "contentChanges": contentChanges,
+            }
 
-        language_client.textDocument_didChange(params)
+            language_client.textDocument_didChange(params)
 
 
 class PgSmartsViewListener(sublime_plugin.ViewEventListener):
     def on_load_async(self):
-        window = self.view.window()
-
-        if not window:
-            return
-
-        for smart in list_smarts(window):
-            smart_client = smart["client"]
-            smart_client_config = smart_client._config
-
-            # Skip server if not initialized.
-            if not smart_client._server_initialized:
-                continue
-
-            if view_applicable(smart_client_config, self.view):
-                smart_client.textDocument_didOpen({
-                    "textDocument": view_text_document_item(self.view),
-                })
+        for smart in applicable_smarts(self.view):
+            smart["client"].textDocument_didOpen({
+                "textDocument": view_text_document_item(self.view),
+            })
 
     def on_pre_close(self):
-        view_file_name = self.view.file_name()
-
-        if not view_file_name:
-            return
-
-        # When the window is closed, there's no window 'attached' to view.
-        window = self.view.window()
-
-        if not window:
-            return
-
-        for smart in list_smarts(window):
-            smart_client = smart["client"]
-            smart_client_config = smart_client._config
-
-            # Skip server if not initialized.
-            if not smart_client._server_initialized:
-                continue
-
-            if view_applicable(smart_client_config, self.view):
-                smart_client.textDocument_didClose({
-                    "textDocument": view_textDocumentIdentifier(self.view),
-                })
+        for smart in applicable_smarts(self.view):
+            smart["client"].textDocument_didClose({
+                "textDocument": view_textDocumentIdentifier(self.view),
+            })
 
     def erase_highlights(self):
         self.view.erase_regions(kSMARTS_HIGHLIGHTS)
