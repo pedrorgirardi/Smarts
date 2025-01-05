@@ -274,7 +274,7 @@ def view_applicable(config: SmartsServerConfig, view: sublime.View) -> bool:
     return view.file_name() is not None and view_syntax(view) in applicable_to
 
 
-def applicable_smarts2(view: sublime.View, method: str) -> List[Smart]:
+def applicable_smarts(view: sublime.View, method: str) -> List[Smart]:
     """
     Returns Smarts applicable to view.
     """
@@ -293,11 +293,11 @@ def applicable_smarts2(view: sublime.View, method: str) -> List[Smart]:
     return smarts
 
 
-def applicable_smart2(view: sublime.View, method: str) -> Optional[Smart]:
+def applicable_smart(view: sublime.View, method: str) -> Optional[Smart]:
     """
     Returns the first Smart applicable to view, or None.
     """
-    if applicable := applicable_smarts2(view, method):
+    if applicable := applicable_smarts(view, method):
         return applicable[0]
 
     plugin_logger.debug(f"No applicable Smart for '{method}'")
@@ -1070,7 +1070,7 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
 
 class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
     def run(self, _):
-        smart = applicable_smart2(self.view, method="textDocument/definition")
+        smart = applicable_smart(self.view, method="textDocument/definition")
 
         if not smart:
             return
@@ -1098,7 +1098,7 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
 
 class PgSmartsGotoReference(sublime_plugin.TextCommand):
     def run(self, _):
-        smart = applicable_smart2(self.view, method="textDocument/references")
+        smart = applicable_smart(self.view, method="textDocument/references")
 
         if not smart:
             return
@@ -1176,7 +1176,7 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
 
 class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
     def run(self, _):
-        smart = applicable_smart2(self.view, method="textDocument/documentSymbol")
+        smart = applicable_smart(self.view, method="textDocument/documentSymbol")
 
         if not smart:
             return
@@ -1323,7 +1323,7 @@ class PgSmartsJumpCommand(sublime_plugin.TextCommand):
 
 class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
     def run(self, _):
-        smart = applicable_smart2(self.view, method="textDocument/hover")
+        smart = applicable_smart(self.view, method="textDocument/hover")
 
         if not smart:
             return
@@ -1343,7 +1343,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
 
 class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
     def run(self, _):
-        smart = applicable_smart2(self.view, method="textDocument/formatting")
+        smart = applicable_smart(self.view, method="textDocument/formatting")
 
         if not smart:
             return
@@ -1396,7 +1396,7 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
         if not view_file_name:
             return
 
-        for smart in applicable_smarts2(view, method="textDocument/didChange"):
+        for smart in applicable_smarts(view, method="textDocument/didChange"):
             language_client = smart["client"]
 
             textDocumentSync = smarts_client.textDocumentSyncOptions(
@@ -1467,13 +1467,13 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
 
 class PgSmartsViewListener(sublime_plugin.ViewEventListener):
     def on_load_async(self):
-        for smart in applicable_smarts2(self.view, method="textDocument/didOpen"):
+        for smart in applicable_smarts(self.view, method="textDocument/didOpen"):
             smart["client"].textDocument_didOpen({
                 "textDocument": view_text_document_item(self.view),
             })
 
     def on_pre_close(self):
-        for smart in applicable_smarts2(self.view, method="textDocument/didClose"):
+        for smart in applicable_smarts(self.view, method="textDocument/didClose"):
             smart["client"].textDocument_didClose({
                 "textDocument": view_textDocumentIdentifier(self.view),
             })
@@ -1484,7 +1484,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         self.view.settings().erase(kSMARTS_HIGHLIGHTS)
 
     def highlight(self):
-        smart = applicable_smart2(self.view, method="textDocument/documentHighlight")
+        smart = applicable_smart(self.view, method="textDocument/documentHighlight")
 
         if not smart:
             return
@@ -1552,7 +1552,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             return
 
         if hover_zone == sublime.HOVER_TEXT:
-            smart = applicable_smart2(self.view, method="textDocument/hover")
+            smart = applicable_smart(self.view, method="textDocument/hover")
 
             if not smart:
                 return
