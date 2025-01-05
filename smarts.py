@@ -7,29 +7,29 @@ import threading
 import uuid
 from itertools import groupby
 from pathlib import Path
-from typing import Any, List, Optional, TypedDict, Callable, Set
+from typing import Any, Callable, List, Optional, Set, TypedDict
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
 import sublime
 import sublime_plugin
 
+from . import smarts_client
 from .smarts_typing import (
+    LSPDidChangeTextDocumentParams,
+    LSPDidOpenTextDocumentParams,
+    LSPDocumentFormattingParams,
+    LSPMessage,
+    LSPResponseError,
+    LSPResponseMessage,
+    LSPTextDocumentContentChangeEvent,
+    LSPTextDocumentIdentifier,
+    LSPTextDocumentItem,
+    LSPTextDocumentPositionParams,
+    LSPVersionedTextDocumentIdentifier,
     SmartsProjectData,
     SmartsServerConfig,
-    LSPMessage,
-    LSPResponseMessage,
-    LSPResponseError,
-    LSPTextDocumentIdentifier,
-    LSPVersionedTextDocumentIdentifier,
-    LSPTextDocumentPositionParams,
-    LSPDocumentFormattingParams,
-    LSPDidOpenTextDocumentParams,
-    LSPTextDocumentItem,
-    LSPTextDocumentContentChangeEvent,
-    LSPDidChangeTextDocumentParams,
 )
-from .smarts_client import LanguageServerClient, support_method, textDocumentSyncOptions
 
 # -- Logging
 
@@ -100,7 +100,7 @@ kMINIHTML_STYLES = """
 class Smart(TypedDict):
     uuid: str
     window: int  # Window ID
-    client: LanguageServerClient
+    client: smarts_client.LanguageServerClient
 
 
 # ---------------------------------------------------------------------------------------
@@ -154,7 +154,7 @@ def available_servers() -> List[SmartsServerConfig]:
     return settings().get(kSETTING_SERVERS, [])
 
 
-def add_smart(window: sublime.Window, client: LanguageServerClient):
+def add_smart(window: sublime.Window, client: smarts_client.LanguageServerClient):
     global _SMARTS
     _SMARTS.append({
         "uuid": str(uuid.uuid4()),
@@ -287,7 +287,7 @@ def applicable_smarts2(view: sublime.View, method: str) -> List[Smart]:
             continue
 
         if server_capabilities := smart_client._server_capabilities:
-            if support_method(server_capabilities, method):
+            if smarts_client.support_method(server_capabilities, method):
                 smarts.append(smart)
 
     return smarts
@@ -974,7 +974,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             )
             return
 
-        client = LanguageServerClient(
+        client = smarts_client.LanguageServerClient(
             logger=client_logger,
             config=server_config,
             notification_handler=lambda message: on_receive_message(
@@ -1399,7 +1399,7 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
         for smart in applicable_smarts2(view, method="textDocument/didChange"):
             language_client = smart["client"]
 
-            textDocumentSync = textDocumentSyncOptions(
+            textDocumentSync = smarts_client.textDocumentSyncOptions(
                 language_client._server_capabilities.get("textDocumentSync")
                 if language_client._server_capabilities
                 else None
