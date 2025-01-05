@@ -394,7 +394,7 @@ def panel_log_error(
     )
 
 
-def show_hover_popup(view: sublime.View, result):
+def show_hover_popup(view: sublime.View, smart: Smart, result: Any):
     # The result of a hover request.
     # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#hover
 
@@ -428,6 +428,7 @@ def show_hover_popup(view: sublime.View, result):
         )
 
     minihtml = "<br /><br />".join(popup_content)
+    minihtml += f"<br /><br /><span>{smart['client']._config['name']}</span>"
 
     view.show_popup(minihtml, location=location, max_width=860)
 
@@ -1352,7 +1353,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
                     panel_log_error(window, error)
 
             if result := response["result"]:
-                show_hover_popup(self.view, result)
+                show_hover_popup(self.view, smart, result)
 
         smart["client"].textDocument_hover(params, callback)
 
@@ -1616,7 +1617,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                     panel_log_error(window, error)
 
                 if result := response["result"]:
-                    show_hover_popup(self.view, result)
+                    show_hover_popup(self.view, smart, result)
 
             smart["client"].textDocument_hover(params, callback)
 
