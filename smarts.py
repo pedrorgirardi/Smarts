@@ -181,18 +181,50 @@ def find_smart(uuid: str) -> Optional[Smart]:
     return None
 
 
-def list_smarts(window: sublime.Window) -> List[Smart]:
+def window_smarts(window: sublime.Window) -> List[Smart]:
+    """
+    Returns Smarts associated with `window`.
+    """
     return [smart for smart in _SMARTS if smart["window"] == window.id()]
+
+
+def window_running_smarts(window: sublime.Window) -> List[Smart]:
+    """
+    Returns Smarts associated with `window` which are not shutdown.
+    """
+    return [
+        smart
+        for smart in window_smarts(window)
+        if not smart["client"]._server_shutdown.is_set()
+    ]
+
+
+def view_smarts(view: sublime.View) -> List[Smart]:
+    window = view.window()
+
+    if window is None:
+        return []
+
+    smarts = []
+
+    for smart in window_running_smarts(window):
+        smart_client = smart["client"]
+
+        if not smart_client._server_initialized:
+            continue
+
+        smarts.append(smart)
+
+    return smarts
 
 
 def shutdown_smarts(window: sublime.Window):
     shutdown_uuids = set()
 
-    for smart in list_smarts(window):
-        if not smart["client"]._server_shutdown.is_set():
-            smart["client"].shutdown()
+    for smart in window_running_smarts(window):
+        smart["client"].shutdown()
 
-            shutdown_uuids.add(smart["uuid"])
+        shutdown_uuids.add(smart["uuid"])
 
     remove_smarts(shutdown_uuids)
 
@@ -241,28 +273,6 @@ def view_applicable(config: SmartsServerConfig, view: sublime.View) -> bool:
     applicable_to = set(config.get("applicable_to", []))
 
     return view.file_name() is not None and view_syntax(view) in applicable_to
-
-
-def view_smarts(view: sublime.View) -> List[Smart]:
-    window = view.window()
-
-    if window is None:
-        return []
-
-    smarts = []
-
-    for smart in list_smarts(window):
-        smart_client = smart["client"]
-
-        if not smart_client._server_initialized:
-            continue
-
-        if smart_client._server_shutdown.is_set():
-            continue
-
-        smarts.append(smart)
-
-    return smarts
 
 
 # TODO: Replace by applicable_smarts2
@@ -902,12 +912,11 @@ class SmartsInputHandler(sublime_plugin.ListInputHandler):
     def list_items(self):
         items = []
 
-        for smart in list_smarts(sublime.active_window()):
-            if not smart["client"]._server_shutdown.is_set():
-                smart_uuid = smart["uuid"]
-                smart_server_name = smart["client"]._config["name"]
+        for smart in window_running_smarts(sublime.active_window()):
+            smart_uuid = smart["uuid"]
+            smart_server_name = smart["client"]._config["name"]
 
-                items.append((f"{smart_server_name} {smart_uuid}", smart_uuid))
+            items.append((f"{smart_server_name} {smart_uuid}", smart_uuid))
 
         return items
 
@@ -1041,7 +1050,7 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
     def run(self):
         minihtml = ""
 
-        for smart in list_smarts(self.window):
+        for smart in window_smarts(self.window):
             client = smart["client"]
 
             status = "Stopped" if client._server_shutdown.is_set() else "Running"
