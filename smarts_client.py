@@ -316,6 +316,8 @@ class LanguageServerClient:
             # The server should not be considered 'initialized' if there's an error.
             if not response.get("error"):
                 self._server_initialized = True
+
+                # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initializeResult
                 self._server_capabilities = response.get("result").get("capabilities")
                 self._server_info = response.get("result").get("serverInfo")
 
