@@ -8,6 +8,9 @@
         "initialize": [
             {
                 "name": "Pyright"
+            },
+            {
+                "name": "Ruff"
             }
         ],
         "editor.show_hover": true

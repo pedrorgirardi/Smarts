@@ -30,7 +30,7 @@ from .smarts_typing import (
     LSPTextDocumentContentChangeEvent,
     LSPDidChangeTextDocumentParams,
 )
-from .smarts_client import LanguageServerClient
+from .smarts_client import LanguageServerClient, LSP_METHOD_PROVIDER
 
 # -- Logging
 
@@ -270,11 +270,56 @@ def applicable_smarts(view: sublime.View) -> List[Smart]:
     return smarts
 
 
+def applicable_smarts2(view: sublime.View, method: str) -> List[Smart]:
+    """
+    Returns Smarts applicable to view.
+    """
+    window = view.window()
+
+    if window is None:
+        return []
+
+    smarts = []
+
+    for smart in list_smarts(window):
+        smart_client = smart["client"]
+        smart_client_config = smart_client._config
+
+        # Skip a possible applicable Smart if server is shutdown.
+        if smart_client._server_shutdown.is_set():
+            continue
+
+        if not view_applicable(smart_client_config, view):
+            continue
+
+        server_capabilities = smart_client._server_capabilities or {}
+
+        if provider := LSP_METHOD_PROVIDER.get(method):
+            if server_capabilities.get(provider):
+                smarts.append(smart)
+            else:
+                plugin_logger.debug(
+                    f"Server {smart_client_config['name']} doesn't support '{method}'"
+                )
+
+    return smarts
+
+
 def applicable_smart(view: sublime.View) -> Optional[Smart]:
     """
-    Returns the first started server applicable to view, or None.
+    Returns the first Smart applicable to view, or None.
     """
     if applicable := applicable_smarts(view):
+        return applicable[0]
+
+    return None
+
+
+def applicable_smart2(view: sublime.View, method: str) -> Optional[Smart]:
+    """
+    Returns the first Smart applicable to view, or None.
+    """
+    if applicable := applicable_smarts2(view, method):
         return applicable[0]
 
     return None
@@ -1014,39 +1059,13 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
             )
 
             if client._server_initialized:
-                textDocumentSync = client.capabilities_textDocumentSync()
-
-                # Open and close notifications are sent to the server.
-                # If omitted open close notifications should not be sent.
-                textDocumentSync_openClose = textDocumentSync.get("openClose", "-")
-
-                change: int = textDocumentSync.get("change", 0)
-
-                # Change notifications are sent to the server.
-                textDocumentSync_change = {
-                    0: "0 - None",
-                    1: "1 - Full",
-                    2: "2 - Incremental",
-                }.get(
-                    change,
-                    change,
-                )
-
-                documentSymbolProvider = client._server_capabilities.get(
-                    "documentSymbolProvider", "-"
-                )
-                documentHighlightProvider = client._server_capabilities.get(
-                    "documentHighlightProvider", "-"
-                )
-
                 minihtml += "<ul class='m-0'>"
 
-                label_class = "text-foreground-07"
-
-                minihtml += f"<li><span class='{label_class}'>openClose:</span> {textDocumentSync_openClose}</li>"
-                minihtml += f"<li><span class='{label_class}'>change:</span> {textDocumentSync_change}</li>"
-                minihtml += f"<li><span class='{label_class}'>documentSymbolProvider:</span> {documentSymbolProvider}</li>"
-                minihtml += f"<li><span class='{label_class}'>documentHighlightProvider:</span> {documentHighlightProvider}</li>"
+                if server_capabilities := client._server_capabilities:
+                    for k, v in server_capabilities.items():
+                        minihtml += (
+                            f"<li><span class='text-foreground-07'>{k}:</span> {v}</li>"
+                        )
 
                 minihtml += "</ul><br /><br />"
 
@@ -1054,7 +1073,7 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
             return
 
         sheet = self.window.new_html_sheet(
-            "Servers",
+            "Smarts Status",
             f"""
             <style>
                 {kMINIHTML_STYLES}
@@ -1071,7 +1090,7 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
 
 class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
     def run(self, _):
-        smart = applicable_smart(self.view)
+        smart = applicable_smart2(self.view, "textDocument/definition")
 
         if not smart:
             return
@@ -1099,7 +1118,7 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
 
 class PgSmartsGotoReference(sublime_plugin.TextCommand):
     def run(self, _):
-        smart = applicable_smart(self.view)
+        smart = applicable_smart2(self.view, method="textDocument/references")
 
         if not smart:
             return
@@ -1177,9 +1196,9 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
 
 class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
     def run(self, _):
-        applicable_server_ = applicable_smart(self.view)
+        smart = applicable_smart2(self.view, method="textDocument/documentSymbol")
 
-        if not applicable_server_:
+        if not smart:
             return
 
         def callback(response: LSPResponseMessage):
@@ -1253,7 +1272,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
             "textDocument": view_textDocumentIdentifier(self.view),
         }
 
-        applicable_server_["client"].textDocument_documentSymbol(params, callback)
+        smart["client"].textDocument_documentSymbol(params, callback)
 
 
 class PgSmartsSelectRanges(sublime_plugin.TextCommand):
@@ -1324,53 +1343,56 @@ class PgSmartsJumpCommand(sublime_plugin.TextCommand):
 
 class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
     def run(self, _):
-        if applicable_server_ := applicable_smart(self.view):
-            params = view_textDocumentPositionParams(self.view)
+        smart = applicable_smart2(self.view, method="textDocument/hover")
 
-            def callback(response: LSPResponseMessage):
-                if error := response.get("error"):
-                    if window := self.view.window():
-                        panel_log_error(window, error)
+        if not smart:
+            return
 
-                if result := response["result"]:
-                    show_hover_popup(self.view, result)
+        params = view_textDocumentPositionParams(self.view)
 
-            applicable_server_["client"].textDocument_hover(params, callback)
+        def callback(response: LSPResponseMessage):
+            if error := response.get("error"):
+                if window := self.view.window():
+                    panel_log_error(window, error)
+
+            if result := response["result"]:
+                show_hover_popup(self.view, result)
+
+        smart["client"].textDocument_hover(params, callback)
 
 
 class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
     def run(self, _):
-        view_file_name = self.view.file_name()
+        smart = applicable_smart2(self.view, method="textDocument/formatting")
 
-        if not view_file_name:
+        if not smart:
             return
 
-        if applicable_server_ := applicable_smart(self.view):
-            params: LSPDocumentFormattingParams = {
-                "textDocument": view_textDocumentIdentifier(self.view),
-                "options": {
-                    "tabSize": self.view.settings().get("tab_size"),
-                    "insertSpaces": True,
-                    "insertFinalNewline": None,
-                    "trimTrailingWhitespace": None,
-                    "trimFinalNewlines": None,
-                },
-            }
+        params: LSPDocumentFormattingParams = {
+            "textDocument": view_textDocumentIdentifier(self.view),
+            "options": {
+                "tabSize": self.view.settings().get("tab_size"),
+                "insertSpaces": True,
+                "insertFinalNewline": None,
+                "trimTrailingWhitespace": None,
+                "trimFinalNewlines": None,
+            },
+        }
 
-            def callback(response: LSPResponseMessage):
-                if error := response.get("error"):
-                    if window := self.view.window():
-                        panel_log_error(window, error)
+        def callback(response: LSPResponseMessage):
+            if error := response.get("error"):
+                if window := self.view.window():
+                    panel_log_error(window, error)
 
-                if textEdits := response.get("result"):
-                    self.view.run_command(
-                        "pg_smarts_apply_edits",
-                        {
-                            "edits": textEdits,
-                        },
-                    )
+            if textEdits := response.get("result"):
+                self.view.run_command(
+                    "pg_smarts_apply_edits",
+                    {
+                        "edits": textEdits,
+                    },
+                )
 
-            applicable_server_["client"].textDocument_formatting(params, callback)
+        smart["client"].textDocument_formatting(params, callback)
 
 
 class PgSmartsApplyEditsCommand(sublime_plugin.TextCommand):

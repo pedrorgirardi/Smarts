@@ -43,6 +43,16 @@ def notification(
     }
 
 
+LSP_METHOD_PROVIDER = {
+    "textDocument/formatting": "documentFormattingProvider",
+    "textDocument/documentSymbol": "documentSymbolProvider",
+    "textDocument/documentHighlight": "documentHighlightProvider",
+    "textDocument/references": "referencesProvider",
+    "textDocument/definition": "definitionProvider",
+    "textDocument/hover": "hoverProvider",
+}
+
+
 class LanguageServerClient:
     def __init__(
         self,
