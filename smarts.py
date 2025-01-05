@@ -157,13 +157,11 @@ def available_servers() -> List[SmartsServerConfig]:
 
 def add_smart(window: sublime.Window, client: LanguageServerClient):
     global _SMARTS
-    _SMARTS.append(
-        {
-            "uuid": str(uuid.uuid4()),
-            "window": window.id(),
-            "client": client,
-        }
-    )
+    _SMARTS.append({
+        "uuid": str(uuid.uuid4()),
+        "window": window.id(),
+        "client": client,
+    })
 
     return _SMARTS
 
@@ -1466,22 +1464,20 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
             contentChanges = []
 
             for change in changes:
-                contentChanges.append(
-                    {
-                        "range": {
-                            "start": {
-                                "line": change.a.row,
-                                "character": change.a.col_utf16,
-                            },
-                            "end": {
-                                "line": change.b.row,
-                                "character": change.b.col_utf16,
-                            },
+                contentChanges.append({
+                    "range": {
+                        "start": {
+                            "line": change.a.row,
+                            "character": change.a.col_utf16,
                         },
-                        "rangeLength": change.len_utf16,
-                        "text": change.str,
-                    }
-                )
+                        "end": {
+                            "line": change.b.row,
+                            "character": change.b.col_utf16,
+                        },
+                    },
+                    "rangeLength": change.len_utf16,
+                    "text": change.str,
+                })
 
         params: LSPDidChangeTextDocumentParams = {
             "textDocument": textDocument,
@@ -1507,11 +1503,9 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 continue
 
             if view_applicable(smart_client_config, self.view):
-                smart_client.textDocument_didOpen(
-                    {
-                        "textDocument": view_text_document_item(self.view),
-                    }
-                )
+                smart_client.textDocument_didOpen({
+                    "textDocument": view_text_document_item(self.view),
+                })
 
     def on_pre_close(self):
         view_file_name = self.view.file_name()
@@ -1534,11 +1528,9 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 continue
 
             if view_applicable(smart_client_config, self.view):
-                smart_client.textDocument_didClose(
-                    {
-                        "textDocument": view_textDocumentIdentifier(self.view),
-                    }
-                )
+                smart_client.textDocument_didClose({
+                    "textDocument": view_textDocumentIdentifier(self.view),
+                })
 
     def erase_highlights(self):
         self.view.erase_regions(kSMARTS_HIGHLIGHTS)
