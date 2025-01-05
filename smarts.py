@@ -16,17 +16,6 @@ import sublime_plugin
 
 from . import smarts_client
 from .smarts_typing import (
-    LSPDidChangeTextDocumentParams,
-    LSPDidOpenTextDocumentParams,
-    LSPDocumentFormattingParams,
-    LSPMessage,
-    LSPResponseError,
-    LSPResponseMessage,
-    LSPTextDocumentContentChangeEvent,
-    LSPTextDocumentIdentifier,
-    LSPTextDocumentItem,
-    LSPTextDocumentPositionParams,
-    LSPVersionedTextDocumentIdentifier,
     SmartsProjectData,
     SmartsServerConfig,
 )
@@ -368,7 +357,7 @@ def panel_log(window: sublime.Window, text: str, show=False):
 
 def panel_log_error(
     window: sublime.Window,
-    error: LSPResponseError,
+    error: smarts_client.LSPResponseError,
     show=True,
 ):
     panel_log(
@@ -555,7 +544,7 @@ def view_file_name_uri(view: sublime.View) -> str:
         return f"untitled://{view.id()}"
 
 
-def view_text_document_item(view: sublime.View) -> LSPTextDocumentItem:
+def view_text_document_item(view: sublime.View) -> smarts_client.LSPTextDocumentItem:
     """
     An item to transfer a text document from the client to the server.
 
@@ -670,7 +659,7 @@ def goto_location(window, locations, on_cancel=None):
 # -- LSP
 
 
-def view_textDocumentIdentifier(view: sublime.View) -> LSPTextDocumentIdentifier:
+def view_textDocumentIdentifier(view: sublime.View) -> smarts_client.LSPTextDocumentIdentifier:
     """
     Text documents are identified using a URI. On the protocol level, URIs are passed as strings.
 
@@ -684,7 +673,7 @@ def view_textDocumentIdentifier(view: sublime.View) -> LSPTextDocumentIdentifier
 def view_textDocumentPositionParams(
     view: sublime.View,
     point=None,
-) -> LSPTextDocumentPositionParams:
+) -> smarts_client.LSPTextDocumentPositionParams:
     """
     A parameter literal used in requests to pass a text document and a position inside that document.
 
@@ -844,7 +833,7 @@ def handle_textDocument_publishDiagnostics(window, message):
 def on_receive_message(
     window: sublime.Window,
     server: str,
-    message: LSPMessage,
+    message: smarts_client.LSPMessage,
 ):
     message_method = message.get("method")
 
@@ -984,7 +973,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
 
         add_smart(self.window, client)
 
-        def callback(response: LSPResponseMessage):
+        def callback(response: smarts_client.LSPResponseMessage):
             if error := response.get("error"):
                 if window := self.window:
                     panel_log_error(window, error)
@@ -993,7 +982,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
                 # (Check if a view's syntax is valid for the server.)
                 for view in self.window.views():
                     if view_applicable(server_config, view):
-                        params: LSPDidOpenTextDocumentParams = {
+                        params: smarts_client.LSPDidOpenTextDocumentParams = {
                             "textDocument": view_text_document_item(view),
                         }
 
@@ -1077,7 +1066,7 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
 
         params = view_textDocumentPositionParams(self.view)
 
-        def callback(response: LSPResponseMessage):
+        def callback(response: smarts_client.LSPResponseMessage):
             if error := response.get("error"):
                 if window := self.view.window():
                     panel_log_error(window, error)
@@ -1103,7 +1092,7 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
         if not smart:
             return
 
-        def callback(response: LSPResponseMessage):
+        def callback(response: smarts_client.LSPResponseMessage):
             if error := response.get("error"):
                 if window := self.view.window():
                     panel_log_error(window, error)
@@ -1181,7 +1170,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
         if not smart:
             return
 
-        def callback(response: LSPResponseMessage):
+        def callback(response: smarts_client.LSPResponseMessage):
             if error := response.get("error"):
                 if window := self.view.window():
                     panel_log_error(window, error)
@@ -1330,7 +1319,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
 
         params = view_textDocumentPositionParams(self.view)
 
-        def callback(response: LSPResponseMessage):
+        def callback(response: smarts_client.LSPResponseMessage):
             if error := response.get("error"):
                 if window := self.view.window():
                     panel_log_error(window, error)
@@ -1348,7 +1337,7 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
         if not smart:
             return
 
-        params: LSPDocumentFormattingParams = {
+        params: smarts_client.LSPDocumentFormattingParams = {
             "textDocument": view_textDocumentIdentifier(self.view),
             "options": {
                 "tabSize": self.view.settings().get("tab_size"),
@@ -1359,7 +1348,7 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
             },
         }
 
-        def callback(response: LSPResponseMessage):
+        def callback(response: smarts_client.LSPResponseMessage):
             if error := response.get("error"):
                 if window := self.view.window():
                     panel_log_error(window, error)
@@ -1410,7 +1399,7 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
             # after all provided content changes have been applied.
             #
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#versionedTextDocumentIdentifier
-            textDocument: LSPVersionedTextDocumentIdentifier = {
+            textDocument: smarts_client.LSPVersionedTextDocumentIdentifier = {
                 "uri": path_to_uri(view_file_name),
                 "version": view.change_count(),
             }
@@ -1424,7 +1413,7 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
             # If only a text is provided it is considered to be the full content of the document.
             #
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentContentChangeEvent
-            contentChanges: List[LSPTextDocumentContentChangeEvent] = []
+            contentChanges: List[smarts_client.LSPTextDocumentContentChangeEvent] = []
 
             # Full
             # Documents are synced by always sending the full content of the document.
@@ -1457,7 +1446,7 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
                         "text": change.str,
                     })
 
-            params: LSPDidChangeTextDocumentParams = {
+            params: smarts_client.LSPDidChangeTextDocumentParams = {
                 "textDocument": textDocument,
                 "contentChanges": contentChanges,
             }
@@ -1489,7 +1478,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if not smart:
             return
 
-        def callback(response: LSPResponseMessage):
+        def callback(response: smarts_client.LSPResponseMessage):
             if error := response.get("error"):
                 if window := self.view.window():
                     panel_log_error(window, error)
@@ -1559,7 +1548,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
             params = view_textDocumentPositionParams(self.view, point)
 
-            def callback(response: LSPResponseMessage):
+            def callback(response: smarts_client.LSPResponseMessage):
                 if error := response.get("error"):
                     panel_log_error(window, error)
 
