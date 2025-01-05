@@ -43,14 +43,46 @@ def notification(
     }
 
 
-LSP_METHOD_PROVIDER = {
-    "textDocument/formatting": "documentFormattingProvider",
-    "textDocument/documentSymbol": "documentSymbolProvider",
-    "textDocument/documentHighlight": "documentHighlightProvider",
-    "textDocument/references": "referencesProvider",
-    "textDocument/definition": "definitionProvider",
-    "textDocument/hover": "hoverProvider",
-}
+def textDocumentSyncOptions(
+    textDocumentSync: Optional[Union[dict, int]],
+) -> Dict[str, Any]:
+    if textDocumentSync is None:
+        return {
+            "openClose": False,
+            "change": 0,
+        }
+
+    elif isinstance(textDocumentSync, int):
+        return {
+            "openClose": False if textDocumentSync == 0 else True,
+            "change": textDocumentSync,
+        }
+
+    else:
+        return textDocumentSync
+
+
+def support_method(capabilities: dict, method: str) -> bool:
+    if method == "textDocument/formatting":
+        return True if capabilities.get("documentFormattingProvider") else False
+    elif method == "textDocument/documentSymbol":
+        return True if capabilities.get("documentSymbolProvider") else False
+    elif method == "textDocument/documentHighlight":
+        return True if capabilities.get("documentHighlightProvider") else False
+    elif method == "textDocument/references":
+        return True if capabilities.get("referencesProvider") else False
+    elif method == "textDocument/definition":
+        return True if capabilities.get("definitionProvider") else False
+    elif method == "textDocument/hover":
+        return True if capabilities.get("hoverProvider") else False
+    elif method == "textDocument/didOpen" or method == "textDocument/didClose":
+        options = textDocumentSyncOptions(capabilities.get("textDocumentSync"))
+        return options.get("openClose", False)
+    elif method == "textDocument/didChange":
+        options = textDocumentSyncOptions(capabilities.get("textDocumentSync"))
+        return False if options["change"] == 0 else True
+    else:
+        return False
 
 
 class LanguageServerClient:

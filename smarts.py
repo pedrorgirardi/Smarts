@@ -7,7 +7,7 @@ import threading
 import uuid
 from itertools import groupby
 from pathlib import Path
-from typing import Any, List, Optional, TypedDict, Tuple, Callable, Set
+from typing import Any, List, Optional, TypedDict, Callable, Set
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
@@ -25,12 +25,11 @@ from .smarts_typing import (
     LSPTextDocumentPositionParams,
     LSPDocumentFormattingParams,
     LSPDidOpenTextDocumentParams,
-    LSPDidCloseTextDocumentParams,
     LSPTextDocumentItem,
     LSPTextDocumentContentChangeEvent,
     LSPDidChangeTextDocumentParams,
 )
-from .smarts_client import LanguageServerClient, LSP_METHOD_PROVIDER
+from .smarts_client import LanguageServerClient, support_method, textDocumentSyncOptions
 
 # -- Logging
 
@@ -275,23 +274,6 @@ def view_applicable(config: SmartsServerConfig, view: sublime.View) -> bool:
     return view.file_name() is not None and view_syntax(view) in applicable_to
 
 
-# TODO: Replace by applicable_smarts2
-def applicable_smarts(view: sublime.View) -> List[Smart]:
-    """
-    Returns started servers applicable to view.
-    """
-    smarts = []
-
-    for smart in view_smarts(view):
-        smart_client = smart["client"]
-        smart_client_config = smart_client._config
-
-        if view_applicable(smart_client_config, view):
-            smarts.append(smart)
-
-    return smarts
-
-
 def applicable_smarts2(view: sublime.View, method: str) -> List[Smart]:
     """
     Returns Smarts applicable to view.
@@ -300,15 +282,12 @@ def applicable_smarts2(view: sublime.View, method: str) -> List[Smart]:
 
     for smart in view_smarts(view):
         smart_client = smart["client"]
-        smart_client_config = smart_client._config
 
-        if not view_applicable(smart_client_config, view):
+        if not view_applicable(smart_client._config, view):
             continue
 
-        if provider := LSP_METHOD_PROVIDER.get(method):
-            server_capabilities = smart_client._server_capabilities or {}
-
-            if server_capabilities.get(provider):
+        if server_capabilities := smart_client._server_capabilities:
+            if support_method(server_capabilities, method):
                 smarts.append(smart)
 
     return smarts
@@ -1417,13 +1396,14 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
         if not view_file_name:
             return
 
-        for smart in applicable_smarts(view):
+        for smart in applicable_smarts2(view, method="textDocument/didChange"):
             language_client = smart["client"]
 
-            textDocumentSync = language_client.capabilities_textDocumentSync()
-
-            if not textDocumentSync:
-                return
+            textDocumentSync = textDocumentSyncOptions(
+                language_client._server_capabilities.get("textDocumentSync")
+                if language_client._server_capabilities
+                else None
+            )
 
             # The document that did change.
             # The version number points to the version
@@ -1487,13 +1467,13 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
 
 class PgSmartsViewListener(sublime_plugin.ViewEventListener):
     def on_load_async(self):
-        for smart in applicable_smarts(self.view):
+        for smart in applicable_smarts2(self.view, method="textDocument/didOpen"):
             smart["client"].textDocument_didOpen({
                 "textDocument": view_text_document_item(self.view),
             })
 
     def on_pre_close(self):
-        for smart in applicable_smarts(self.view):
+        for smart in applicable_smarts2(self.view, method="textDocument/didClose"):
             smart["client"].textDocument_didClose({
                 "textDocument": view_textDocumentIdentifier(self.view),
             })
