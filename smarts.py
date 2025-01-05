@@ -85,6 +85,7 @@ kMINIHTML_STYLES = """
 class Smart(TypedDict):
     uuid: str
     window: int  # Window ID
+    config: smarts_data.SmartsServerConfig
     client: smarts_client.LanguageServerClient
 
 
@@ -141,11 +142,16 @@ def available_servers() -> List[smarts_data.SmartsServerConfig]:
     return settings().get(kSETTING_SERVERS, [])
 
 
-def add_smart(window: sublime.Window, client: smarts_client.LanguageServerClient):
+def add_smart(
+    window: sublime.Window,
+    config: smarts_data.SmartsServerConfig,
+    client: smarts_client.LanguageServerClient,
+):
     global _SMARTS
     _SMARTS.append({
         "uuid": str(uuid.uuid4()),
         "window": window.id(),
+        "config": config,
         "client": client,
     })
 
@@ -270,7 +276,7 @@ def applicable_smarts(view: sublime.View, method: str) -> List[Smart]:
     for smart in view_smarts(view):
         smart_client = smart["client"]
 
-        if not view_applicable(smart_client._config, view):
+        if not view_applicable(smart["config"], view):
             continue
 
         if server_capabilities := smart_client._server_capabilities:
@@ -399,7 +405,7 @@ def show_hover_popup(view: sublime.View, smart: Smart, result: Any):
         )
 
     minihtml = "<br /><br />".join(popup_content)
-    minihtml += f"<br /><br /><span>{smart['client']._config['name']}</span>"
+    minihtml += f"<br /><br /><span>{smart['client']._name}</span>"
 
     view.show_popup(minihtml, location=location, max_width=860)
 
@@ -882,7 +888,7 @@ class SmartsInputHandler(sublime_plugin.ListInputHandler):
 
         for smart in window_running_smarts(sublime.active_window()):
             smart_uuid = smart["uuid"]
-            smart_server_name = smart["client"]._config["name"]
+            smart_server_name = smart["client"]._name
 
             items.append((f"{smart_server_name} {smart_uuid}", smart_uuid))
 
@@ -965,13 +971,14 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
 
         client = smarts_client.LanguageServerClient(
             logger=client_logger,
-            config=server_config,
+            name=server_config["name"],
+            server_args=server_config["start"],
             notification_handler=lambda message: on_receive_message(
                 self.window, server, message
             ),
         )
 
-        add_smart(self.window, client)
+        add_smart(self.window, server_config, client)
 
         def callback(response: smarts_client.LSPResponseMessage):
             if error := response.get("error"):
@@ -1024,7 +1031,7 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
             status = "Stopped" if client._server_shutdown.is_set() else "Running"
 
             minihtml += (
-                f"<strong>{client._config['name']} ({status})</strong><br /><br />"
+                f"<strong>{client._name} ({status})</strong><br /><br />"
             )
 
             if client._server_initialized:
