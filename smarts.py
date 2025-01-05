@@ -7,7 +7,7 @@ import threading
 import uuid
 from itertools import groupby
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Set, TypedDict
+from typing import Any, Callable, List, Optional, Set, TypedDict, Union
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
@@ -854,7 +854,10 @@ def handle_textDocument_publishDiagnostics(window, message):
 def on_receive_message(
     window: sublime.Window,
     server: str,
-    message: smarts_client.LSPMessage,
+    message: Union[
+        smarts_client.LSPNotificationMessage,
+        smarts_client.LSPResponseMessage,
+    ],
 ):
     message_method = message.get("method")
 
@@ -870,8 +873,8 @@ def on_receive_message(
     elif message_method == "textDocument/publishDiagnostics":
         handle_textDocument_publishDiagnostics(window, message)
 
-    else:
-        panel_log(window, f"{pprint.pformat(message)}\n\n")
+    # else:
+    #     panel_log(window, f"{pprint.pformat(message)}\n\n")
 
 
 # -- INPUT HANDLERS
@@ -988,7 +991,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             logger=client_logger,
             name=server_config["name"],
             server_args=server_config["start"],
-            notification_handler=lambda message: on_receive_message(
+            on_receive=lambda message: on_receive_message(
                 self.window, server, message
             ),
         )

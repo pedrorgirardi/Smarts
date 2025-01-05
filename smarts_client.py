@@ -288,7 +288,12 @@ class LanguageServerClient:
         logger: logging.Logger,
         name: str,
         server_args: List[str],
-        notification_handler: Optional[Callable[[LSPMessage], None]] = None,
+        on_receive: Optional[
+            Callable[
+                [Union[LSPNotificationMessage, LSPResponseMessage]],
+                None,
+            ]
+        ] = None,
     ):
         self._logger = logger
         self._name = name
@@ -298,7 +303,7 @@ class LanguageServerClient:
         self._server_initialized = False
         self._server_info: Optional[dict] = None
         self._server_capabilities: Optional[dict] = None
-        self._notification_handler = notification_handler
+        self._on_receive = on_receive
         self._send_queue = Queue(maxsize=1)
         self._receive_queue = Queue(maxsize=1)
         self._reader: Optional[threading.Thread] = None
@@ -400,6 +405,12 @@ class LanguageServerClient:
         self._logger.debug(f"[{self._name}] Handler started 🟢")
 
         while (message := self._receive_queue.get()) is not None:  # noqa
+            if self._on_receive:
+                try:
+                    self._on_receive(message)
+                except Exception:
+                    self._logger.exception(f"{self._name} - Receive message error")
+
             # A Response Message sent as a result of a request.
             #
             # If a request doesn’t provide a result value the receiver of a request
@@ -415,14 +426,6 @@ class LanguageServerClient:
                         self._logger.exception(f"{self._name} - Request callback error")
                     finally:
                         del self._request_callback[request_id]
-            else:
-                if self._notification_handler:
-                    try:
-                        self._notification_handler(message)
-                    except Exception:
-                        self._logger.exception(
-                            f"{self._name} - Notification handler error"
-                        )
 
             self._receive_queue.task_done()
 
