@@ -6,9 +6,7 @@ import uuid
 from queue import Queue
 from typing import TypedDict, Any, Callable, List, Dict, Optional, Union
 
-from .smarts_typing import (
-    SmartsServerConfig,
-)
+from . import smarts_data
 
 
 class LSPMessage(TypedDict):
@@ -290,7 +288,7 @@ class LanguageServerClient:
     def __init__(
         self,
         logger: logging.Logger,
-        config: SmartsServerConfig,
+        config: smarts_data.SmartsServerConfig,
         notification_handler: Optional[Callable[[LSPMessage], None]] = None,
     ):
         self._logger = logger

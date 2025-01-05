@@ -14,11 +14,7 @@ from zipfile import ZipFile
 import sublime
 import sublime_plugin
 
-from . import smarts_client
-from .smarts_typing import (
-    SmartsProjectData,
-    SmartsServerConfig,
-)
+from . import smarts_client, smarts_data
 
 # -- Logging
 
@@ -110,7 +106,9 @@ def settings() -> sublime.Settings:
     return sublime.load_settings("Smarts.sublime-settings")
 
 
-def smarts_project_data(window: sublime.Window) -> Optional[SmartsProjectData]:
+def smarts_project_data(
+    window: sublime.Window,
+) -> Optional[smarts_data.SmartsProjectData]:
     if project_data_ := window.project_data():
         return project_data_.get("Smarts")
 
@@ -139,7 +137,7 @@ def window_project_path(window: sublime.Window) -> Optional[Path]:
     return None
 
 
-def available_servers() -> List[SmartsServerConfig]:
+def available_servers() -> List[smarts_data.SmartsServerConfig]:
     return settings().get(kSETTING_SERVERS, [])
 
 
@@ -252,7 +250,7 @@ def view_syntax(view: sublime.View) -> str:
     return view.settings().get("syntax")
 
 
-def view_applicable(config: SmartsServerConfig, view: sublime.View) -> bool:
+def view_applicable(config: smarts_data.SmartsServerConfig, view: sublime.View) -> bool:
     """
     Returns True if view is applicable.
 
@@ -659,7 +657,9 @@ def goto_location(window, locations, on_cancel=None):
 # -- LSP
 
 
-def view_textDocumentIdentifier(view: sublime.View) -> smarts_client.LSPTextDocumentIdentifier:
+def view_textDocumentIdentifier(
+    view: sublime.View,
+) -> smarts_client.LSPTextDocumentIdentifier:
     """
     Text documents are identified using a URI. On the protocol level, URIs are passed as strings.
 
