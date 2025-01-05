@@ -290,15 +290,11 @@ def applicable_smarts2(view: sublime.View, method: str) -> List[Smart]:
         if not view_applicable(smart_client_config, view):
             continue
 
-        server_capabilities = smart_client._server_capabilities or {}
-
         if provider := LSP_METHOD_PROVIDER.get(method):
+            server_capabilities = smart_client._server_capabilities or {}
+
             if server_capabilities.get(provider):
                 smarts.append(smart)
-            else:
-                plugin_logger.debug(
-                    f"Server {smart_client_config['name']} doesn't support '{method}'"
-                )
 
     return smarts
 
@@ -319,6 +315,8 @@ def applicable_smart2(view: sublime.View, method: str) -> Optional[Smart]:
     """
     if applicable := applicable_smarts2(view, method):
         return applicable[0]
+
+    plugin_logger.debug(f"No applicable Smart for '{method}'")
 
     return None
 
@@ -1088,7 +1086,7 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
 
 class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
     def run(self, _):
-        smart = applicable_smart2(self.view, "textDocument/definition")
+        smart = applicable_smart2(self.view, method="textDocument/definition")
 
         if not smart:
             return
@@ -1538,9 +1536,9 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         self.view.settings().erase(kSMARTS_HIGHLIGHTS)
 
     def highlight(self):
-        applicable_server_ = applicable_smart(self.view)
+        smart = applicable_smart2(self.view, method="textDocument/documentHighlight")
 
-        if not applicable_server_:
+        if not smart:
             return
 
         def callback(response: LSPResponseMessage):
@@ -1575,7 +1573,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         params = view_textDocumentPositionParams(self.view)
 
-        applicable_server_["client"].textDocument_documentHighlight(params, callback)
+        smart["client"].textDocument_documentHighlight(params, callback)
 
     def on_modified(self):
         # Erase highlights immediately.
@@ -1606,7 +1604,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             return
 
         if hover_zone == sublime.HOVER_TEXT:
-            smart = applicable_smart(self.view)
+            smart = applicable_smart2(self.view, method="textDocument/hover")
 
             if not smart:
                 return
