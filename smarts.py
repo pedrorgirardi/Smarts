@@ -14,7 +14,7 @@ from zipfile import ZipFile
 import sublime
 import sublime_plugin
 
-from . import smarts_client, smarts_data
+from . import smarts_client
 
 # -- Logging
 
@@ -82,10 +82,25 @@ kMINIHTML_STYLES = """
 # ---------------------------------------------------------------------------------------
 
 
+class SmartsServerConfig(TypedDict):
+    name: str
+    start: List[str]
+    applicable_to: List[str]
+
+
+class SmartsInitializeData(TypedDict, total=False):
+    name: str
+    rootPath: str  # Optional.
+
+
+class SmartsProjectData(TypedDict):
+    initialize: List[SmartsInitializeData]
+
+
 class Smart(TypedDict):
     uuid: str
     window: int  # Window ID
-    config: smarts_data.SmartsServerConfig
+    config: SmartsServerConfig
     client: smarts_client.LanguageServerClient
 
 
@@ -109,7 +124,7 @@ def settings() -> sublime.Settings:
 
 def smarts_project_data(
     window: sublime.Window,
-) -> Optional[smarts_data.SmartsProjectData]:
+) -> Optional[SmartsProjectData]:
     if project_data_ := window.project_data():
         return project_data_.get("Smarts")
 
@@ -138,13 +153,13 @@ def window_project_path(window: sublime.Window) -> Optional[Path]:
     return None
 
 
-def available_servers() -> List[smarts_data.SmartsServerConfig]:
+def available_servers() -> List[SmartsServerConfig]:
     return settings().get(kSETTING_SERVERS, [])
 
 
 def add_smart(
     window: sublime.Window,
-    config: smarts_data.SmartsServerConfig,
+    config: SmartsServerConfig,
     client: smarts_client.LanguageServerClient,
 ):
     global _SMARTS
@@ -256,7 +271,7 @@ def view_syntax(view: sublime.View) -> str:
     return view.settings().get("syntax")
 
 
-def view_applicable(config: smarts_data.SmartsServerConfig, view: sublime.View) -> bool:
+def view_applicable(config: SmartsServerConfig, view: sublime.View) -> bool:
     """
     Returns True if view is applicable.
 
@@ -1030,9 +1045,7 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
 
             status = "Stopped" if client._server_shutdown.is_set() else "Running"
 
-            minihtml += (
-                f"<strong>{client._name} ({status})</strong><br /><br />"
-            )
+            minihtml += f"<strong>{client._name} ({status})</strong><br /><br />"
 
             if client._server_initialized:
                 minihtml += "<ul class='m-0'>"
