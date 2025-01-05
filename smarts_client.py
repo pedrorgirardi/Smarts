@@ -309,30 +309,6 @@ class LanguageServerClient:
         ] = {}
         self._open_documents = set()
 
-    def capabilities_textDocumentSync(self) -> Optional[Dict[str, Any]]:
-        """
-        Defines how text documents are synced.
-
-        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentSyncOptions
-        """
-        if capabilities := self._server_capabilities:
-            # If omitted it defaults to `TextDocumentSyncKind.None`.
-            textDocumentSync = capabilities.get(
-                "textDocumentSync",
-                {
-                    "change": 0,
-                },
-            )
-
-            # Is either a detailed structure defining each notification
-            # or for backwards compatibility the TextDocumentSyncKind number.
-            if not isinstance(textDocumentSync, dict):
-                textDocumentSync = {
-                    "change": textDocumentSync,
-                }
-
-            return textDocumentSync
-
     def _read(self, out, n):
         remaining = n
 
