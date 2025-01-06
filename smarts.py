@@ -194,7 +194,7 @@ def window_running_smarts(window: sublime.Window) -> List[Smart]:
     return [
         smart
         for smart in window_smarts(window)
-        if not smart["client"]._server_shutdown.is_set()
+        if not smart["client"].is_server_shutdown()
     ]
 
 
@@ -209,7 +209,7 @@ def view_smarts(view: sublime.View) -> List[Smart]:
     for smart in window_running_smarts(window):
         smart_client = smart["client"]
 
-        if not smart_client._server_initialized:
+        if not smart_client.is_server_initialized():
             continue
 
         smarts.append(smart)
@@ -1058,11 +1058,11 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
         for smart in window_smarts(self.window):
             client = smart["client"]
 
-            status = "Stopped" if client._server_shutdown.is_set() else "Running"
+            status = "Stopped" if client.is_server_shutdown() else "Running"
 
             minihtml += f"<strong>{client._name} ({status})</strong><br /><br />"
 
-            if client._server_initialized:
+            if client.is_server_initialized():
                 minihtml += "<ul class='m-0'>"
 
                 if server_capabilities := client._server_capabilities:

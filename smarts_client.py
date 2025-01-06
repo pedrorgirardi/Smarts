@@ -335,6 +335,18 @@ class LanguageServerClient:
         self._on_window_showMessage = on_window_showMessage
         self._on_textDocument_publishDiagnostics = on_textDocument_publishDiagnostics
 
+    def is_server_initialized(self) -> bool:
+        """
+        Returns True if server is up and running and successfuly processed a 'initialize' request.
+        """
+        return self._server_initialized
+
+    def is_server_shutdown(self) -> bool:
+        """
+        Returns True if server processed a 'shutdown' request and this client sent a 'exit' notification.
+        """
+        return self._server_shutdown.is_set()
+
     def _read(self, out, n):
         remaining = n
 
