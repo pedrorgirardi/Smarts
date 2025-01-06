@@ -330,10 +330,10 @@ class LanguageServerClient:
             Union[int, str], Callable[[LSPResponseMessage], None]
         ] = {}
         self._open_documents = set()
-        self.on_logTrace = on_logTrace
-        self.on_window_logMessage = on_window_logMessage
-        self.on_window_showMessage = on_window_showMessage
-        self.on_textDocument_publishDiagnostics = on_textDocument_publishDiagnostics
+        self._on_logTrace = on_logTrace
+        self._on_window_logMessage = on_window_logMessage
+        self._on_window_showMessage = on_window_showMessage
+        self._on_textDocument_publishDiagnostics = on_textDocument_publishDiagnostics
 
     def _read(self, out, n):
         remaining = n
@@ -450,19 +450,19 @@ class LanguageServerClient:
 
                 try:
                     if method == "$/logTrace":
-                        if f := self.on_logTrace:
+                        if f := self._on_logTrace:
                             f(notification)
 
                     elif method == "window/logMessage":
-                        if f := self.on_window_logMessage:
+                        if f := self._on_window_logMessage:
                             f(notification)
 
                     elif method == "window/showMessage":
-                        if f := self.on_window_showMessage:
+                        if f := self._on_window_showMessage:
                             f(notification)
 
                     elif method == "textDocument/publishDiagnostics":
-                        if f := self.on_textDocument_publishDiagnostics:
+                        if f := self._on_textDocument_publishDiagnostics:
                             f(notification)
 
                 except Exception:
