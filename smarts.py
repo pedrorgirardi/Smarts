@@ -7,7 +7,7 @@ import threading
 import uuid
 from itertools import groupby
 from pathlib import Path
-from typing import cast, Any, Callable, List, Optional, Set, TypedDict, Union
+from typing import Any, Callable, List, Optional, Set, TypedDict
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
@@ -155,22 +155,6 @@ def window_project_path(window: sublime.Window) -> Optional[Path]:
 
 def available_servers() -> List[SmartsServerConfig]:
     return settings().get(kSETTING_SERVERS, [])
-
-
-def add_smart(
-    window: sublime.Window,
-    config: SmartsServerConfig,
-    client: smarts_client.LanguageServerClient,
-):
-    global _SMARTS
-    _SMARTS.append({
-        "uuid": str(uuid.uuid4()),
-        "window": window.id(),
-        "config": config,
-        "client": client,
-    })
-
-    return _SMARTS
 
 
 def remove_smarts(uuids: Set[str]):
@@ -864,20 +848,10 @@ def handle_textDocument_publishDiagnostics(
         view.set_status(kDIAGNOSTICS, ", ".join(diagnostics_status))
 
 
-def on_receive_message(
+def on_receive_notification(
     smart_uuid: str,
-    message: Union[
-        smarts_client.LSPNotificationMessage,
-        smarts_client.LSPResponseMessage,
-    ],
+    notification: smarts_client.LSPNotificationMessage,
 ):
-    # Ignore request responses.
-    # (Notifications don't have ID)
-    if "id" in message:
-        return
-
-    notification = cast(smarts_client.LSPNotificationMessage, message)
-
     smart = find_smart(smart_uuid)
 
     if not smart:
@@ -888,22 +862,19 @@ def on_receive_message(
     if not window:
         return
 
-    message_method = message.get("method")
+    message_method = notification.get("method")
 
     if message_method == "$/logTrace":
-        handle_logTrace(window, message)
+        handle_logTrace(window, notification)
 
     elif message_method == "window/logMessage":
-        handle_window_logMessage(window, message)
+        handle_window_logMessage(window, notification)
 
     elif message_method == "window/showMessage":
-        handle_window_showMessage(window, message)
+        handle_window_showMessage(window, notification)
 
     elif message_method == "textDocument/publishDiagnostics":
         handle_textDocument_publishDiagnostics(window, smart, notification)
-
-    # else:
-    #     panel_log(window, f"{pprint.pformat(message)}\n\n")
 
 
 # -- INPUT HANDLERS
@@ -1018,11 +989,17 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
 
         smart_uuid = str(uuid.uuid4())
 
+        def _on_receive_notification(message):
+            on_receive_notification(smart_uuid, message)
+
         client = smarts_client.LanguageServerClient(
             logger=client_logger,
             name=server_config["name"],
             server_args=server_config["start"],
-            on_receive=lambda message: on_receive_message(smart_uuid, message),
+            on_logTrace=_on_receive_notification,
+            on_window_logMessage=_on_receive_notification,
+            on_window_showMessage=_on_receive_notification,
+            on_textDocument_publishDiagnostics=_on_receive_notification,
         )
 
         global _SMARTS

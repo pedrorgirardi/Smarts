@@ -4,7 +4,7 @@ import subprocess
 import threading
 import uuid
 from queue import Queue
-from typing import TypedDict, Any, Callable, List, Dict, Optional, Union
+from typing import cast, TypedDict, Any, Callable, List, Dict, Optional, Union
 
 
 class LSPMessage(TypedDict):
@@ -288,9 +288,27 @@ class LanguageServerClient:
         logger: logging.Logger,
         name: str,
         server_args: List[str],
-        on_receive: Optional[
+        on_logTrace: Optional[
             Callable[
-                [Union[LSPNotificationMessage, LSPResponseMessage]],
+                [LSPNotificationMessage],
+                None,
+            ]
+        ] = None,
+        on_window_logMessage: Optional[
+            Callable[
+                [LSPNotificationMessage],
+                None,
+            ]
+        ] = None,
+        on_window_showMessage: Optional[
+            Callable[
+                [LSPNotificationMessage],
+                None,
+            ]
+        ] = None,
+        on_textDocument_publishDiagnostics: Optional[
+            Callable[
+                [LSPNotificationMessage],
                 None,
             ]
         ] = None,
@@ -303,7 +321,6 @@ class LanguageServerClient:
         self._server_initialized = False
         self._server_info: Optional[dict] = None
         self._server_capabilities: Optional[dict] = None
-        self._on_receive = on_receive
         self._send_queue = Queue(maxsize=1)
         self._receive_queue = Queue(maxsize=1)
         self._reader: Optional[threading.Thread] = None
@@ -313,6 +330,10 @@ class LanguageServerClient:
             Union[int, str], Callable[[LSPResponseMessage], None]
         ] = {}
         self._open_documents = set()
+        self.on_logTrace = on_logTrace
+        self.on_window_logMessage = on_window_logMessage
+        self.on_window_showMessage = on_window_showMessage
+        self.on_textDocument_publishDiagnostics = on_textDocument_publishDiagnostics
 
     def _read(self, out, n):
         remaining = n
@@ -404,12 +425,8 @@ class LanguageServerClient:
     def _start_handler(self):
         self._logger.debug(f"[{self._name}] Handler started 🟢")
 
-        while (message := self._receive_queue.get()) is not None:  # noqa
-            if self._on_receive:
-                try:
-                    self._on_receive(message)
-                except Exception:
-                    self._logger.exception(f"{self._name} - Receive message error")
+        while (message := self._receive_queue.get()) is not None:
+            message = cast(Union[LSPNotificationMessage, LSPResponseMessage], message)
 
             # A Response Message sent as a result of a request.
             #
@@ -421,11 +438,35 @@ class LanguageServerClient:
             if request_id := message.get("id"):
                 if callback := self._request_callback.get(request_id):
                     try:
-                        callback(message)
+                        callback(cast(LSPResponseMessage, message))
                     except Exception:
                         self._logger.exception(f"{self._name} - Request callback error")
                     finally:
                         del self._request_callback[request_id]
+            else:
+                notification = cast(LSPNotificationMessage, message)
+
+                method = notification["method"]
+
+                try:
+                    if method == "$/logTrace":
+                        if f := self.on_logTrace:
+                            f(notification)
+
+                    elif method == "window/logMessage":
+                        if f := self.on_window_logMessage:
+                            f(notification)
+
+                    elif method == "window/showMessage":
+                        if f := self.on_window_showMessage:
+                            f(notification)
+
+                    elif method == "textDocument/publishDiagnostics":
+                        if f := self.on_textDocument_publishDiagnostics:
+                            f(notification)
+
+                except Exception:
+                    self._logger.exception(f"{self._name} - Error handling '{method}'")
 
             self._receive_queue.task_done()
 
