@@ -7,7 +7,7 @@ import threading
 import uuid
 from itertools import groupby
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Set, TypedDict, Union
+from typing import cast, Any, Callable, List, Optional, Set, TypedDict, Union
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
@@ -184,6 +184,14 @@ def find_smart(uuid: str) -> Optional[Smart]:
     for smart in _SMARTS:
         if smart["uuid"] == uuid:
             return smart
+
+    return None
+
+
+def find_window(id: int) -> Optional[sublime.Window]:
+    for window in sublime.windows():
+        if window.id() == id:
+            return window
 
     return None
 
@@ -451,12 +459,12 @@ def severity_scope(severity: int):
         return "invalid"
 
 
-def severity_annotation_color(view: sublime.View, severity: int) -> Optional[str]:
+def severity_annotation_color(view: sublime.View, severity: int) -> str:
     scope = severity_scope(severity)
 
     style = view.style_for_scope(scope)
 
-    return style.get("foreground")
+    return style.get("foreground", "#ff0000")
 
 
 def severity_kind(severity: int):
@@ -780,7 +788,11 @@ def handle_window_showMessage(window, message):
     panel_log(window, f"{message_message}\n", show=True)
 
 
-def handle_textDocument_publishDiagnostics(window, message):
+def handle_textDocument_publishDiagnostics(
+    window: sublime.Window,
+    smart: Smart,
+    message: smarts_client.LSPNotificationMessage,
+):
     """
     Diagnostics notifications are sent from the server to the client to signal results of validation runs.
 
@@ -793,6 +805,7 @@ def handle_textDocument_publishDiagnostics(window, message):
 
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#publishDiagnosticsParams
     """
+
     params = message["params"]
 
     fname = unquote(urlparse(params["uri"]).path)
@@ -852,13 +865,29 @@ def handle_textDocument_publishDiagnostics(window, message):
 
 
 def on_receive_message(
-    window: sublime.Window,
-    server: str,
+    smart_uuid: str,
     message: Union[
         smarts_client.LSPNotificationMessage,
         smarts_client.LSPResponseMessage,
     ],
 ):
+    # Ignore request responses.
+    # (Notifications don't have ID)
+    if "id" in message:
+        return
+
+    notification = cast(smarts_client.LSPNotificationMessage, message)
+
+    smart = find_smart(smart_uuid)
+
+    if not smart:
+        return
+
+    window = find_window(smart["window"])
+
+    if not window:
+        return
+
     message_method = message.get("method")
 
     if message_method == "$/logTrace":
@@ -871,7 +900,7 @@ def on_receive_message(
         handle_window_showMessage(window, message)
 
     elif message_method == "textDocument/publishDiagnostics":
-        handle_textDocument_publishDiagnostics(window, message)
+        handle_textDocument_publishDiagnostics(window, smart, notification)
 
     # else:
     #     panel_log(window, f"{pprint.pformat(message)}\n\n")
@@ -987,16 +1016,22 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             )
             return
 
+        smart_uuid = str(uuid.uuid4())
+
         client = smarts_client.LanguageServerClient(
             logger=client_logger,
             name=server_config["name"],
             server_args=server_config["start"],
-            on_receive=lambda message: on_receive_message(
-                self.window, server, message
-            ),
+            on_receive=lambda message: on_receive_message(smart_uuid, message),
         )
 
-        add_smart(self.window, server_config, client)
+        global _SMARTS
+        _SMARTS.append({
+            "uuid": smart_uuid,
+            "window": self.window.id(),
+            "config": server_config,
+            "client": client,
+        })
 
         def callback(response: smarts_client.LSPResponseMessage):
             if error := response.get("error"):
