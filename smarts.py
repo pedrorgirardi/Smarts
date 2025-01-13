@@ -281,14 +281,11 @@ def applicable_smarts(view: sublime.View, method: str) -> List[Smart]:
     smarts = []
 
     for smart in view_smarts(view):
-        smart_client = smart["client"]
-
         if not view_applicable(smart["config"], view):
             continue
 
-        if server_capabilities := smart_client._server_capabilities:
-            if smarts_client.support_method(server_capabilities, method):
-                smarts.append(smart)
+        if smart["client"].support_method(method):
+            smarts.append(smart)
 
     return smarts
 

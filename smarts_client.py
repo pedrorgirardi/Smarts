@@ -259,29 +259,6 @@ def textDocumentSyncOptions(
         return textDocumentSync
 
 
-def support_method(capabilities: dict, method: str) -> bool:
-    if method == "textDocument/formatting":
-        return True if capabilities.get("documentFormattingProvider") else False
-    elif method == "textDocument/documentSymbol":
-        return True if capabilities.get("documentSymbolProvider") else False
-    elif method == "textDocument/documentHighlight":
-        return True if capabilities.get("documentHighlightProvider") else False
-    elif method == "textDocument/references":
-        return True if capabilities.get("referencesProvider") else False
-    elif method == "textDocument/definition":
-        return True if capabilities.get("definitionProvider") else False
-    elif method == "textDocument/hover":
-        return True if capabilities.get("hoverProvider") else False
-    elif method == "textDocument/didOpen" or method == "textDocument/didClose":
-        options = textDocumentSyncOptions(capabilities.get("textDocumentSync"))
-        return options.get("openClose", False)
-    elif method == "textDocument/didChange":
-        options = textDocumentSyncOptions(capabilities.get("textDocumentSync"))
-        return False if options["change"] == 0 else True
-    else:
-        return False
-
-
 class LanguageServerClient:
     def __init__(
         self,
@@ -346,6 +323,51 @@ class LanguageServerClient:
         Returns True if server processed a 'shutdown' request and this client sent a 'exit' notification.
         """
         return self._server_shutdown.is_set()
+
+    def support_method(self, method: str) -> Optional[bool]:
+        if not self._server_capabilities:
+            return None
+
+        if method == "textDocument/formatting":
+            return (
+                True
+                if self._server_capabilities.get("documentFormattingProvider")
+                else False
+            )
+        elif method == "textDocument/documentSymbol":
+            return (
+                True
+                if self._server_capabilities.get("documentSymbolProvider")
+                else False
+            )
+        elif method == "textDocument/documentHighlight":
+            return (
+                True
+                if self._server_capabilities.get("documentHighlightProvider")
+                else False
+            )
+        elif method == "textDocument/references":
+            return (
+                True if self._server_capabilities.get("referencesProvider") else False
+            )
+        elif method == "textDocument/definition":
+            return (
+                True if self._server_capabilities.get("definitionProvider") else False
+            )
+        elif method == "textDocument/hover":
+            return True if self._server_capabilities.get("hoverProvider") else False
+        elif method == "textDocument/didOpen" or method == "textDocument/didClose":
+            options = textDocumentSyncOptions(
+                self._server_capabilities.get("textDocumentSync")
+            )
+            return options.get("openClose", False)
+        elif method == "textDocument/didChange":
+            options = textDocumentSyncOptions(
+                self._server_capabilities.get("textDocumentSync")
+            )
+            return False if options["change"] == 0 else True
+        else:
+            return False
 
     def _read(self, out, n):
         remaining = n
