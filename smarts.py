@@ -1352,6 +1352,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
         smart["client"].textDocument_documentSymbol(params, callback)
 
 
+# WIP
 class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
     def run(self):
         def callback(response: smarts_client.LSPResponseMessage):
@@ -1372,11 +1373,13 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
 
                 goto_symbol_location(self.window, symbols, on_cancel=restore_view)
 
-        params = {
+        # This is not good. Some servers do not return any result until the query is not empty.
+        params: smarts_client.LSPWorkspaceSymbolParams = {
             # A query string to filter symbols by. Clients may send an empty string here to request all symbols.
             "query": "",
         }
 
+        # TODO: Support multiple Smarts
         for smart in window_running_smarts(self.window):
             if smart["client"].support_method("workspace/symbol"):
                 smart["client"].workspace_symbol(params, callback)

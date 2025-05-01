@@ -214,6 +214,15 @@ class LSPDocumentFormattingParams(TypedDict):
     options: LSPFormattingOptions
 
 
+class LSPWorkspaceSymbolParams(TypedDict):
+    """
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspaceSymbolParams
+    """
+
+    # A query string to filter symbols by. Clients may send an empty string here to request all symbols.
+    query: str
+
+
 # --------------------------------------------------------------------------------
 
 
@@ -827,7 +836,7 @@ class LanguageServerClient:
 
     def workspace_symbol(
         self,
-        params,
+        params: LSPWorkspaceSymbolParams,
         callback: Callable[[LSPResponseMessage], None],
     ):
         """
