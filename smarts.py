@@ -113,7 +113,7 @@ _SMARTS: List[Smart] = []
 
 # URI to Diagnostics.
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic
-_DIAGNOSTICS: Dict[str, Dict] = {}
+_DIAGNOSTICS: Dict[str, list] = {}
 
 
 # ---------------------------------------------------------------------------------------
@@ -496,27 +496,15 @@ def region_to_range16(view: sublime.View, region: sublime.Region) -> dict:
     }
 
 
-def diagnostic_quick_panel_item(diagnostic_item: dict) -> sublime.QuickPanelItem:
-    line = diagnostic_item["range"]["start"]["line"] + 1
-    character = diagnostic_item["range"]["start"]["character"] + 1
+def diagnostic_quick_panel_item(diagnostic):
+    path = uri_to_path(diagnostic["uri"])
+    start_line = diagnostic["range"]["start"]["line"] + 1
+    start_character = diagnostic["range"]["start"]["character"] + 1
 
     return sublime.QuickPanelItem(
-        f"{severity_name(diagnostic_item['severity'])}: {diagnostic_item['message']}",
-        details=f"{diagnostic_item.get('code', '')}",
-        annotation=f"{line}:{character}",
-        kind=severity_kind(diagnostic_item["severity"]),
-    )
-
-
-def situated_diagnostic_quick_panel_item(situated_diagnostic):
-    path = uri_to_path(situated_diagnostic["uri"])
-    start_line = situated_diagnostic["range"]["start"]["line"] + 1
-    start_character = situated_diagnostic["range"]["start"]["character"] + 1
-
-    return sublime.QuickPanelItem(
-        f"{severity_name(situated_diagnostic['severity'])}: {situated_diagnostic['message']}",
-        kind=severity_kind(situated_diagnostic["severity"]),
-        annotation=f"{situated_diagnostic.get('code', '')}",
+        f"{severity_name(diagnostic['severity'])}: {diagnostic['message']}",
+        kind=severity_kind(diagnostic["severity"]),
+        annotation=diagnostic.get('code', ''),
         details=f"{path}:{start_line}:{start_character}",
     )
 
@@ -662,7 +650,7 @@ def open_location(window: sublime.Window, location, flags=sublime.ENCODED_POSITI
         window.open_file(f"{fname}:{row}:{col}", flags)
 
 
-def capture_view(view: sublime.View) -> Callable:
+def capture_view(view: sublime.View) -> Callable[[], None]:
     regions = [region for region in view.sel()]
 
     viewport_position = view.viewport_position()
@@ -680,7 +668,7 @@ def capture_view(view: sublime.View) -> Callable:
     return restore
 
 
-def capture_viewport_position(view: sublime.View) -> Callable:
+def capture_viewport_position(view: sublime.View) -> Callable[[], None]:
     viewport_position = view.viewport_position()
 
     def restore():
@@ -784,10 +772,7 @@ def show_diagnostic_quick_panel(window, diagnostics: List[dict], on_cancel=None)
                 open_location(window, diagnostics[index])
 
         window.show_quick_panel(
-            [
-                situated_diagnostic_quick_panel_item(diagnostic)
-                for diagnostic in diagnostics
-            ],
+            [diagnostic_quick_panel_item(diagnostic) for diagnostic in diagnostics],
             on_select=on_select,
             on_highlight=on_highlight,
         )
@@ -918,14 +903,20 @@ def handle_textDocument_publishDiagnostics(
 
     params = message["params"]
 
+    diagnostics = [
+        {
+            "uri": params["uri"],
+            **diagnostic,
+        }
+        for diagnostic in params["diagnostics"]
+    ]
+
     global _DIAGNOSTICS
-    _DIAGNOSTICS[params["uri"]] = params["diagnostics"]
+    _DIAGNOSTICS[params["uri"]] = diagnostics
 
     fname = unquote(urlparse(params["uri"]).path)
 
     if view := window.find_open_file(fname):
-        diagnostics = params["diagnostics"]
-
         # Persists document diagnostics.
         view.settings().set(kDIAGNOSTICS, diagnostics)
 
@@ -1244,7 +1235,9 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
 
             locations = [result] if isinstance(result, dict) else result
 
-            show_location_quick_panel(self.view.window(), locations, on_cancel=restore_view)
+            show_location_quick_panel(
+                self.view.window(), locations, on_cancel=restore_view
+            )
 
         smart["client"].textDocument_definition(params, callback)
 
@@ -1268,7 +1261,9 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
 
             restore_view = capture_view(self.view)
 
-            show_location_quick_panel(self.view.window(), result, on_cancel=restore_view)
+            show_location_quick_panel(
+                self.view.window(), result, on_cancel=restore_view
+            )
 
         params = {
             **view_textDocumentPositionParams(self.view),
@@ -1284,46 +1279,14 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
 
 class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
     def run(self, _):
-        restore_viewport_position = capture_viewport_position(self.view)
+        restore_view = capture_view(self.view)
 
-        diagnostics = sorted(
-            self.view.settings().get(kDIAGNOSTICS, []),
-            key=lambda diagnostic: [
-                diagnostic["range"]["start"]["line"],
-                diagnostic["range"]["start"]["character"],
-            ],
-        )
+        diagnostics = self.view.settings().get(kDIAGNOSTICS, [])
 
-        def on_highlight(index):
-            diagnostic_region = range16_to_region(
-                self.view, diagnostics[index]["range"]
-            )
-
-            self.view.sel().clear()
-            self.view.sel().add(diagnostic_region)
-
-            self.view.show_at_center(diagnostic_region)
-
-        def on_select(index):
-            if index == -1:
-                restore_viewport_position()
-
-            else:
-                region = range16_to_region(self.view, diagnostics[index]["range"])
-
-                self.view.sel().clear()
-                self.view.sel().add(region)
-
-                self.view.show_at_center(region)
-
-        quick_panel_items = [
-            diagnostic_quick_panel_item(diagnostic) for diagnostic in diagnostics
-        ]
-
-        self.view.window().show_quick_panel(
-            quick_panel_items,
-            on_select,
-            on_highlight=on_highlight,
+        show_diagnostic_quick_panel(
+            self.view.window(),
+            diagnostics,
+            on_cancel=restore_view,
         )
 
 
@@ -1340,7 +1303,11 @@ class PgSmartsGotoDiagnostic(sublime_plugin.WindowCommand):
             for diagnostic in diagnostics
         ]
 
-        show_diagnostic_quick_panel(self.window, diagnostics, on_cancel=restore_view)
+        show_diagnostic_quick_panel(
+            self.window,
+            diagnostics,
+            on_cancel=restore_view,
+        )
 
 
 class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
