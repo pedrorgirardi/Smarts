@@ -366,6 +366,12 @@ class LanguageServerClient:
                 self._server_capabilities.get("textDocumentSync")
             )
             return False if options["change"] == 0 else True
+        elif method == "workspace/symbol":
+            return (
+                True
+                if self._server_capabilities.get("workspaceSymbolProvider")
+                else False
+            )
         else:
             return False
 
@@ -818,3 +824,16 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_formatting
         """
         self._put(request("textDocument/formatting", params), callback)
+
+    def workspace_symbol(
+        self,
+        params,
+        callback: Callable[[LSPResponseMessage], None],
+    ):
+        """
+        The workspace symbol request is sent from the client to the server to list project-wide symbols matching the query string.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspace_symbol
+        """
+
+        self._put(request("workspace/symbol", params), callback)

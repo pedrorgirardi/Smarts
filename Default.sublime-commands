@@ -36,6 +36,10 @@
         "command": "pg_smarts_goto_document_symbol"
     },
     {
+        "caption": "Smarts: Goto Workspace Symbol",
+        "command": "pg_smarts_goto_workspace_symbol"
+    },
+    {
         "caption": "Smarts: Format Document",
         "command": "pg_smarts_format_document"
     }

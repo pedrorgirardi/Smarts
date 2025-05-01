@@ -537,6 +537,47 @@ def location_quick_panel_item(location: dict):
     )
 
 
+def symbol_information_quick_panel_item(symbol_information: dict):
+    path = uri_to_path(symbol_information["location"]["uri"])
+    start_line = symbol_information["location"]["range"]["start"]["line"] + 1
+    start_character = symbol_information["location"]["range"]["start"]["character"] + 1
+
+    symbol_kind = {
+        1: "File",
+        2: "Module",
+        3: "Namespace",
+        4: "Package",
+        5: "Class",
+        6: "Method",
+        7: "Property",
+        8: "Field",
+        9: "Constructor",
+        10: "Enum",
+        11: "Interface",
+        12: "Function",
+        13: "Variable",
+        14: "Constant",
+        15: "String",
+        16: "Number",
+        17: "Boolean",
+        18: "Array",
+        19: "Object",
+        20: "Key",
+        21: "Null",
+        22: "EnumMember",
+        23: "Struct",
+        24: "Event",
+        25: "Operator",
+        26: "TypeParameter",
+    }
+
+    return sublime.QuickPanelItem(
+        symbol_information["name"],
+        annotation=symbol_kind.get(symbol_information["kind"], ""),
+        details=f"{path}:{start_line}:{start_character}",
+    )
+
+
 def path_to_uri(path: str) -> str:
     return Path(path).as_uri()
 
@@ -659,6 +700,41 @@ def goto_location(window, locations, on_cancel=None):
 
         window.show_quick_panel(
             [location_quick_panel_item(location) for location in locations],
+            on_select=on_select,
+            on_highlight=on_highlight,
+        )
+
+
+def goto_symbol_location(window, symbols_information: List[dict], on_cancel=None):
+    if len(symbols_information) == 1:
+        open_location(window, symbols_information[0]["location"])
+    else:
+        symbols_information = sorted(
+            symbols_information,
+            key=lambda symbol_information: [
+                symbol_information["name"],
+            ],
+        )
+
+        def on_highlight(index):
+            open_location(
+                window,
+                symbols_information[index]["location"],
+                flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
+            )
+
+        def on_select(index):
+            if index == -1:
+                if on_cancel:
+                    on_cancel()
+            else:
+                open_location(window, symbols_information[index]["location"])
+
+        window.show_quick_panel(
+            [
+                symbol_information_quick_panel_item(symbol_information)
+                for symbol_information in symbols_information
+            ],
             on_select=on_select,
             on_highlight=on_highlight,
         )
@@ -1274,6 +1350,37 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
         }
 
         smart["client"].textDocument_documentSymbol(params, callback)
+
+
+class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
+    def run(self):
+        def callback(response: smarts_client.LSPResponseMessage):
+            if error := response.get("error"):
+                panel_log_error(self.window, error)
+
+            if result := response.get("result"):
+                restore_view = None
+
+                if view := self.window.active_view():
+                    restore_view = capture_view(view)
+
+                symbols = [
+                    symbol_information
+                    for symbol_information in result
+                    if symbol_information.get("location", {}).get("range")
+                ]
+
+                goto_symbol_location(self.window, symbols, on_cancel=restore_view)
+
+        params = {
+            # A query string to filter symbols by. Clients may send an empty string here to request all symbols.
+            "query": "",
+        }
+
+        for smart in window_running_smarts(self.window):
+            if smart["client"].support_method("workspace/symbol"):
+                smart["client"].workspace_symbol(params, callback)
+                break
 
 
 class PgSmartsSelectRanges(sublime_plugin.TextCommand):
