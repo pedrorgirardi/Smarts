@@ -754,6 +754,8 @@ def show_diagnostic_quick_panel(window, diagnostics: List[dict], on_cancel=None)
             key=lambda diagnostic: [
                 diagnostic["severity"],
                 diagnostic["uri"],
+                diagnostic["range"]["start"]["line"],
+                diagnostic["range"]["start"]["character"],
             ],
         )
 
