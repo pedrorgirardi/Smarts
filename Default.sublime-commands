@@ -32,6 +32,10 @@
         "command": "pg_smarts_goto_document_diagnostic"
     },
     {
+        "caption": "Smarts: Goto Diagnostic",
+        "command": "pg_smarts_goto_diagnostic"
+    },
+    {
         "caption": "Smarts: Goto Document Symbol",
         "command": "pg_smarts_goto_document_symbol"
     },

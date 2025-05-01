@@ -7,7 +7,7 @@ import threading
 import uuid
 from itertools import groupby
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Set, TypedDict
+from typing import Any, Callable, List, Dict, Optional, Set, TypedDict
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
@@ -110,6 +110,10 @@ class Smart(TypedDict):
 # -- Global Variables
 
 _SMARTS: List[Smart] = []
+
+# URI to Diagnostics.
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic
+_DIAGNOSTICS: Dict[str, Dict] = {}
 
 
 # ---------------------------------------------------------------------------------------
@@ -504,6 +508,19 @@ def diagnostic_quick_panel_item(diagnostic_item: dict) -> sublime.QuickPanelItem
     )
 
 
+def situated_diagnostic_quick_panel_item(situated_diagnostic):
+    path = uri_to_path(situated_diagnostic["uri"])
+    start_line = situated_diagnostic["range"]["start"]["line"] + 1
+    start_character = situated_diagnostic["range"]["start"]["character"] + 1
+
+    return sublime.QuickPanelItem(
+        f"{severity_name(situated_diagnostic['severity'])}: {situated_diagnostic['message']}",
+        kind=severity_kind(situated_diagnostic["severity"]),
+        annotation=f"{situated_diagnostic.get('code', '')}",
+        details=f"{path}:{start_line}:{start_character}",
+    )
+
+
 def document_symbol_quick_panel_item(data: dict) -> sublime.QuickPanelItem:
     line = None
     character = None
@@ -527,7 +544,7 @@ def document_symbol_quick_panel_item(data: dict) -> sublime.QuickPanelItem:
     )
 
 
-def location_quick_panel_item(location: dict):
+def location_quick_panel_item(location):
     start_line = location["range"]["start"]["line"] + 1
     start_character = location["range"]["start"]["character"] + 1
 
@@ -672,7 +689,7 @@ def capture_viewport_position(view: sublime.View) -> Callable:
     return restore
 
 
-def goto_location(window, locations, on_cancel=None):
+def show_location_quick_panel(window, locations, on_cancel=None):
     if len(locations) == 1:
         open_location(window, locations[0])
     else:
@@ -705,7 +722,7 @@ def goto_location(window, locations, on_cancel=None):
         )
 
 
-def goto_symbol_location(window, symbols_information: List[dict], on_cancel=None):
+def show_symbol_quick_panel(window, symbols_information: List[dict], on_cancel=None):
     if len(symbols_information) == 1:
         open_location(window, symbols_information[0]["location"])
     else:
@@ -734,6 +751,42 @@ def goto_symbol_location(window, symbols_information: List[dict], on_cancel=None
             [
                 symbol_information_quick_panel_item(symbol_information)
                 for symbol_information in symbols_information
+            ],
+            on_select=on_select,
+            on_highlight=on_highlight,
+        )
+
+
+def show_diagnostic_quick_panel(window, diagnostics: List[dict], on_cancel=None):
+    if len(diagnostics) == 1:
+        open_location(window, diagnostics[0])
+    else:
+        diagnostics = sorted(
+            diagnostics,
+            key=lambda diagnostic: [
+                diagnostic["severity"],
+                diagnostic["uri"],
+            ],
+        )
+
+        def on_highlight(index):
+            open_location(
+                window,
+                diagnostics[index],
+                flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
+            )
+
+        def on_select(index):
+            if index == -1:
+                if on_cancel:
+                    on_cancel()
+            else:
+                open_location(window, diagnostics[index])
+
+        window.show_quick_panel(
+            [
+                situated_diagnostic_quick_panel_item(diagnostic)
+                for diagnostic in diagnostics
             ],
             on_select=on_select,
             on_highlight=on_highlight,
@@ -864,6 +917,9 @@ def handle_textDocument_publishDiagnostics(
     """
 
     params = message["params"]
+
+    global _DIAGNOSTICS
+    _DIAGNOSTICS[params["uri"]] = params["diagnostics"]
 
     fname = unquote(urlparse(params["uri"]).path)
 
@@ -1188,7 +1244,7 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
 
             locations = [result] if isinstance(result, dict) else result
 
-            goto_location(self.view.window(), locations, on_cancel=restore_view)
+            show_location_quick_panel(self.view.window(), locations, on_cancel=restore_view)
 
         smart["client"].textDocument_definition(params, callback)
 
@@ -1212,7 +1268,7 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
 
             restore_view = capture_view(self.view)
 
-            goto_location(self.view.window(), result, on_cancel=restore_view)
+            show_location_quick_panel(self.view.window(), result, on_cancel=restore_view)
 
         params = {
             **view_textDocumentPositionParams(self.view),
@@ -1269,6 +1325,22 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
             on_select,
             on_highlight=on_highlight,
         )
+
+
+class PgSmartsGotoDiagnostic(sublime_plugin.WindowCommand):
+    def run(self):
+        restore_view = None
+
+        if view := self.window.active_view():
+            restore_view = capture_view(view)
+
+        diagnostics = [
+            {"uri": uri, **diagnostic}
+            for uri, diagnostics in _DIAGNOSTICS.items()
+            for diagnostic in diagnostics
+        ]
+
+        show_diagnostic_quick_panel(self.window, diagnostics, on_cancel=restore_view)
 
 
 class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
@@ -1371,7 +1443,7 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
                     if symbol_information.get("location", {}).get("range")
                 ]
 
-                goto_symbol_location(self.window, symbols, on_cancel=restore_view)
+                show_symbol_quick_panel(self.window, symbols, on_cancel=restore_view)
 
         # This is not good. Some servers do not return any result until the query is not empty.
         params: smarts_client.LSPWorkspaceSymbolParams = {

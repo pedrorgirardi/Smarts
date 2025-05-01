@@ -142,6 +142,17 @@ class LSPRange(TypedDict):
     end: LSPPosition
 
 
+class LSPLocation(TypedDict):
+    """
+    Represents a location inside a resource, such as a line inside a text file.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location
+    """
+
+    uri: str
+    range: LSPRange
+
+
 class LSPTextDocumentContentChangeEventFull(TypedDict):
     """
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentContentChangeEvent
