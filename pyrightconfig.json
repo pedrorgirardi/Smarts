@@ -1,4 +1,5 @@
 {
+    "pythonVersion": "3.8",
     "include": ["smarts.py"],
     "extraPaths": ["./typings"],
     "reportMissingImports": false,
