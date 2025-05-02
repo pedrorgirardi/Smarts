@@ -1381,13 +1381,13 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                             selected_range,
                         )
 
+                        self.view.sel().clear()
+                        self.view.sel().add(selected_region)
+
                         show_at_center_region = sublime.Region(
                             selected_region.end(),
                             selected_region.end(),
                         )
-
-                        self.view.sel().clear()
-                        self.view.sel().add(show_at_center_region)
 
                         self.view.show_at_center(show_at_center_region)
 
