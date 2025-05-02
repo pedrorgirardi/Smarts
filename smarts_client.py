@@ -4,7 +4,7 @@ import subprocess
 import threading
 import uuid
 from queue import Queue
-from typing import cast, TypedDict, Any, Callable, List, Dict, Optional, Union
+from typing import cast, TypedDict, Any, Literal, Callable, List, Dict, Optional, Union
 
 
 class LSPMessage(TypedDict):
@@ -153,6 +153,45 @@ class LSPLocation(TypedDict):
     range: LSPRange
 
 
+class LSPCodeDescription(TypedDict):
+    """
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#codeDescription
+    """
+
+    # An URI to open with more information about the diagnostic error.
+    href: str
+
+
+class LSPDiagnostic(TypedDict):
+    """
+    Represents a diagnostic, such as a compiler error or warning. Diagnostic objects are only valid in the scope of a resource.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic
+    """
+
+    # The range at which the message applies.
+    range: LSPRange
+
+    #  The diagnostic's severity. To avoid interpretation mismatches when a
+    # server is used with different clients it is highly recommended that
+    # servers always provide a severity value. If omitted, it’s recommended
+    # for the client to interpret it as an Error severity.
+    severity: Optional[Literal[1, 2, 3, 4]]
+
+    # The diagnostic's code, which might appear in the user interface.
+    code: Optional[Union[int, str]]
+
+    #  An optional property to describe the error code.
+    codeDescription: Optional[LSPCodeDescription]
+
+    # A human-readable string describing the source of this
+    # diagnostic, e.g. 'typescript' or 'super lint'.
+    source: Optional[str]
+
+    # The diagnostic's message.
+    message: str
+
+
 class LSPTextDocumentContentChangeEventFull(TypedDict):
     """
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentContentChangeEvent
@@ -232,6 +271,21 @@ class LSPWorkspaceSymbolParams(TypedDict):
 
     # A query string to filter symbols by. Clients may send an empty string here to request all symbols.
     query: str
+
+
+class LSPPublishDiagnosticsParams(TypedDict):
+    """
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#publishDiagnosticsParams
+    """
+
+    # The URI for which diagnostic information is reported.
+    uri: str
+
+    # Optional the version number of the document the diagnostics are published for.
+    version: Optional[int]
+
+    # An array of diagnostic information items.
+    diagnostics: List[LSPDiagnostic]
 
 
 # --------------------------------------------------------------------------------

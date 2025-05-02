@@ -7,7 +7,7 @@ import threading
 import uuid
 from itertools import groupby
 from pathlib import Path
-from typing import Any, Callable, List, Dict, Optional, Set, TypedDict
+from typing import cast, Any, Callable, List, Dict, Optional, Set, TypedDict
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
@@ -82,6 +82,16 @@ kMINIHTML_STYLES = """
 # ---------------------------------------------------------------------------------------
 
 
+class PgSmartsDiagnostic(smarts_client.LSPDiagnostic):
+    """
+    LSPDiagnostic with URI.
+
+    Including URI to a Diagnostic make it equivalent to a Location - `uri` and `range`.
+    (Anything that works with a Location also works with this Diagnostic.)
+    """
+    uri: str
+
+
 class SmartsServerConfig(TypedDict):
     name: str
     start: List[str]
@@ -110,10 +120,6 @@ class Smart(TypedDict):
 # -- Global Variables
 
 _SMARTS: List[Smart] = []
-
-# URI to Diagnostics.
-# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic
-_DIAGNOSTICS: Dict[str, list] = {}
 
 
 # ---------------------------------------------------------------------------------------
@@ -504,7 +510,7 @@ def diagnostic_quick_panel_item(diagnostic):
     return sublime.QuickPanelItem(
         f"{severity_name(diagnostic['severity'])}: {diagnostic['message']}",
         kind=severity_kind(diagnostic["severity"]),
-        annotation=diagnostic.get('code', ''),
+        annotation=diagnostic.get("code", ""),
         details=f"{path}:{start_line}:{start_character}",
     )
 
@@ -903,9 +909,11 @@ def handle_textDocument_publishDiagnostics(
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#publishDiagnosticsParams
     """
 
-    params = message["params"]
+    params = cast(smarts_client.LSPPublishDiagnosticsParams, message["params"])
 
-    diagnostics = [
+    # Including URI to a Diagnostic make it equivalent to a Location - `uri` and `range`.
+    # (Anything that works with a Location also works with this Diagnostic.)
+    diagnostics: List[PgSmartsDiagnostic] = [
         {
             "uri": params["uri"],
             **diagnostic,
@@ -913,8 +921,12 @@ def handle_textDocument_publishDiagnostics(
         for diagnostic in params["diagnostics"]
     ]
 
-    global _DIAGNOSTICS
-    _DIAGNOSTICS[params["uri"]] = diagnostics
+    # URI to Diagnostics.
+    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic
+    uri_diagnostics = window.settings().get(kDIAGNOSTICS, {})
+    uri_diagnostics[params["uri"]] = diagnostics
+
+    window.settings().set(kDIAGNOSTICS, uri_diagnostics)
 
     fname = unquote(urlparse(params["uri"]).path)
 
@@ -1300,8 +1312,8 @@ class PgSmartsGotoDiagnostic(sublime_plugin.WindowCommand):
             restore_view = capture_view(view)
 
         diagnostics = [
-            {"uri": uri, **diagnostic}
-            for uri, diagnostics in _DIAGNOSTICS.items()
+            diagnostic
+            for diagnostics in self.window.settings().get(kDIAGNOSTICS, {}).values()
             for diagnostic in diagnostics
         ]
 
