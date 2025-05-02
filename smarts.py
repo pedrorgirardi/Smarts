@@ -89,28 +89,29 @@ class PgSmartsDiagnostic(smarts_client.LSPDiagnostic):
     Including URI to a Diagnostic make it equivalent to a Location - `uri` and `range`.
     (Anything that works with a Location also works with this Diagnostic.)
     """
+
     uri: str
 
 
-class SmartsServerConfig(TypedDict):
+class PgSmartsServerConfig(TypedDict):
     name: str
     start: List[str]
     applicable_to: List[str]
 
 
-class SmartsInitializeData(TypedDict, total=False):
+class PgSmartsInitializeData(TypedDict, total=False):
     name: str
     rootPath: str  # Optional.
 
 
-class SmartsProjectData(TypedDict):
-    initialize: List[SmartsInitializeData]
+class PgSmartsProjectData(TypedDict):
+    initialize: List[PgSmartsInitializeData]
 
 
-class Smart(TypedDict):
+class PgSmart(TypedDict):
     uuid: str
     window: int  # Window ID
-    config: SmartsServerConfig
+    config: PgSmartsServerConfig
     client: smarts_client.LanguageServerClient
 
 
@@ -119,7 +120,7 @@ class Smart(TypedDict):
 
 # -- Global Variables
 
-_SMARTS: List[Smart] = []
+_SMARTS: List[PgSmart] = []
 
 
 # ---------------------------------------------------------------------------------------
@@ -134,7 +135,7 @@ def settings() -> sublime.Settings:
 
 def smarts_project_data(
     window: sublime.Window,
-) -> Optional[SmartsProjectData]:
+) -> Optional[PgSmartsProjectData]:
     if project_data_ := window.project_data():
         return project_data_.get("Smarts")
 
@@ -163,7 +164,7 @@ def window_project_path(window: sublime.Window) -> Optional[Path]:
     return None
 
 
-def available_servers() -> List[SmartsServerConfig]:
+def available_servers() -> List[PgSmartsServerConfig]:
     return settings().get(kSETTING_SERVERS, [])
 
 
@@ -174,7 +175,7 @@ def remove_smarts(uuids: Set[str]):
     _SMARTS = [smart for smart in _SMARTS if smart["uuid"] not in uuids]
 
 
-def find_smart(uuid: str) -> Optional[Smart]:
+def find_smart(uuid: str) -> Optional[PgSmart]:
     for smart in _SMARTS:
         if smart["uuid"] == uuid:
             return smart
@@ -190,14 +191,14 @@ def find_window(id: int) -> Optional[sublime.Window]:
     return None
 
 
-def window_smarts(window: sublime.Window) -> List[Smart]:
+def window_smarts(window: sublime.Window) -> List[PgSmart]:
     """
     Returns Smarts associated with `window`.
     """
     return [smart for smart in _SMARTS if smart["window"] == window.id()]
 
 
-def window_running_smarts(window: sublime.Window) -> List[Smart]:
+def window_running_smarts(window: sublime.Window) -> List[PgSmart]:
     """
     Returns Smarts associated with `window` which are not shutdown.
     """
@@ -208,7 +209,7 @@ def window_running_smarts(window: sublime.Window) -> List[Smart]:
     ]
 
 
-def view_smarts(view: sublime.View) -> List[Smart]:
+def view_smarts(view: sublime.View) -> List[PgSmart]:
     window = view.window()
 
     if window is None:
@@ -273,7 +274,7 @@ def view_syntax(view: sublime.View) -> str:
     return view.settings().get("syntax")
 
 
-def view_applicable(config: SmartsServerConfig, view: sublime.View) -> bool:
+def view_applicable(config: PgSmartsServerConfig, view: sublime.View) -> bool:
     """
     Returns True if view is applicable.
 
@@ -284,7 +285,7 @@ def view_applicable(config: SmartsServerConfig, view: sublime.View) -> bool:
     return view.file_name() is not None and view_syntax(view) in applicable_to
 
 
-def applicable_smarts(view: sublime.View, method: str) -> List[Smart]:
+def applicable_smarts(view: sublime.View, method: str) -> List[PgSmart]:
     """
     Returns Smarts applicable to view.
     """
@@ -300,7 +301,7 @@ def applicable_smarts(view: sublime.View, method: str) -> List[Smart]:
     return smarts
 
 
-def applicable_smart(view: sublime.View, method: str) -> Optional[Smart]:
+def applicable_smart(view: sublime.View, method: str) -> Optional[PgSmart]:
     """
     Returns the first Smart applicable to view, or None.
     """
@@ -385,7 +386,7 @@ def panel_log_error(
     )
 
 
-def show_hover_popup(view: sublime.View, smart: Smart, result: Any):
+def show_hover_popup(view: sublime.View, smart: PgSmart, result: Any):
     # The result of a hover request.
     # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#hover
 
@@ -893,7 +894,7 @@ def handle_window_showMessage(window, message):
 
 def handle_textDocument_publishDiagnostics(
     window: sublime.Window,
-    smart: Smart,
+    smart: PgSmart,
     message: smarts_client.LSPNotificationMessage,
 ):
     """
