@@ -729,46 +729,13 @@ def goto_location(
         )
 
 
-def show_workspace_symbol_quick_panel(
-    window, symbols_information: List[dict], on_cancel=None
+def goto_diagnostic(
+    window: sublime.Window,
+    diagnostics: List[PgSmartsDiagnostic],
+    on_cancel=None,
 ):
-    if len(symbols_information) == 1:
-        open_location(window, symbols_information[0]["location"])
-    else:
-        symbols_information = sorted(
-            symbols_information,
-            key=lambda symbol_information: [
-                symbol_information["name"],
-            ],
-        )
-
-        def on_highlight(index):
-            open_location(
-                window,
-                symbols_information[index]["location"],
-                flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
-            )
-
-        def on_select(index):
-            if index == -1:
-                if on_cancel:
-                    on_cancel()
-            else:
-                open_location(window, symbols_information[index]["location"])
-
-        window.show_quick_panel(
-            [
-                workspace_symbol_quick_panel_item(symbol_information)
-                for symbol_information in symbols_information
-            ],
-            on_select=on_select,
-            on_highlight=on_highlight,
-        )
-
-
-def show_diagnostic_quick_panel(window, diagnostics: List[dict], on_cancel=None):
     if len(diagnostics) == 1:
-        open_location(window, cast(smarts_client.LSPLocation, diagnostics[0]))
+        open_location(window, diagnostics[0])
     else:
         diagnostics = sorted(
             diagnostics,
@@ -1322,11 +1289,12 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
 
         diagnostics = self.view.settings().get(kDIAGNOSTICS, [])
 
-        show_diagnostic_quick_panel(
-            self.view.window(),
-            diagnostics,
-            on_cancel=restore_view,
-        )
+        if window := self.view.window():
+            goto_diagnostic(
+                window,
+                diagnostics,
+                on_cancel=restore_view,
+            )
 
 
 class PgSmartsGotoDiagnostic(sublime_plugin.WindowCommand):
@@ -1342,7 +1310,7 @@ class PgSmartsGotoDiagnostic(sublime_plugin.WindowCommand):
             for diagnostic in diagnostics
         ]
 
-        show_diagnostic_quick_panel(
+        goto_diagnostic(
             self.window,
             diagnostics,
             on_cancel=restore_view,
@@ -1453,15 +1421,18 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
                 if view := self.window.active_view():
                     restore_view = capture_view(view)
 
-                symbols = [
-                    symbol_information
-                    for symbol_information in result
-                    if symbol_information.get("location", {}).get("range")
+                locations = [
+                    workspace_symbol["location"]
+                    for workspace_symbol in result
+                    if workspace_symbol.get("location", {}).get("range")
                 ]
 
-                show_workspace_symbol_quick_panel(
-                    self.window, symbols, on_cancel=restore_view
-                )
+                items = [
+                    workspace_symbol_quick_panel_item(symbol_information)
+                    for symbol_information in result
+                ]
+
+                goto_location(self.window, locations, items, on_cancel=restore_view)
 
         # This is not good. Some servers do not return any result until the query is not empty.
         params: smarts_client.LSPWorkspaceSymbolParams = {
