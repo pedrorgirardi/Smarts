@@ -487,7 +487,9 @@ def range16_to_region(view: sublime.View, range16) -> sublime.Region:
     )
 
 
-def region_to_range16(view: sublime.View, region: sublime.Region) -> smarts_client.LSPRange:
+def region_to_range16(
+    view: sublime.View, region: sublime.Region
+) -> smarts_client.LSPRange:
     begin_row, begin_col = view.rowcol_utf16(region.begin())
     end_row, end_col = view.rowcol_utf16(region.end())
 
@@ -642,10 +644,14 @@ def open_location_jar(window: sublime.Window, location, flags):
                 "range": location["range"],
             }
 
-            open_location(window, new_location, flags)
+            open_location(window, cast(smarts_client.LSPLocation, new_location), flags)
 
 
-def open_location(window: sublime.Window, location, flags=sublime.ENCODED_POSITION):
+def open_location(
+    window: sublime.Window,
+    location: smarts_client.LSPLocation,
+    flags=sublime.ENCODED_POSITION,
+):
     fname = uri_to_path(location["uri"])
 
     if ".jar:" in fname:
@@ -684,13 +690,19 @@ def capture_viewport_position(view: sublime.View) -> Callable[[], None]:
     return restore
 
 
-def show_location_quick_panel(window, locations, on_cancel=None):
+def goto_location(
+    window: sublime.Window,
+    locations: List[smarts_client.LSPLocation],
+    items: List[sublime.QuickPanelItem],
+    on_cancel: Optional[Callable[[], None]] = None,
+):
     if len(locations) == 1:
         open_location(window, locations[0])
     else:
         locations = sorted(
             locations,
             key=lambda location: [
+                location["uri"],
                 location["range"]["start"]["line"],
                 location["range"]["start"]["character"],
             ],
@@ -711,13 +723,15 @@ def show_location_quick_panel(window, locations, on_cancel=None):
                 open_location(window, locations[index])
 
         window.show_quick_panel(
-            [location_quick_panel_item(location) for location in locations],
+            items,
             on_select=on_select,
             on_highlight=on_highlight,
         )
 
 
-def show_workspace_symbol_quick_panel(window, symbols_information: List[dict], on_cancel=None):
+def show_workspace_symbol_quick_panel(
+    window, symbols_information: List[dict], on_cancel=None
+):
     if len(symbols_information) == 1:
         open_location(window, symbols_information[0]["location"])
     else:
@@ -754,7 +768,7 @@ def show_workspace_symbol_quick_panel(window, symbols_information: List[dict], o
 
 def show_diagnostic_quick_panel(window, diagnostics: List[dict], on_cancel=None):
     if len(diagnostics) == 1:
-        open_location(window, diagnostics[0])
+        open_location(window, cast(smarts_client.LSPLocation, diagnostics[0]))
     else:
         diagnostics = sorted(
             diagnostics,
@@ -1250,9 +1264,15 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
 
             locations = [result] if isinstance(result, dict) else result
 
-            show_location_quick_panel(
-                self.view.window(), locations, on_cancel=restore_view
-            )
+            items = [location_quick_panel_item(location) for location in locations]
+
+            if window := self.view.window():
+                goto_location(
+                    window,
+                    cast(List[smarts_client.LSPLocation], locations),
+                    items,
+                    on_cancel=restore_view,
+                )
 
         smart["client"].textDocument_definition(params, callback)
 
@@ -1276,17 +1296,21 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
 
             restore_view = capture_view(self.view)
 
-            show_location_quick_panel(
-                self.view.window(), result, on_cancel=restore_view
-            )
+            items = [location_quick_panel_item(location) for location in result]
+
+            if window := self.view.window():
+                goto_location(
+                    window,
+                    result,
+                    items,
+                    on_cancel=restore_view,
+                )
 
         params = {
-            **view_textDocumentPositionParams(self.view),
-            **{
-                "context": {
-                    "includeDeclaration": False,
-                },
+            "context": {
+                "includeDeclaration": False,
             },
+            **view_textDocumentPositionParams(self.view),
         }
 
         smart["client"].textDocument_references(params, callback)
@@ -1435,7 +1459,9 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
                     if symbol_information.get("location", {}).get("range")
                 ]
 
-                show_workspace_symbol_quick_panel(self.window, symbols, on_cancel=restore_view)
+                show_workspace_symbol_quick_panel(
+                    self.window, symbols, on_cancel=restore_view
+                )
 
         # This is not good. Some servers do not return any result until the query is not empty.
         params: smarts_client.LSPWorkspaceSymbolParams = {
