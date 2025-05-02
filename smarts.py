@@ -487,7 +487,7 @@ def range16_to_region(view: sublime.View, range16) -> sublime.Region:
     )
 
 
-def region_to_range16(view: sublime.View, region: sublime.Region) -> dict:
+def region_to_range16(view: sublime.View, region: sublime.Region) -> smarts_client.LSPRange:
     begin_row, begin_col = view.rowcol_utf16(region.begin())
     end_row, end_col = view.rowcol_utf16(region.end())
 
@@ -503,16 +503,26 @@ def region_to_range16(view: sublime.View, region: sublime.Region) -> dict:
     }
 
 
-def diagnostic_quick_panel_item(diagnostic):
-    path = uri_to_path(diagnostic["uri"])
-    start_line = diagnostic["range"]["start"]["line"] + 1
-    start_character = diagnostic["range"]["start"]["character"] + 1
+def diagnostic_quick_panel_item(data) -> sublime.QuickPanelItem:
+    path = uri_to_path(data["uri"])
+    start_line = data["range"]["start"]["line"] + 1
+    start_character = data["range"]["start"]["character"] + 1
 
     return sublime.QuickPanelItem(
-        f"{severity_name(diagnostic['severity'])}: {diagnostic['message']}",
-        kind=severity_kind(diagnostic["severity"]),
-        annotation=diagnostic.get("code", ""),
+        f"{severity_name(data['severity'])}: {data['message']}",
+        kind=severity_kind(data["severity"]),
+        annotation=data.get("code", ""),
         details=f"{path}:{start_line}:{start_character}",
+    )
+
+
+def location_quick_panel_item(data) -> sublime.QuickPanelItem:
+    start_line = data["range"]["start"]["line"] + 1
+    start_character = data["range"]["start"]["character"] + 1
+
+    return sublime.QuickPanelItem(
+        uri_to_path(data["uri"]),
+        annotation=f"{start_line}:{start_character}",
     )
 
 
@@ -539,20 +549,10 @@ def document_symbol_quick_panel_item(data: dict) -> sublime.QuickPanelItem:
     )
 
 
-def location_quick_panel_item(location):
-    start_line = location["range"]["start"]["line"] + 1
-    start_character = location["range"]["start"]["character"] + 1
-
-    return sublime.QuickPanelItem(
-        uri_to_path(location["uri"]),
-        annotation=f"{start_line}:{start_character}",
-    )
-
-
-def symbol_information_quick_panel_item(symbol_information: dict):
-    path = uri_to_path(symbol_information["location"]["uri"])
-    start_line = symbol_information["location"]["range"]["start"]["line"] + 1
-    start_character = symbol_information["location"]["range"]["start"]["character"] + 1
+def workspace_symbol_quick_panel_item(data: dict) -> sublime.QuickPanelItem:
+    path = uri_to_path(data["location"]["uri"])
+    start_line = data["location"]["range"]["start"]["line"] + 1
+    start_character = data["location"]["range"]["start"]["character"] + 1
 
     symbol_kind = {
         1: "File",
@@ -584,8 +584,8 @@ def symbol_information_quick_panel_item(symbol_information: dict):
     }
 
     return sublime.QuickPanelItem(
-        symbol_information["name"],
-        annotation=symbol_kind.get(symbol_information["kind"], ""),
+        data["name"],
+        annotation=symbol_kind.get(data["kind"], ""),
         details=f"{path}:{start_line}:{start_character}",
     )
 
@@ -717,7 +717,7 @@ def show_location_quick_panel(window, locations, on_cancel=None):
         )
 
 
-def show_symbol_quick_panel(window, symbols_information: List[dict], on_cancel=None):
+def show_workspace_symbol_quick_panel(window, symbols_information: List[dict], on_cancel=None):
     if len(symbols_information) == 1:
         open_location(window, symbols_information[0]["location"])
     else:
@@ -744,7 +744,7 @@ def show_symbol_quick_panel(window, symbols_information: List[dict], on_cancel=N
 
         window.show_quick_panel(
             [
-                symbol_information_quick_panel_item(symbol_information)
+                workspace_symbol_quick_panel_item(symbol_information)
                 for symbol_information in symbols_information
             ],
             on_select=on_select,
@@ -1337,6 +1337,9 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                 if window := self.view.window():
                     panel_log_error(window, error)
 
+            # Document Symbols Request
+            # DocumentSymbol[] | SymbolInformation[] | null
+            # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
             if result := response.get("result"):
                 restore_viewport_position = capture_viewport_position(self.view)
 
@@ -1345,8 +1348,15 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
 
                     show_at_center_range = None
 
+                    # Represents information about programming constructs like variables, classes, interfaces etc.
+                    # @deprecated use DocumentSymbol or WorkspaceSymbol instead.
+                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#symbolInformation
                     if location := data.get("location"):
                         show_at_center_range = location["range"]
+
+                    # The range that should be selected and revealed when this symbol is being
+                    # picked, e.g. the name of a function. Must be contained by the `range`.
+                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#documentSymbol
                     else:
                         show_at_center_range = data["selectionRange"]
 
@@ -1425,7 +1435,7 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
                     if symbol_information.get("location", {}).get("range")
                 ]
 
-                show_symbol_quick_panel(self.window, symbols, on_cancel=restore_view)
+                show_workspace_symbol_quick_panel(self.window, symbols, on_cancel=restore_view)
 
         # This is not good. Some servers do not return any result until the query is not empty.
         params: smarts_client.LSPWorkspaceSymbolParams = {
