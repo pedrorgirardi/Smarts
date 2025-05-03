@@ -209,23 +209,15 @@ def window_running_smarts(window: sublime.Window) -> List[PgSmart]:
     ]
 
 
-def view_smarts(view: sublime.View) -> List[PgSmart]:
-    window = view.window()
-
-    if window is None:
-        return []
-
-    smarts = []
-
-    for smart in window_running_smarts(window):
-        smart_client = smart["client"]
-
-        if not smart_client.is_server_initialized():
-            continue
-
-        smarts.append(smart)
-
-    return smarts
+def window_initialized_smarts(window: sublime.Window) -> List[PgSmart]:
+    """
+    Returns Smarts associated with `window` which are initialized.
+    """
+    return [
+        smart
+        for smart in window_running_smarts(window)
+        if smart["client"].is_server_initialized()
+    ]
 
 
 def shutdown_smarts(window: sublime.Window):
@@ -287,23 +279,24 @@ def view_applicable(config: PgSmartsServerConfig, view: sublime.View) -> bool:
 
 def applicable_smarts(view: sublime.View, method: str) -> List[PgSmart]:
     """
-    Returns Smarts applicable to view.
+    Returns Smarts applicable to `view`.
     """
     smarts = []
 
-    for smart in view_smarts(view):
-        if not view_applicable(smart["config"], view):
-            continue
+    if window := view.window():
+        for smart in window_initialized_smarts(window):
+            if not view_applicable(smart["config"], view):
+                continue
 
-        if smart["client"].support_method(method):
-            smarts.append(smart)
+            if smart["client"].support_method(method):
+                smarts.append(smart)
 
     return smarts
 
 
 def applicable_smart(view: sublime.View, method: str) -> Optional[PgSmart]:
     """
-    Returns the first Smart applicable to view, or None.
+    Returns the first Smart applicable to `view`, or None.
     """
     if applicable := applicable_smarts(view, method):
         return applicable[0]
