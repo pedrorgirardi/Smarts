@@ -728,7 +728,7 @@ class LanguageServerClient:
         returncode = None
 
         try:
-            self._logger.info(f"Waiting for server {self._name} to terminate")
+            self._logger.info(f"Waiting for server {self._name} to terminate...")
 
             returncode = self._server_process.wait(30)
         except subprocess.TimeoutExpired:
@@ -741,7 +741,7 @@ class LanguageServerClient:
 
             returncode = self._server_process.wait()
 
-        self._logger.info(f"{self._name} terminated with returncode {returncode}")
+        self._logger.info(f"{self._name} server terminated with returncode {returncode}")
 
     def textDocument_didOpen(
         self,
