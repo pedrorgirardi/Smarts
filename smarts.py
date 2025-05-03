@@ -725,7 +725,7 @@ def goto_location(
 def goto_diagnostic(
     window: sublime.Window,
     diagnostics: List[PgSmartsDiagnostic],
-    on_cancel=None,
+    on_cancel: Optional[Callable[[], None]] = None,
 ):
     if len(diagnostics) == 1:
         open_location(window, diagnostics[0])
@@ -799,7 +799,7 @@ def view_textDocumentPositionParams(
     }
 
 
-def syntax_languageId(syntax):
+def syntax_languageId(syntax: str):
     """
     Args:
         syntax:
@@ -827,7 +827,10 @@ def syntax_languageId(syntax):
         return ""
 
 
-def handle_logTrace(window, message):
+def handle_logTrace(
+    window: sublime.Window,
+    message: smarts_client.LSPNotificationMessage,
+):
     """
     A notification to log the trace of the server’s execution.
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#logTrace
@@ -836,7 +839,10 @@ def handle_logTrace(window, message):
     panel_log(window, f"{pprint.pformat(message)}\n\n")
 
 
-def handle_window_logMessage(window, message):
+def handle_window_logMessage(
+    window: sublime.Window,
+    message: smarts_client.LSPNotificationMessage,
+):
     """
     The log message notification is sent from the server to the client
     to ask the client to log a particular message.
@@ -851,7 +857,10 @@ def handle_window_logMessage(window, message):
     panel_log(window, f"{message_message}\n")
 
 
-def handle_window_showMessage(window, message):
+def handle_window_showMessage(
+    window: sublime.Window,
+    message: smarts_client.LSPNotificationMessage,
+):
     """
     The show message notification is sent from a server to a client
     to ask the client to display a particular message in the user interface.
@@ -984,6 +993,9 @@ def on_receive_notification(
 
     elif message_method == "textDocument/publishDiagnostics":
         handle_textDocument_publishDiagnostics(window, smart, notification)
+
+    else:
+        panel_log(window, f"Unhandled Notification: {pprint.pformat(notification)}\n\n")
 
 
 # -- INPUT HANDLERS
