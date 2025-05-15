@@ -521,7 +521,7 @@ def location_quick_panel_item(data) -> sublime.QuickPanelItem:
     )
 
 
-def document_symbol_quick_panel_item(data: dict) -> sublime.QuickPanelItem:
+def document_symbol_quick_panel_item(data) -> sublime.QuickPanelItem:
     line = None
     character = None
 
@@ -544,7 +544,7 @@ def document_symbol_quick_panel_item(data: dict) -> sublime.QuickPanelItem:
     )
 
 
-def workspace_symbol_quick_panel_item(data: dict) -> sublime.QuickPanelItem:
+def workspace_symbol_quick_panel_item(data) -> sublime.QuickPanelItem:
     path = uri_to_path(data["location"]["uri"])
     start_line = data["location"]["range"]["start"]["line"] + 1
     start_character = data["location"]["range"]["start"]["character"] + 1
@@ -686,7 +686,7 @@ def capture_viewport_position(view: sublime.View) -> Callable[[], None]:
 def goto_location(
     window: sublime.Window,
     locations: List[smarts_client.LSPLocation],
-    items: List[sublime.QuickPanelItem],
+    item_builder: Callable[[smarts_client.LSPLocation], sublime.QuickPanelItem],
     on_cancel: Optional[Callable[[], None]] = None,
 ):
     if len(locations) == 1:
@@ -714,6 +714,8 @@ def goto_location(
                     on_cancel()
             else:
                 open_location(window, locations[index])
+
+        items = [item_builder(location) for location in locations]
 
         window.show_quick_panel(
             items,
@@ -1236,13 +1238,11 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
 
             locations = [result] if isinstance(result, dict) else result
 
-            items = [location_quick_panel_item(location) for location in locations]
-
             if window := self.view.window():
                 goto_location(
                     window,
                     cast(List[smarts_client.LSPLocation], locations),
-                    items,
+                    location_quick_panel_item,
                     on_cancel=restore_view,
                 )
 
@@ -1268,13 +1268,11 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
 
             restore_view = capture_view(self.view)
 
-            items = [location_quick_panel_item(location) for location in result]
-
             if window := self.view.window():
                 goto_location(
                     window,
                     result,
-                    items,
+                    location_quick_panel_item,
                     on_cancel=restore_view,
                 )
 
@@ -1432,12 +1430,7 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
                     if workspace_symbol.get("location", {}).get("range")
                 ]
 
-                items = [
-                    workspace_symbol_quick_panel_item(symbol_information)
-                    for symbol_information in result
-                ]
-
-                goto_location(self.window, locations, items, on_cancel=restore_view)
+                goto_location(self.window, locations, workspace_symbol_quick_panel_item, on_cancel=restore_view,)
 
         # This is not good. Some servers do not return any result until the query is not empty.
         params: smarts_client.LSPWorkspaceSymbolParams = {
