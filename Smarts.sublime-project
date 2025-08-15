@@ -10,7 +10,7 @@
                 "name": "Pyright"
             },
             {
-                "name": "Ty"
+                "name": "Ruff"
             }
         ],
         "editor.show_hover": true
