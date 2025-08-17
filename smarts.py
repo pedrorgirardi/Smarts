@@ -511,7 +511,9 @@ def diagnostic_quick_panel_item(data) -> sublime.QuickPanelItem:
     )
 
 
-def location_quick_panel_item(location: smarts_client.LSPLocation) -> sublime.QuickPanelItem:
+def location_quick_panel_item(
+    location: smarts_client.LSPLocation,
+) -> sublime.QuickPanelItem:
     start_line = location["range"]["start"]["line"] + 1
     start_character = location["range"]["start"]["character"] + 1
 
@@ -1418,26 +1420,41 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
             if error := response.get("error"):
                 panel_log_error(self.window, error)
 
+            # Workspace Symbols Request
+            # SymbolInformation[] | WorkspaceSymbol[] | null
+            # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspace_symbol
             if result := response.get("result"):
                 restore_view = None
 
                 if view := self.window.active_view():
                     restore_view = capture_view(view)
 
-                locations = [
-                    workspace_symbol["location"]
-                    for workspace_symbol in result
-                    if workspace_symbol.get("location", {}).get("range")
+                def on_highlight(index):
+                    open_location(
+                        self.window,
+                        result[index]["location"],
+                        flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
+                    )
+
+                def on_select(index):
+                    if index == -1:
+                        if restore_view:
+                            restore_view()
+                    else:
+                        open_location(
+                            self.window,
+                            result[index]["location"],
+                            flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
+                        )
+
+                quick_panel_items = [
+                    workspace_symbol_quick_panel_item(data) for data in result
                 ]
 
-                # O problema é que `workspace_symbol_quick_panel_item` espera uma lista de Location
-                # Acho que `goto_location` precisa de uma mudança - ainda não sei o que precisa mudar
-
-                goto_location(
-                    self.window,
-                    locations,
-                    workspace_symbol_quick_panel_item,
-                    on_cancel=restore_view,
+                self.window.show_quick_panel(
+                    quick_panel_items,
+                    on_select,
+                    on_highlight=on_highlight,
                 )
 
         # This is not good. Some servers do not return any result until the query is not empty.
