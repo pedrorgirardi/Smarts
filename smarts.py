@@ -511,12 +511,12 @@ def diagnostic_quick_panel_item(data) -> sublime.QuickPanelItem:
     )
 
 
-def location_quick_panel_item(data) -> sublime.QuickPanelItem:
-    start_line = data["range"]["start"]["line"] + 1
-    start_character = data["range"]["start"]["character"] + 1
+def location_quick_panel_item(location: smarts_client.LSPLocation) -> sublime.QuickPanelItem:
+    start_line = location["range"]["start"]["line"] + 1
+    start_character = location["range"]["start"]["character"] + 1
 
     return sublime.QuickPanelItem(
-        uri_to_path(data["uri"]),
+        uri_to_path(location["uri"]),
         annotation=f"{start_line}:{start_character}",
     )
 
@@ -1430,7 +1430,15 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
                     if workspace_symbol.get("location", {}).get("range")
                 ]
 
-                goto_location(self.window, locations, workspace_symbol_quick_panel_item, on_cancel=restore_view,)
+                # O problema é que `workspace_symbol_quick_panel_item` espera uma lista de Location
+                # Acho que `goto_location` precisa de uma mudança - ainda não sei o que precisa mudar
+
+                goto_location(
+                    self.window,
+                    locations,
+                    workspace_symbol_quick_panel_item,
+                    on_cancel=restore_view,
+                )
 
         # This is not good. Some servers do not return any result until the query is not empty.
         params: smarts_client.LSPWorkspaceSymbolParams = {
