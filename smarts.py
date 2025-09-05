@@ -1766,6 +1766,15 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 "textDocument": view_text_document_item(self.view),
             })
 
+    def on_post_save_async(self):
+        window = self.view.window()
+
+        if not window:
+            return
+
+        if setting(window, "editor.format_on_save", False):
+            self.view.run_command("pg_smarts_format_document")
+
     def on_pre_close(self):
         for smart in applicable_smarts(self.view, method="textDocument/didClose"):
             smart["client"].textDocument_didClose({
