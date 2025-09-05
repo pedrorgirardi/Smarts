@@ -60,6 +60,31 @@ kMESSAGE_TYPE_NAME = {
     5: "Debug",
 }
 
+# The kind of a completion entry
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#completionItemKind
+kCOMPLETION_ITEM_KIND = {
+    1: sublime.KIND_ID_KEYWORD,  # Text
+    2: sublime.KIND_ID_TYPE,  # Method
+    3: sublime.KIND_ID_FUNCTION,  # Function
+    4: sublime.KIND_ID_NAMESPACE,  # Constructor
+    5: sublime.KIND_ID_TYPE,  # Field
+    6: sublime.KIND_ID_TYPE,  # Variable
+    7: sublime.KIND_ID_TYPE,  # Class
+    8: sublime.KIND_ID_TYPE,  # Interface
+    9: sublime.KIND_ID_TYPE,  # Module
+    10: sublime.KIND_ID_TYPE,  # Property
+    11: sublime.KIND_ID_TYPE,  # Enum
+    12: sublime.KIND_ID_TYPE,  # File
+    13: sublime.KIND_ID_TYPE,  # Reference
+    14: sublime.KIND_ID_TYPE,  # Folder
+    15: sublime.KIND_ID_TYPE,  # EnumMember
+    16: sublime.KIND_ID_TYPE,  # Constant
+    17: sublime.KIND_ID_TYPE,  # Struct
+    18: sublime.KIND_ID_TYPE,  # Event
+    19: sublime.KIND_ID_TYPE,  # Operator
+    20: sublime.KIND_ID_TYPE,  # TypeParameter
+}
+
 kMINIHTML_STYLES = """
 .m-0 {
     margin: 0px;
@@ -934,7 +959,11 @@ def handle_textDocument_publishDiagnostics(
             view.erase_regions(f"{kDIAGNOSTICS}_SEVERITY_{s}")
 
         def severity_key(diagnostic):
-            return diagnostic["severity"]
+            # The diagnostic's severity.
+            # To avoid interpretation mismatches when a server is used with different clients it is highly recommended
+            # that servers always provide a severity value.
+            # If omitted, it’s recommended for the client to interpret it as an Error severity.
+            return diagnostic.get("severity", 1)
 
         for k, g in groupby(sorted(diagnostics, key=severity_key), key=severity_key):
             severity_regions = []
@@ -1757,31 +1786,79 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         self.pg_smarts_highlighter = threading.Timer(0.3, self.highlight)
         self.pg_smarts_highlighter.start()
 
-    def on_hover(self, point, hover_zone):
-        window = self.view.window()
+    def on_query_completions(self, prefix, locations):
+        cached_completion_items = self.view.settings().get("smarts_completions", None)
 
-        if not window:
-            return
+        if cached_completion_items is not None:
+            self.view.settings().erase("smarts_completions")
 
-        if not setting(window, "editor.show_hover", False):
-            return
+            completions: List[sublime.CompletionItem] = []
 
-        if hover_zone == sublime.HOVER_TEXT:
-            smart = applicable_smart(self.view, method="textDocument/hover")
+            for item in cached_completion_items:
+                item = cast(smarts_client.LSPCompletionItem, item)
 
-            if not smart:
-                return
+                # The label of this completion item.
+                # The label property is also by default the text that is inserted when selecting this completion.
+                label = item.get("label") or ""
 
-            params = view_textDocumentPositionParams(self.view, point)
+                annotation = item.get("detail") or ""
 
-            def callback(response: smarts_client.LSPResponseMessage):
-                if error := response.get("error"):
+                #  A string that should be inserted into a document when selecting this completion.
+                # When omitted the label is used as the insert text for this item.
+                insert_text = item.get("insertText") or label
+
+                completion_kind = item.get("kind") or 0
+
+                kind = kCOMPLETION_ITEM_KIND.get(
+                    completion_kind, sublime.KIND_ID_AMBIGUOUS
+                )
+
+                details = item.get("documentation")
+
+                if isinstance(details, dict):
+                    details = details.get("value")
+
+                completions.append(
+                    sublime.CompletionItem(
+                        trigger=label,
+                        annotation=annotation,
+                        completion=insert_text,
+                        kind=(kind, "", annotation),
+                        details=details or "",
+                    )
+                )
+
+            return completions
+
+        smart = applicable_smart(self.view, method="textDocument/completion")
+
+        if not smart:
+            return None
+
+        def callback(response: smarts_client.LSPResponseMessage):
+            if error := response.get("error"):
+                if window := self.view.window():
                     panel_log_error(window, error)
 
-                if result := response["result"]:
-                    show_hover_popup(self.view, smart, result)
+            # result: CompletionItem[] | CompletionList | null
+            #  If a CompletionItem[] is provided it is interpreted to be complete. So it is the same as { isIncomplete: false, items }
+            result = response.get("result", [])
 
-            smart["client"].textDocument_hover(params, callback)
+            # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#completionList
+            # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#completionItem
+            items = result.get("items") if isinstance(result, dict) else result
+
+            # Store completions in view settings and trigger auto_complete.
+            self.view.settings().set("smarts_completions", items)
+
+            sublime.set_timeout(lambda: self.view.run_command("auto_complete"), 0)
+
+        params = view_textDocumentPositionParams(self.view, locations[0])
+
+        smart["client"].textDocument_completion(params, callback)
+
+        # Return empty list immediately; completions will be shown when response arrives.
+        return []
 
 
 class PgSmartsListener(sublime_plugin.EventListener):

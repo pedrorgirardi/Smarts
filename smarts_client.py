@@ -7,6 +7,14 @@ from queue import Queue
 from typing import cast, TypedDict, Any, Literal, Callable, List, Dict, Optional, Union
 
 
+class LSPMarkupContent(TypedDict):
+    # The type of the Markup
+    kind: Literal["plaintext", "markdown"]
+
+    # The content itself
+    value: str
+
+
 class LSPMessage(TypedDict):
     jsonrpc: str
 
@@ -288,6 +296,45 @@ class LSPPublishDiagnosticsParams(TypedDict):
     diagnostics: List[LSPDiagnostic]
 
 
+class LSPCompletionItem(TypedDict):
+    """
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#completionItem
+    """
+
+    # The label of this completion item.
+    # The label property is also by default the text that is inserted when selecting this completion.
+    #
+    # If label details are provided the label itself should be an unqualified name of the completion item.
+    label: str
+
+    # The kind of this completion item.
+    # Based of the kind an icon is chosen by the editor.
+    kind: Optional[int]
+
+    # A human-readable string with additional information about this item, like type or symbol information.
+    detail: Optional[str]
+
+    # A human-readable string that represents a doc-comment.
+    documentation: Optional[Union[str, LSPMarkupContent]]
+
+    # A string that should be inserted into a document when selecting this completion.
+    # When omitted the label is used as the insert text for this item.
+    insertText: Optional[str]
+
+
+class LSPCompletionList(TypedDict):
+    """
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#completionList
+    """
+
+    # This list is not complete. Further typing should result in recomputing this list.
+    # Recomputed lists have all their items replaced (not appended) in the incomplete completion sessions.
+    isIncomplete: bool
+
+    # The completion items.
+    items: List[LSPCompletionItem]
+
+
 # --------------------------------------------------------------------------------
 
 
@@ -403,33 +450,19 @@ class LanguageServerClient:
             return None
 
         if method == "textDocument/formatting":
-            return (
-                True
-                if self._server_capabilities.get("documentFormattingProvider")
-                else False
-            )
+            return bool(self._server_capabilities.get("documentFormattingProvider"))
         elif method == "textDocument/documentSymbol":
-            return (
-                True
-                if self._server_capabilities.get("documentSymbolProvider")
-                else False
-            )
+            return bool(self._server_capabilities.get("documentSymbolProvider"))
         elif method == "textDocument/documentHighlight":
-            return (
-                True
-                if self._server_capabilities.get("documentHighlightProvider")
-                else False
-            )
+            return bool(self._server_capabilities.get("documentHighlightProvider"))
         elif method == "textDocument/references":
-            return (
-                True if self._server_capabilities.get("referencesProvider") else False
-            )
+            return bool(self._server_capabilities.get("referencesProvider"))
         elif method == "textDocument/definition":
-            return (
-                True if self._server_capabilities.get("definitionProvider") else False
-            )
+            return bool(self._server_capabilities.get("definitionProvider"))
         elif method == "textDocument/hover":
-            return True if self._server_capabilities.get("hoverProvider") else False
+            return bool(self._server_capabilities.get("hoverProvider"))
+        elif method == "textDocument/completion":
+            return bool(self._server_capabilities.get("completionProvider"))
         elif method == "textDocument/didOpen" or method == "textDocument/didClose":
             options = textDocumentSyncOptions(
                 self._server_capabilities.get("textDocumentSync")
@@ -439,13 +472,9 @@ class LanguageServerClient:
             options = textDocumentSyncOptions(
                 self._server_capabilities.get("textDocumentSync")
             )
-            return False if options["change"] == 0 else True
+            return options["change"] != 0
         elif method == "workspace/symbol":
-            return (
-                True
-                if self._server_capabilities.get("workspaceSymbolProvider")
-                else False
-            )
+            return bool(self._server_capabilities.get("workspaceSymbolProvider"))
         else:
             return False
 
@@ -741,7 +770,9 @@ class LanguageServerClient:
 
             returncode = self._server_process.wait()
 
-        self._logger.info(f"{self._name} server terminated with returncode {returncode}")
+        self._logger.info(
+            f"{self._name} server terminated with returncode {returncode}"
+        )
 
     def textDocument_didOpen(
         self,
@@ -898,6 +929,18 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_formatting
         """
         self._put(request("textDocument/formatting", params), callback)
+
+    def textDocument_completion(
+        self,
+        params: LSPTextDocumentPositionParams,
+        callback: Callable[[LSPResponseMessage], None],
+    ):
+        """
+        The completion request is sent from the client to the server to compute completion items at a given cursor position.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_completion
+        """
+        self._put(request("textDocument/completion", params), callback)
 
     def workspace_symbol(
         self,
