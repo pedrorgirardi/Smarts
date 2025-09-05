@@ -1568,20 +1568,21 @@ class PgSmartsJumpCommand(sublime_plugin.TextCommand):
 
 
 class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
-    def run(self, _):
+    def run(self, _, position=None):
         smart = applicable_smart(self.view, method="textDocument/hover")
 
         if not smart:
             return
 
-        params = view_textDocumentPositionParams(self.view)
+        position = position or self.view.sel()[0].begin()
+
+        params = view_textDocumentPositionParams(self.view, position)
 
         def callback(response: smarts_client.LSPResponseMessage):
             if error := response.get("error"):
                 if window := self.view.window():
                     panel_log_error(window, error)
-
-            if result := response["result"]:
+            if result := response.get("result"):
                 show_hover_popup(self.view, smart, result)
 
         smart["client"].textDocument_hover(params, callback)
@@ -1760,6 +1761,16 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
 
 
 class PgSmartsViewListener(sublime_plugin.ViewEventListener):
+    def on_hover(self, point, hover_zone):
+        window = self.view.window()
+
+        if not window:
+            return
+
+        if setting(window, "editor.show_hover", False):
+            if hover_zone == sublime.HOVER_TEXT:
+                self.view.run_command("pg_smarts_show_hover", {"position": point})
+
     def on_load_async(self):
         for smart in applicable_smarts(self.view, method="textDocument/didOpen"):
             smart["client"].textDocument_didOpen({
