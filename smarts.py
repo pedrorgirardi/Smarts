@@ -1772,9 +1772,6 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         self.erase_highlights()
 
     def on_selection_modified_async(self):
-        if highlighter := getattr(self, "pg_smarts_highlighter", None):
-            highlighter.cancel()
-
         window = self.view.window()
 
         if not window:
@@ -1783,8 +1780,17 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if not setting(window, "editor.highlight_references", False):
             return
 
-        self.pg_smarts_highlighter = threading.Timer(0.3, self.highlight)
-        self.pg_smarts_highlighter.start()
+        highlighter = getattr(self, "pg_smarts_highlighter", None)
+
+        if highlighter and highlighter.is_alive():
+            highlighter.cancel()
+
+            self.pg_smarts_highlighter = threading.Timer(0.3, self.highlight)
+            self.pg_smarts_highlighter.start()
+        else:
+            self.highlight()
+            self.pg_smarts_highlighter = threading.Timer(0.3, self.highlight)
+            self.pg_smarts_highlighter.start()
 
     def on_query_completions(self, prefix, locations):
         cached_completion_items = self.view.settings().get("smarts_completions", None)
