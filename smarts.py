@@ -44,6 +44,7 @@ kOUTPUT_PANEL_NAME_PREFIXED = f"output.{kOUTPUT_PANEL_NAME}"
 
 kDIAGNOSTICS = "PG_SMARTS_DIAGNOSTICS"
 kSMARTS_HIGHLIGHTS = "PG_SMARTS_HIGHLIGHTS"
+kSMARTS_COMPLETIONS = "PG_SMARTS_COMPLETIONS"
 
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnosticSeverity
 kDIAGNOSTIC_SEVERITY_ERROR = 1
@@ -1793,10 +1794,10 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             self.pg_smarts_highlighter.start()
 
     def on_query_completions(self, prefix, locations):
-        cached_completion_items = self.view.settings().get("smarts_completions", None)
+        cached_completion_items = self.view.settings().get(kSMARTS_COMPLETIONS, None)
 
         if cached_completion_items is not None:
-            self.view.settings().erase("smarts_completions")
+            self.view.settings().erase(kSMARTS_COMPLETIONS)
 
             completions: List[sublime.CompletionItem] = []
 
@@ -1855,7 +1856,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             items = result.get("items") if isinstance(result, dict) else result
 
             # Store completions in view settings and trigger auto_complete.
-            self.view.settings().set("smarts_completions", items)
+            self.view.settings().set(kSMARTS_COMPLETIONS, items)
 
             sublime.set_timeout(lambda: self.view.run_command("auto_complete"), 0)
 
