@@ -46,5 +46,9 @@
     {
         "caption": "Smarts: Format Document",
         "command": "pg_smarts_format_document"
+    },
+    {
+        "caption": "Smarts: Format Selection",
+        "command": "pg_smarts_format_selection"
     }
 ]

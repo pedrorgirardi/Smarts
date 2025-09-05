@@ -451,6 +451,10 @@ class LanguageServerClient:
 
         if method == "textDocument/formatting":
             return bool(self._server_capabilities.get("documentFormattingProvider"))
+        elif method == "textDocument/rangeFormatting":
+            return bool(
+                self._server_capabilities.get("documentRangeFormattingProvider")
+            )
         elif method == "textDocument/documentSymbol":
             return bool(self._server_capabilities.get("documentSymbolProvider"))
         elif method == "textDocument/documentHighlight":
@@ -929,6 +933,18 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_formatting
         """
         self._put(request("textDocument/formatting", params), callback)
+
+    def textDocument_rangeFormatting(
+        self,
+        params,
+        callback: Callable[[LSPResponseMessage], None],
+    ):
+        """
+        The document range formatting request is sent from the client to the server to format a specific range in a document.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#documentRangeFormattingParams
+        """
+        self._put(request("textDocument/rangeFormatting", params), callback)
 
     def textDocument_completion(
         self,

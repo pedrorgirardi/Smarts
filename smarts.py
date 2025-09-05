@@ -507,7 +507,8 @@ def range16_to_region(view: sublime.View, range16) -> sublime.Region:
 
 
 def region_to_range16(
-    view: sublime.View, region: sublime.Region
+    view: sublime.View,
+    region: sublime.Region,
 ) -> smarts_client.LSPRange:
     begin_row, begin_col = view.rowcol_utf16(region.begin())
     end_row, end_col = view.rowcol_utf16(region.end())
@@ -1618,6 +1619,54 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
                 )
 
         smart["client"].textDocument_formatting(params, callback)
+
+
+class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
+    def run(self, _, region=None):
+        smart = applicable_smart(self.view, method="textDocument/rangeFormatting")
+
+        if not smart:
+            return
+
+        if region is None:
+            for r in self.view.sel():
+                if not r.empty():
+                    self.view.run_command(
+                        "pg_smarts_format_selection",
+                        {
+                            "region": [r.a, r.b],
+                        },
+                    )
+            return
+
+        region = sublime.Region(region[0], region[1])
+
+        params = {
+            "textDocument": view_textDocumentIdentifier(self.view),
+            "range": region_to_range16(self.view, region),
+            "options": {
+                "tabSize": self.view.settings().get("tab_size"),
+                "insertSpaces": True,
+                "insertFinalNewline": None,
+                "trimTrailingWhitespace": None,
+                "trimFinalNewlines": None,
+            },
+        }
+
+        def callback(response: smarts_client.LSPResponseMessage):
+            if error := response.get("error"):
+                if window := self.view.window():
+                    panel_log_error(window, error)
+
+            if edits := response.get("result"):
+                self.view.run_command(
+                    "pg_smarts_apply_edits",
+                    {
+                        "edits": edits,
+                    },
+                )
+
+        smart["client"].textDocument_rangeFormatting(params, callback)
 
 
 class PgSmartsApplyEditsCommand(sublime_plugin.TextCommand):
