@@ -1777,7 +1777,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 "textDocument": view_text_document_item(self.view),
             })
 
-    def on_post_save_async(self):
+    def on_pre_save_async(self):
         window = self.view.window()
 
         if not window:
