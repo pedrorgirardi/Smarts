@@ -15,6 +15,39 @@ class LSPMarkupContent(TypedDict):
     value: str
 
 
+class LSPServerCapabilities(TypedDict):
+    positionEncoding: Optional[
+        Literal[
+            # Character offsets count UTF-8 code units (e.g bytes).
+            "utf-8",
+            #  Character offsets count UTF-16 code units.
+            # This is the default and must always be supported by servers.
+            "'utf-16",
+            # Character offsets count UTF-32 code units.
+            # Implementation note: these are the same as Unicode code points,
+            # so this `PositionEncodingKind` may also be used for an
+            #  encoding-agnostic representation of character offsets.
+            "utf-32",
+        ]
+    ]
+
+
+class LSPServerInfo(TypedDict):
+    # The name of the server as defined by the server.
+    name: str
+
+    # The server's version as defined by the server.
+    version: Optional[str]
+
+
+class LSPInitializeResult(TypedDict):
+    # The capabilities the language server provides.
+    capabilities: LSPServerCapabilities
+
+    # Information about the server.
+    serverInfo: Optional[LSPServerInfo]
+
+
 class LSPMessage(TypedDict):
     jsonrpc: str
 
@@ -401,7 +434,7 @@ class LanguageServerClient:
         self._server_process: Optional[subprocess.Popen] = None
         self._server_shutdown = threading.Event()
         self._server_initialized = False
-        self._server_info: Optional[dict] = None
+        self._server_info: Optional[LSPServerInfo] = None
         self._server_capabilities: Optional[dict] = None
         self._send_queue = Queue(maxsize=1)
         self._receive_queue = Queue(maxsize=1)
@@ -699,10 +732,19 @@ class LanguageServerClient:
 
                 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initializeResult
                 result = response.get("result")
+
                 if result is not None:
                     self._server_capabilities = result.get("capabilities")
                     self._server_info = result.get("serverInfo")
 
+                # The initialized notification is sent from the client to the server
+                # after the client received the result of the initialize request
+                # but before the client is sending any other request or notification to the server.
+                #
+                # The server can use the initialized notification, for example, to dynamically register capabilities.
+                # The initialized notification may only be sent once.
+                #
+                # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialized
                 self._put(notification("initialized", {}))
 
             callback(response)
