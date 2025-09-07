@@ -380,36 +380,20 @@ def textDocumentSyncOptions(
         return textDocumentSync
 
 
+# Type alias for notification handlers
+LSPNotificationHandler = Callable[[LSPNotificationMessage], None]
+
+
 class LanguageServerClient:
     def __init__(
         self,
         logger: logging.Logger,
         name: str,
         server_args: List[str],
-        on_logTrace: Optional[
-            Callable[
-                [LSPNotificationMessage],
-                None,
-            ]
-        ] = None,
-        on_window_logMessage: Optional[
-            Callable[
-                [LSPNotificationMessage],
-                None,
-            ]
-        ] = None,
-        on_window_showMessage: Optional[
-            Callable[
-                [LSPNotificationMessage],
-                None,
-            ]
-        ] = None,
-        on_textDocument_publishDiagnostics: Optional[
-            Callable[
-                [LSPNotificationMessage],
-                None,
-            ]
-        ] = None,
+        on_logTrace: Optional[LSPNotificationHandler] = None,
+        on_window_logMessage: Optional[LSPNotificationHandler] = None,
+        on_window_showMessage: Optional[LSPNotificationHandler] = None,
+        on_textDocument_publishDiagnostics: Optional[LSPNotificationHandler] = None,
     ):
         self._logger = logger
         self._name = name
@@ -714,8 +698,10 @@ class LanguageServerClient:
                 self._server_initialized = True
 
                 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initializeResult
-                self._server_capabilities = response.get("result").get("capabilities")
-                self._server_info = response.get("result").get("serverInfo")
+                result = response.get("result")
+                if result is not None:
+                    self._server_capabilities = result.get("capabilities")
+                    self._server_info = result.get("serverInfo")
 
                 self._put(notification("initialized", {}))
 
