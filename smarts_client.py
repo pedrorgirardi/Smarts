@@ -771,13 +771,22 @@ class LanguageServerClient:
         but to not exit (otherwise the response might not be delivered correctly to the client).
         There is a separate exit notification that asks the server to exit.
 
+        Clients must not send any notifications other than exit
+        or requests to a server to which they have sent a shutdown request.
+
+        Clients should also wait with sending the exit notification until they have received a response from the shutdown request.
+
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
         """
 
         self._logger.info(f"Shutdown {self._name}")
 
-        def _callback(message):
-            self.exit()
+        def _callback(response):
+            # Response
+            # result: null
+            # error: code and message set in case an exception happens during shutdown request.
+            if not response.get("error"):
+                self.exit()
 
         self._put(request("shutdown"), _callback)
 
