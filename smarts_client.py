@@ -428,11 +428,13 @@ class LanguageServerClient:
         on_window_showMessage: Optional[LSPNotificationHandler] = None,
         on_textDocument_publishDiagnostics: Optional[LSPNotificationHandler] = None,
     ):
+        self._init_lock = threading.Lock()
         self._logger = logger
         self._name = name
         self._server_args = server_args
         self._server_process: Optional[subprocess.Popen] = None
         self._server_shutdown = threading.Event()
+        self._server_initializing = None
         self._server_initialized = False
         self._server_info: Optional[LSPServerInfo] = None
         self._server_capabilities: Optional[dict] = None
@@ -685,71 +687,76 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
         """
 
-        if self._server_initialized:
-            return
+        with self._init_lock:
+            if self._server_initializing or self._server_initialized:
+                return
 
-        self._logger.debug(f"Initialize {self._name} {self._server_args}")
+            self._server_initializing = True
 
-        self._server_process = subprocess.Popen(
-            self._server_args,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
+            self._logger.debug(f"Initialize {self._name} {self._server_args}")
 
-        self._logger.info(
-            f"{self._name} is up and running; PID {self._server_process.pid}"
-        )
+            self._server_process = subprocess.Popen(
+                self._server_args,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
 
-        # Thread responsible for handling received messages.
-        self._handler = threading.Thread(
-            name="Handler",
-            target=self._start_handler,
-            daemon=True,
-        )
-        self._handler.start()
+            self._logger.info(
+                f"{self._name} is up and running; PID {self._server_process.pid}"
+            )
 
-        # Thread responsible for sending/writing messages.
-        self._writer = threading.Thread(
-            name="Writer",
-            target=self._start_writer,
-            daemon=True,
-        )
-        self._writer.start()
+            # Thread responsible for handling received messages.
+            self._handler = threading.Thread(
+                name="Handler",
+                target=self._start_handler,
+                daemon=True,
+            )
+            self._handler.start()
 
-        # Thread responsible for reading messages.
-        self._reader = threading.Thread(
-            name="Reader",
-            target=self._start_reader,
-            daemon=True,
-        )
-        self._reader.start()
+            # Thread responsible for sending/writing messages.
+            self._writer = threading.Thread(
+                name="Writer",
+                target=self._start_writer,
+                daemon=True,
+            )
+            self._writer.start()
 
-        def _callback(response: LSPResponseMessage):
-            # The server should not be considered 'initialized' if there's an error.
-            if not response.get("error"):
-                self._server_initialized = True
+            # Thread responsible for reading messages.
+            self._reader = threading.Thread(
+                name="Reader",
+                target=self._start_reader,
+                daemon=True,
+            )
+            self._reader.start()
 
-                # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initializeResult
-                result = response.get("result")
+            def _callback(response: LSPResponseMessage):
+                self._server_initializing = False
 
-                if result is not None:
-                    self._server_capabilities = result.get("capabilities")
-                    self._server_info = result.get("serverInfo")
+                # The server should not be considered 'initialized' if there's an error.
+                if not response.get("error"):
+                    self._server_initialized = True
 
-                # The initialized notification is sent from the client to the server
-                # after the client received the result of the initialize request
-                # but before the client is sending any other request or notification to the server.
-                #
-                # The server can use the initialized notification, for example, to dynamically register capabilities.
-                # The initialized notification may only be sent once.
-                #
-                # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialized
-                self._put(notification("initialized", {}))
+                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initializeResult
+                    result = response.get("result")
 
-            callback(response)
+                    if result is not None:
+                        self._server_capabilities = result.get("capabilities")
+                        self._server_info = result.get("serverInfo")
 
-        self._put(request("initialize", params), _callback)
+                    # The initialized notification is sent from the client to the server
+                    # after the client received the result of the initialize request
+                    # but before the client is sending any other request or notification to the server.
+                    #
+                    # The server can use the initialized notification, for example, to dynamically register capabilities.
+                    # The initialized notification may only be sent once.
+                    #
+                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialized
+                    self._put(notification("initialized", {}))
+
+                callback(response)
+
+            self._put(request("initialize", params), _callback)
 
     def shutdown(self):
         """
