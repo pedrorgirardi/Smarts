@@ -1214,7 +1214,14 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
         for smart in window_smarts(self.window):
             client = smart["client"]
 
-            status = "Stopped" if client.is_server_shutdown() else "Running"
+            status = "Unknown"
+
+            if client.is_server_initializing():
+                status = "Initializing"
+            elif client.is_server_initialized():
+                status = "Running"
+            elif client.is_server_shutdown():
+                status = "Stopped"
 
             minihtml += f"<strong>{client._name} ({status})</strong><br /><br />"
 

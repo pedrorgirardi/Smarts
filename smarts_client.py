@@ -452,6 +452,12 @@ class LanguageServerClient:
         self._on_window_showMessage = on_window_showMessage
         self._on_textDocument_publishDiagnostics = on_textDocument_publishDiagnostics
 
+    def is_server_initializing(self) -> Optional[bool]:
+        """
+        Returns True if server is initializing.
+        """
+        return self._server_initializing
+
     def is_server_initialized(self) -> bool:
         """
         Returns True if server is up and running and successfuly processed a 'initialize' request.
