@@ -1870,6 +1870,10 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             self.pg_smarts_highlighter.start()
 
     def on_query_completions(self, prefix, locations):
+        if window := self.view.window():
+            if not setting(window, "editor.auto_complete", False):
+                return None
+
         cached_completion_items = self.view.settings().get(kSMARTS_COMPLETIONS, None)
 
         if cached_completion_items is not None:
