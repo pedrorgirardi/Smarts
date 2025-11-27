@@ -446,6 +446,7 @@ class LanguageServerClient:
         self._request_callback: Dict[
             Union[int, str], Callable[[LSPResponseMessage], None]
         ] = {}
+        self._request_callback_lock = threading.Lock()
         self._open_documents = set()
         self._on_logTrace = on_logTrace
         self._on_window_logMessage = on_window_logMessage
@@ -608,13 +609,15 @@ class LanguageServerClient:
             #
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#responseMessage
             if request_id := message.get("id"):
-                if callback := self._request_callback.get(request_id):
+                with self._request_callback_lock:
+                    callback = self._request_callback.pop(request_id, None)
+
+                if callback:
                     try:
                         callback(cast(LSPResponseMessage, message))
                     except Exception:
                         self._logger.exception(f"{self._name} - Request callback error")
-                    finally:
-                        del self._request_callback[request_id]
+
             else:
                 notification = cast(LSPNotificationMessage, message)
 
@@ -678,7 +681,8 @@ class LanguageServerClient:
             # callback might not be called if there's an error reading the response,
             # or the server never returns a response.
             if callback:
-                self._request_callback[message_id] = callback
+                with self._request_callback_lock:
+                    self._request_callback[message_id] = callback
 
     def initialize(
         self,
