@@ -435,18 +435,20 @@ class LanguageServerClient:
         self._server_process: Optional[subprocess.Popen] = None
         self._server_shutdown = threading.Event()
         self._server_initializing = None
-        self._server_initialized = False
+        self._server_initialized = threading.Event()
         self._server_info: Optional[LSPServerInfo] = None
         self._server_capabilities: Optional[dict] = None
-        self._send_queue = Queue(maxsize=1)
-        self._receive_queue = Queue(maxsize=1)
+        self._send_queue = Queue(maxsize=100)
+        self._receive_queue = Queue(maxsize=100)
         self._reader: Optional[threading.Thread] = None
         self._writer: Optional[threading.Thread] = None
         self._handler: Optional[threading.Thread] = None
         self._request_callback: Dict[
             Union[int, str], Callable[[LSPResponseMessage], None]
         ] = {}
+        self._request_callback_lock = threading.Lock()
         self._open_documents = set()
+        self._open_documents_lock = threading.Lock()
         self._on_logTrace = on_logTrace
         self._on_window_logMessage = on_window_logMessage
         self._on_window_showMessage = on_window_showMessage
@@ -462,7 +464,7 @@ class LanguageServerClient:
         """
         Returns True if server is up and running and successfuly processed a 'initialize' request.
         """
-        return self._server_initialized
+        return self._server_initialized.is_set()
 
     def is_server_shutdown(self) -> bool:
         """
@@ -608,13 +610,15 @@ class LanguageServerClient:
             #
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#responseMessage
             if request_id := message.get("id"):
-                if callback := self._request_callback.get(request_id):
+                with self._request_callback_lock:
+                    callback = self._request_callback.pop(request_id, None)
+
+                if callback:
                     try:
                         callback(cast(LSPResponseMessage, message))
                     except Exception:
                         self._logger.exception(f"{self._name} - Request callback error")
-                    finally:
-                        del self._request_callback[request_id]
+
             else:
                 notification = cast(LSPNotificationMessage, message)
 
@@ -653,7 +657,10 @@ class LanguageServerClient:
         callback: Optional[Callable[[LSPResponseMessage], None]] = None,
     ):
         # Drop message if server is not ready - unless it's an initization message.
-        if not self._server_initialized and not message["method"] == "initialize":
+        if (
+            not self._server_initialized.is_set()
+            and not message["method"] == "initialize"
+        ):
             self._logger.debug(
                 f"Server {self._name} is not initialized; Will drop {message['method']}"
             )
@@ -678,7 +685,8 @@ class LanguageServerClient:
             # callback might not be called if there's an error reading the response,
             # or the server never returns a response.
             if callback:
-                self._request_callback[message_id] = callback
+                with self._request_callback_lock:
+                    self._request_callback[message_id] = callback
 
     def initialize(
         self,
@@ -694,7 +702,7 @@ class LanguageServerClient:
         """
 
         with self._init_lock:
-            if self._server_initializing or self._server_initialized:
+            if self._server_initializing or self._server_initialized.is_set():
                 return
 
             self._server_initializing = True
@@ -741,7 +749,7 @@ class LanguageServerClient:
 
                 # The server should not be considered 'initialized' if there's an error.
                 if not response.get("error"):
-                    self._server_initialized = True
+                    self._server_initialized.set()
 
                     # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initializeResult
                     result = response.get("result")
@@ -849,12 +857,13 @@ class LanguageServerClient:
         # This means open and close notification must be balanced and the max open count for a particular textDocument is one.
         textDocument_uri = params["textDocument"]["uri"]
 
-        if textDocument_uri in self._open_documents:
-            return
+        with self._open_documents_lock:
+            if textDocument_uri in self._open_documents:
+                return
+
+            self._open_documents.add(textDocument_uri)
 
         self._put(notification("textDocument/didOpen", params))
-
-        self._open_documents.add(textDocument_uri)
 
     def textDocument_didClose(
         self,
@@ -876,13 +885,14 @@ class LanguageServerClient:
 
         textDocument_uri = params["textDocument"]["uri"]
 
-        # A close notification requires a previous open notification to be sent.
-        if textDocument_uri not in self._open_documents:
-            return
+        with self._open_documents_lock:
+            # A close notification requires a previous open notification to be sent.
+            if textDocument_uri not in self._open_documents:
+                return
+
+            self._open_documents.remove(textDocument_uri)
 
         self._put(notification("textDocument/didClose", params))
-
-        self._open_documents.remove(textDocument_uri)
 
     def textDocument_didChange(
         self,
@@ -896,8 +906,9 @@ class LanguageServerClient:
 
         # Before a client can change a text document it must claim
         # ownership of its content using the textDocument/didOpen notification.
-        if params["textDocument"]["uri"] not in self._open_documents:
-            return
+        with self._open_documents_lock:
+            if params["textDocument"]["uri"] not in self._open_documents:
+                return
 
         self._put(notification("textDocument/didChange", params))
 
