@@ -435,7 +435,7 @@ class LanguageServerClient:
         self._server_process: Optional[subprocess.Popen] = None
         self._server_shutdown = threading.Event()
         self._server_initializing = None
-        self._server_initialized = False
+        self._server_initialized = threading.Event()
         self._server_info: Optional[LSPServerInfo] = None
         self._server_capabilities: Optional[dict] = None
         self._send_queue = Queue(maxsize=1)
@@ -464,7 +464,7 @@ class LanguageServerClient:
         """
         Returns True if server is up and running and successfuly processed a 'initialize' request.
         """
-        return self._server_initialized
+        return self._server_initialized.is_set()
 
     def is_server_shutdown(self) -> bool:
         """
@@ -657,7 +657,10 @@ class LanguageServerClient:
         callback: Optional[Callable[[LSPResponseMessage], None]] = None,
     ):
         # Drop message if server is not ready - unless it's an initization message.
-        if not self._server_initialized and not message["method"] == "initialize":
+        if (
+            not self._server_initialized.is_set()
+            and not message["method"] == "initialize"
+        ):
             self._logger.debug(
                 f"Server {self._name} is not initialized; Will drop {message['method']}"
             )
@@ -699,7 +702,7 @@ class LanguageServerClient:
         """
 
         with self._init_lock:
-            if self._server_initializing or self._server_initialized:
+            if self._server_initializing or self._server_initialized.is_set():
                 return
 
             self._server_initializing = True
@@ -746,7 +749,7 @@ class LanguageServerClient:
 
                 # The server should not be considered 'initialized' if there's an error.
                 if not response.get("error"):
-                    self._server_initialized = True
+                    self._server_initialized.set()
 
                     # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initializeResult
                     result = response.get("result")
