@@ -1871,11 +1871,11 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if highlighter and highlighter.is_alive():
             highlighter.cancel()
 
-            self.pg_smarts_highlighter = threading.Timer(0.3, self.highlight)
+            self.pg_smarts_highlighter = threading.Timer(0.1, self.highlight)
             self.pg_smarts_highlighter.start()
         else:
             self.highlight()
-            self.pg_smarts_highlighter = threading.Timer(0.3, self.highlight)
+            self.pg_smarts_highlighter = threading.Timer(0.1, self.highlight)
             self.pg_smarts_highlighter.start()
 
     def on_query_completions(self, prefix, locations):
