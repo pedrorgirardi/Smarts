@@ -1005,7 +1005,7 @@ def handle_textDocument_publishDiagnostics(
         view.set_status(kDIAGNOSTICS, ", ".join(diagnostics_status))
 
 
-def on_receive_notification(
+def handle_notification(
     smart_uuid: str,
     notification: smarts_client.LSPNotificationMessage,
 ):
@@ -1150,7 +1150,11 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
         smart_uuid = str(uuid.uuid4())
 
         def _on_receive_notification(message):
-            on_receive_notification(smart_uuid, message)
+            # Handle Notification on Main/UI Thread.
+            sublime.set_timeout(
+                lambda: handle_notification(smart_uuid, message),
+                0,
+            )
 
         client = smarts_client.LanguageServerClient(
             logger=client_logger,
