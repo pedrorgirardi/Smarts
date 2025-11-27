@@ -438,8 +438,8 @@ class LanguageServerClient:
         self._server_initialized = threading.Event()
         self._server_info: Optional[LSPServerInfo] = None
         self._server_capabilities: Optional[dict] = None
-        self._send_queue = Queue(maxsize=1)
-        self._receive_queue = Queue(maxsize=1)
+        self._send_queue = Queue(maxsize=100)
+        self._receive_queue = Queue(maxsize=100)
         self._reader: Optional[threading.Thread] = None
         self._writer: Optional[threading.Thread] = None
         self._handler: Optional[threading.Thread] = None
