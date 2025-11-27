@@ -448,6 +448,7 @@ class LanguageServerClient:
         ] = {}
         self._request_callback_lock = threading.Lock()
         self._open_documents = set()
+        self._open_documents_lock = threading.Lock()
         self._on_logTrace = on_logTrace
         self._on_window_logMessage = on_window_logMessage
         self._on_window_showMessage = on_window_showMessage
@@ -853,12 +854,13 @@ class LanguageServerClient:
         # This means open and close notification must be balanced and the max open count for a particular textDocument is one.
         textDocument_uri = params["textDocument"]["uri"]
 
-        if textDocument_uri in self._open_documents:
-            return
+        with self._open_documents_lock:
+            if textDocument_uri in self._open_documents:
+                return
+
+            self._open_documents.add(textDocument_uri)
 
         self._put(notification("textDocument/didOpen", params))
-
-        self._open_documents.add(textDocument_uri)
 
     def textDocument_didClose(
         self,
@@ -880,13 +882,14 @@ class LanguageServerClient:
 
         textDocument_uri = params["textDocument"]["uri"]
 
-        # A close notification requires a previous open notification to be sent.
-        if textDocument_uri not in self._open_documents:
-            return
+        with self._open_documents_lock:
+            # A close notification requires a previous open notification to be sent.
+            if textDocument_uri not in self._open_documents:
+                return
+
+            self._open_documents.remove(textDocument_uri)
 
         self._put(notification("textDocument/didClose", params))
-
-        self._open_documents.remove(textDocument_uri)
 
     def textDocument_didChange(
         self,
@@ -900,8 +903,9 @@ class LanguageServerClient:
 
         # Before a client can change a text document it must claim
         # ownership of its content using the textDocument/didOpen notification.
-        if params["textDocument"]["uri"] not in self._open_documents:
-            return
+        with self._open_documents_lock:
+            if params["textDocument"]["uri"] not in self._open_documents:
+                return
 
         self._put(notification("textDocument/didChange", params))
 
