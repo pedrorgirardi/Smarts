@@ -147,6 +147,7 @@ class PgSmart(TypedDict):
 # -- Global Variables
 
 _SMARTS: List[PgSmart] = []
+_SMARTS_LOCK = threading.Lock()
 
 
 # ---------------------------------------------------------------------------------------
@@ -198,13 +199,15 @@ def remove_smarts(uuids: Set[str]):
     plugin_logger.debug(f"Remove Smarts {uuids}")
 
     global _SMARTS
-    _SMARTS = [smart for smart in _SMARTS if smart["uuid"] not in uuids]
+    with _SMARTS_LOCK:
+        _SMARTS = [smart for smart in _SMARTS if smart["uuid"] not in uuids]
 
 
 def find_smart(uuid: str) -> Optional[PgSmart]:
-    for smart in _SMARTS:
-        if smart["uuid"] == uuid:
-            return smart
+    with _SMARTS_LOCK:
+        for smart in _SMARTS:
+            if smart["uuid"] == uuid:
+                return smart
 
     return None
 
@@ -221,7 +224,8 @@ def window_smarts(window: sublime.Window) -> List[PgSmart]:
     """
     Returns Smarts associated with `window`.
     """
-    return [smart for smart in _SMARTS if smart["window"] == window.id()]
+    with _SMARTS_LOCK:
+        return [smart for smart in _SMARTS if smart["window"] == window.id()]
 
 
 def window_running_smarts(window: sublime.Window) -> List[PgSmart]:
@@ -1159,12 +1163,13 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
         )
 
         global _SMARTS
-        _SMARTS.append({
-            "uuid": smart_uuid,
-            "window": self.window.id(),
-            "config": server_config,
-            "client": client,
-        })
+        with _SMARTS_LOCK:
+            _SMARTS.append({
+                "uuid": smart_uuid,
+                "window": self.window.id(),
+                "config": server_config,
+                "client": client,
+            })
 
         def callback(response: smarts_client.LSPResponseMessage):
             if error := response.get("error"):
