@@ -1385,8 +1385,23 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
             if result := response.get("result"):
                 restore_viewport_position = capture_viewport_position(self.view)
 
+                # Skip symbols 'contained'
+                #
+                # containerName?: string;
+                #
+                # The name of the symbol containing this symbol. This information is for
+                # user interface purposes (e.g. to render a qualifier in the user interface if necessary).
+                # It can't be used to re-infer a hierarchy for the document symbols.
+                #
+                # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#symbolInformation
+                symbols_information = [
+                    symbol_information
+                    for symbol_information in result
+                    if not symbol_information.get("containerName")
+                ]
+
                 def on_highlight(index):
-                    data = result[index]
+                    data = symbols_information[index]
 
                     show_at_center_range = None
 
@@ -1417,7 +1432,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                         restore_viewport_position()
 
                     else:
-                        data = result[index]
+                        data = symbols_information[index]
 
                         selected_range = None
 
@@ -1442,7 +1457,8 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                         self.view.show_at_center(show_at_center_region)
 
                 quick_panel_items = [
-                    document_symbol_quick_panel_item(data) for data in result
+                    document_symbol_quick_panel_item(data)
+                    for data in symbols_information
                 ]
 
                 self.view.window().show_quick_panel(
