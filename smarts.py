@@ -1348,12 +1348,11 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
 
 class PgSmartsGotoDiagnostic(sublime_plugin.WindowCommand):
     def run(self):
-        if view := self.window.active_view():
-            restore_view = capture_view(view)
-        else:
+        on_cancel = None
 
-            def restore_view():
-                self.window.run_command("close_file")
+        if view := self.window.active_view():
+            if view.element() is None:
+                on_cancel = capture_view(view)
 
         diagnostics = [
             diagnostic
@@ -1364,7 +1363,7 @@ class PgSmartsGotoDiagnostic(sublime_plugin.WindowCommand):
         goto_diagnostic(
             self.window,
             diagnostics,
-            on_cancel=restore_view,
+            on_cancel=on_cancel,
         )
 
 
