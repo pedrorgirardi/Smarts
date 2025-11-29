@@ -1150,11 +1150,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
         smart_uuid = str(uuid.uuid4())
 
         def _on_receive_notification(message):
-            # Handle Notification on Main/UI Thread.
-            sublime.set_timeout(
-                lambda: handle_notification(smart_uuid, message),
-                0,
-            )
+            handle_notification(smart_uuid, message)
 
         client = smarts_client.LanguageServerClient(
             logger=client_logger,
