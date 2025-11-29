@@ -1176,16 +1176,17 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             if error := response.get("error"):
                 if window := self.window:
                     panel_log_error(window, error)
-            else:
-                # Notify the server about 'open documents'.
-                # (Check if a view's syntax is valid for the server.)
-                for view in self.window.views():
-                    if view_applicable(server_config, view):
-                        params: smarts_client.LSPDidOpenTextDocumentParams = {
-                            "textDocument": view_text_document_item(view),
-                        }
+                return
 
-                        client.textDocument_didOpen(params)
+            # Notify the server about 'open documents'.
+            # (Check if a view's syntax is valid for the server.)
+            for view in self.window.views():
+                if view_applicable(server_config, view):
+                    params: smarts_client.LSPDidOpenTextDocumentParams = {
+                        "textDocument": view_text_document_item(view),
+                    }
+
+                    client.textDocument_didOpen(params)
 
         client.initialize(params, callback)
 
@@ -1274,6 +1275,7 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
             if error := response.get("error"):
                 if window := self.view.window():
                     panel_log_error(window, error)
+                return
 
             result = response.get("result")
 
@@ -1306,6 +1308,7 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
             if error := response.get("error"):
                 if window := self.view.window():
                     panel_log_error(window, error)
+                return
 
             result = response.get("result")
 
@@ -1378,6 +1381,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
             if error := response.get("error"):
                 if window := self.view.window():
                     panel_log_error(window, error)
+                return
 
             # Document Symbols Request
             # DocumentSymbol[] | SymbolInformation[] | null
@@ -1480,6 +1484,7 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
         def callback(response: smarts_client.LSPResponseMessage):
             if error := response.get("error"):
                 panel_log_error(self.window, error)
+                return
 
             # Workspace Symbols Request
             # SymbolInformation[] | WorkspaceSymbol[] | null
@@ -1612,6 +1617,8 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
             if error := response.get("error"):
                 if window := self.view.window():
                     panel_log_error(window, error)
+                return
+
             if result := response.get("result"):
                 show_hover_popup(self.view, smart, result)
 
@@ -1640,6 +1647,7 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
             if error := response.get("error"):
                 if window := self.view.window():
                     panel_log_error(window, error)
+                return
 
             if textEdits := response.get("result"):
                 self.view.run_command(
@@ -1688,6 +1696,7 @@ class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
             if error := response.get("error"):
                 if window := self.view.window():
                     panel_log_error(window, error)
+                return
 
             if edits := response.get("result"):
                 self.view.run_command(
@@ -1837,6 +1846,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             if error := response.get("error"):
                 if window := self.view.window():
                     panel_log_error(window, error)
+                return
 
             result = response.get("result")
 
@@ -1949,6 +1959,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             if error := response.get("error"):
                 if window := self.view.window():
                     panel_log_error(window, error)
+                return
 
             # result: CompletionItem[] | CompletionList | null
             #  If a CompletionItem[] is provided it is interpreted to be complete. So it is the same as { isIncomplete: false, items }
