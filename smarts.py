@@ -700,9 +700,10 @@ def capture_view(view: sublime.View) -> Callable[[], None]:
         for region in regions:
             view.sel().add(region)
 
-        view.window().focus_view(view)
-
         view.set_viewport_position(viewport_position, True)
+
+        if window := view.window():
+            window.focus_view(view)
 
     return restore
 
@@ -1350,6 +1351,7 @@ class PgSmartsGotoDiagnostic(sublime_plugin.WindowCommand):
         if view := self.window.active_view():
             restore_view = capture_view(view)
         else:
+
             def restore_view():
                 self.window.run_command("close_file")
 
