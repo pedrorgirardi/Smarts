@@ -99,8 +99,16 @@ kMINIHTML_STYLES = """
     font-weight: bold;
 }
 
+.text-foreground {
+    color: var(--foreground);
+}
+
 .text-foreground-07 {
     color: color(var(--foreground) alpha(0.7));
+}
+
+.text-accent {
+    color: var(--accent);
 }
 """
 
@@ -1230,16 +1238,18 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
             elif client.is_server_shutdown():
                 status = "Stopped"
 
-            minihtml += f"<strong>{client._name} ({status})</strong><br /><br />"
+            minihtml += f"<span class='text-foreground font-bold'>{client._name}</span>"
+            minihtml += " "
+            minihtml += (
+                f"<span class='text-foreground-07'>({status})</span><br /><br />"
+            )
 
             if client.is_server_initialized():
                 minihtml += "<ul class='m-0'>"
 
                 if server_capabilities := client._server_capabilities:
                     for k, v in server_capabilities.items():
-                        minihtml += (
-                            f"<li><span class='text-foreground-07'>{k}:</span> {v}</li>"
-                        )
+                        minihtml += f"<li><span class='text-accent font-bold'>{k}:</span> {v}</li>"
 
                 minihtml += "</ul><br /><br />"
 
