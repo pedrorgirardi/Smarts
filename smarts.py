@@ -1229,14 +1229,7 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
         for smart in window_smarts(self.window):
             client = smart["client"]
 
-            status = "Unknown"
-
-            if client.is_server_initializing():
-                status = "Initializing"
-            elif client.is_server_initialized():
-                status = "Running"
-            elif client.is_server_shutdown():
-                status = "Stopped"
+            status = client.server_status()
 
             minihtml += f"<span class='text-foreground font-bold'>{client._name}</span>"
             minihtml += " "
@@ -1244,14 +1237,15 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
                 f"<span class='text-foreground-07'>({status})</span><br /><br />"
             )
 
-            if client.is_server_initialized():
-                minihtml += "<ul class='m-0'>"
+            minihtml += "<ul class='m-0'>"
 
-                if server_capabilities := client._server_capabilities:
-                    for k, v in server_capabilities.items():
-                        minihtml += f"<li><span class='text-accent font-bold'>{k}:</span> {v}</li>"
+            if server_capabilities := client._server_capabilities:
+                for k, v in server_capabilities.items():
+                    minihtml += (
+                        f"<li><span class='text-accent font-bold'>{k}:</span> {v}</li>"
+                    )
 
-                minihtml += "</ul><br /><br />"
+            minihtml += "</ul><br /><br />"
 
         if not minihtml:
             return
