@@ -1126,10 +1126,31 @@ class LanguageServerClient:
             self._logger.debug(f"[{self._name}] Server was never started")
             return
 
-        # Event to signal when shutdown completes (success or failure)
-        shutdown_event = threading.Event()
+        # Use threading.Timer for timeout instead of blocking on Event.wait().
+        # Blocking would freeze the calling thread, making the UI unresponsive during shutdown.
+        # With a timer, shutdown() returns immediately (async).
+
+        def _timeout_handler():
+            # Only force exit if not already shutdown
+            if self.server_status() != LanguageServerStatus.SHUTDOWN:
+                self._logger.warning(
+                    f"[{self._name}] Shutdown request timed out after {timeout}s, forcing exit"
+                )
+                self._exit()
+
+        # Start timeout timer
+        timeout_timer = threading.Timer(timeout, _timeout_handler)
+        timeout_timer.daemon = True
+        timeout_timer.start()
 
         def _callback(response):
+            # Cancel timeout timer since we got a response
+            timeout_timer.cancel()
+
+            # Only process if not already shutdown
+            if self.server_status() == LanguageServerStatus.SHUTDOWN:
+                return
+
             # Always call exit(), even if shutdown returned an error.
             # Rationale:
             # 1. If server returned an error, it's likely in a bad state and we need to clean up
@@ -1145,19 +1166,9 @@ class LanguageServerClient:
                 )
 
             self._exit()
-            shutdown_event.set()
 
         # Try to send graceful shutdown request
         self._put(request("shutdown"), _callback)
-
-        # Wait for shutdown to complete with a timeout.
-        # If the server doesn't respond within the timeout, force cleanup.
-        # This prevents hanging forever if the server is deadlocked or ignoring us.
-        if not shutdown_event.wait(timeout):
-            self._logger.warning(
-                f"[{self._name}] Shutdown request timed out after {timeout}s, forcing exit"
-            )
-            self._exit()
 
     def _exit(self):
         """
@@ -1170,18 +1181,26 @@ class LanguageServerClient:
         The server should exit with success code 0 if the shutdown request has been received before;
         otherwise with error code 1.
 
+        NOTE: This method blocks on process.wait(). It's safe because it's only called
+        from background threads (shutdown callback or timeout handler).
+
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#exit
         """
-        self._logger.info(f"Exit {self._name}")
 
-        self._put(notification("exit"))
-
+        # Make this method idempotent - safe to call multiple times
         with self._lock:
+            if self._server_status == LanguageServerStatus.SHUTDOWN:
+                return
+
+            self._logger.info(f"Exit {self._name}")
+
             self._server_status = LanguageServerStatus.SHUTDOWN
 
             # Clear pending callbacks during shutdown to prevent memory leaks.
             # Any in-flight requests won't receive responses since the server is exiting.
             self._clear_callbacks()
+
+        self._put(notification("exit"))
 
         # Enqueue `None` to signal that workers must stop:
         self._send_queue.put(None)
