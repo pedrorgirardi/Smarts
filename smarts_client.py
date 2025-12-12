@@ -930,8 +930,8 @@ class LanguageServerClient:
                 stderr=subprocess.PIPE,
             )
 
-            self._logger.info(
-                f"{self._name} is up and running; PID {self._server_process.pid}"
+            self._logger.debug(
+                f"Initializing {self._name} ({self._server_process.pid}) ⏳"
             )
 
             # Thread responsible for handling received messages.
@@ -974,16 +974,21 @@ class LanguageServerClient:
                     #
                     # By transitioning to FAILED state, we make the error explicit and allow
                     # higher-level code to detect the failure and potentially retry or alert the user.
-                    if response.get("error"):
+                    if error := response.get("error"):
                         self._server_status = LanguageServerStatus.FAILED
+
                         self._clear_callbacks()
-                        error = response["error"]
+
                         self._logger.error(
                             f"[{self._name}] Initialization failed: "
-                            f"code={error.get('code')}, message={error.get('message')}"
+                            f"code={error.get('code')}, message={error.get('message')} 🔴"
                         )
                     else:
                         self._server_status = LanguageServerStatus.INITIALIZED
+
+                        self._logger.info(
+                            f"{self._name} ({self._server_process.pid}) initialized 🟢"
+                        )
 
                         # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initializeResult
                         result = response.get("result")
