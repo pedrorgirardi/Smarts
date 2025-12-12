@@ -906,110 +906,193 @@ class LanguageServerClient:
         self,
         params,
         callback: Callable[[LSPResponseMessage], None],
+        timeout: float = 30.0,
     ):
         """
         The initialize request is sent as the first request from the client to the server.
         Until the server has responded to the initialize request with an InitializeResult,
         the client must not send any additional requests or notifications to the server.
 
+        timeout: Maximum time to wait for initialization response. If exceeded, transition
+        to FAILED state. Without a timeout, a hung server would leave the client stuck forever.
+
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
         """
 
-        with self._lock:
-            if self._server_status != LanguageServerStatus.NOT_STARTED:
-                return
+        current_status = self.server_status()
 
-            self._server_status = LanguageServerStatus.INITIALIZING
+        # Allow reinitializing FAILED servers for retry logic.
+        # If a server failed due to temporary issue (network, resource), caller should be
+        # able to try again without creating a new client instance.
+        if current_status not in (
+            LanguageServerStatus.NOT_STARTED,
+            LanguageServerStatus.FAILED,
+        ):
+            self._logger.warning(
+                f"[{self._name}] Cannot initialize - already in state {current_status.name}"
+            )
+            return
 
-            self._logger.debug(f"Initialize {self._name} {self._server_args}")
+        self._logger.debug(f"Initialize {self._name} {self._server_args}")
 
-            self._server_process = subprocess.Popen(
+        try:
+            server_process = subprocess.Popen(
                 self._server_args,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
+        except Exception as e:
+            # If we can't start the subprocess, we need to handle it gracefully.
+            # Common failures: command not found, permission denied, no memory.
+            # Without this try-except, we'd crash and leave client in inconsistent state.
+            self._logger.error(f"[{self._name}] Failed to start server process: {e}")
 
-            self._logger.debug(
-                f"Initializing {self._name} ({self._server_process.pid}) ⏳"
-            )
+            with self._lock:
+                self._server_status = LanguageServerStatus.FAILED
 
-            # Thread responsible for handling received messages.
-            self._handler = threading.Thread(
-                name="Handler",
-                target=self._start_handler,
-                daemon=True,
-            )
-            self._handler.start()
+            # Still call user callback with synthetic error response
+            error_response: LSPResponseMessage = {
+                "id": None,
+                "result": None,
+                "error": {
+                    "code": -1,
+                    "message": f"Failed to start server process: {e}",
+                    "data": None,
+                },
+            }
+            callback(error_response)
 
-            # Thread responsible for sending/writing messages.
-            self._writer = threading.Thread(
-                name="Writer",
-                target=self._start_writer,
-                daemon=True,
-            )
-            self._writer.start()
+            return
 
-            # Thread responsible for reading messages.
-            self._reader = threading.Thread(
-                name="Reader",
-                target=self._start_reader,
-                daemon=True,
-            )
-            self._reader.start()
+        with self._lock:
+            self._server_status = LanguageServerStatus.INITIALIZING
+            self._server_process = server_process
 
-            # Thread responsible for monitoring the server process.
-            self._monitor = threading.Thread(
-                name="Monitor",
-                target=self._start_monitor,
-                daemon=True,
-            )
-            self._monitor.start()
+        self._logger.debug(f"Initializing {self._name} ({self._server_process.pid}) ⏳")
 
-            def _callback(response: LSPResponseMessage):
-                with self._lock:
-                    # Without handling errors, the client stays in INITIALIZING state forever
-                    # if the server rejects initialization. This leads to confusing behavior where
-                    # the client appears stuck and won't accept new requests.
+        # Thread responsible for handling received messages.
+        self._handler = threading.Thread(
+            name="Handler",
+            target=self._start_handler,
+            daemon=True,
+        )
+        self._handler.start()
+
+        # Thread responsible for sending/writing messages.
+        self._writer = threading.Thread(
+            name="Writer",
+            target=self._start_writer,
+            daemon=True,
+        )
+        self._writer.start()
+
+        # Thread responsible for reading messages.
+        self._reader = threading.Thread(
+            name="Reader",
+            target=self._start_reader,
+            daemon=True,
+        )
+        self._reader.start()
+
+        # Thread responsible for monitoring the server process.
+        self._monitor = threading.Thread(
+            name="Monitor",
+            target=self._start_monitor,
+            daemon=True,
+        )
+        self._monitor.start()
+
+        # Use threading.Timer for timeout instead of blocking on Event.wait().
+        # Blocking would freeze the calling thread (often Sublime's main thread),
+        # making the UI unresponsive. With a timer, initialize() returns immediately (async),
+        # and the timeout check happens in a background thread.
+
+        def _timeout_handler():
+            with self._lock:
+                # Only trigger timeout if still INITIALIZING
+                # If status changed (INITIALIZED or FAILED), the response already arrived
+                if self._server_status != LanguageServerStatus.INITIALIZING:
+                    return
+
+                self._logger.error(
+                    f"[{self._name}] Initialization timed out after {timeout}s"
+                )
+
+                self._server_status = LanguageServerStatus.FAILED
+
+                self._clear_callbacks()
+
+            # Call user callback with synthetic timeout error
+            timeout_response: LSPResponseMessage = {
+                "id": None,
+                "result": None,
+                "error": {
+                    "code": -2,
+                    "message": f"Initialization timed out after {timeout}s",
+                    "data": None,
+                },
+            }
+
+            callback(timeout_response)
+
+        # Start timeout timer
+        timeout_timer = threading.Timer(timeout, _timeout_handler)
+        timeout_timer.daemon = True
+        timeout_timer.start()
+
+        def _callback(response: LSPResponseMessage):
+            # Cancel timeout timer since we got a response
+            timeout_timer.cancel()
+
+            with self._lock:
+                # Only process if still INITIALIZING
+                # If status changed (FAILED by timeout), don't process the response
+                if self._server_status != LanguageServerStatus.INITIALIZING:
+                    return
+
+                # Without handling errors, the client stays in INITIALIZING state forever
+                # if the server rejects initialization. This leads to confusing behavior where
+                # the client appears stuck and won't accept new requests.
+                #
+                # By transitioning to FAILED state, we make the error explicit and allow
+                # higher-level code to detect the failure and potentially retry or alert the user.
+                if error := response.get("error"):
+                    self._server_status = LanguageServerStatus.FAILED
+
+                    self._clear_callbacks()
+
+                    self._logger.error(
+                        f"[{self._name}] Initialization failed: "
+                        f"code={error.get('code')}, message={error.get('message')} 🔴"
+                    )
+                else:
+                    self._server_status = LanguageServerStatus.INITIALIZED
+
+                    self._logger.info(
+                        f"{self._name} ({self._server_process.pid}) initialized 🟢"
+                    )
+
+                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initializeResult
+                    result = response.get("result")
+
+                    if result is not None:
+                        self._server_capabilities = result.get("capabilities")
+                        self._server_info = result.get("serverInfo")
+
+                    # The initialized notification is sent from the client to the server
+                    # after the client received the result of the initialize request
+                    # but before the client is sending any other request or notification to the server.
                     #
-                    # By transitioning to FAILED state, we make the error explicit and allow
-                    # higher-level code to detect the failure and potentially retry or alert the user.
-                    if error := response.get("error"):
-                        self._server_status = LanguageServerStatus.FAILED
+                    # The server can use the initialized notification, for example, to dynamically register capabilities.
+                    # The initialized notification may only be sent once.
+                    #
+                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialized
+                    self._put(notification("initialized", {}))
 
-                        self._clear_callbacks()
+            callback(response)
 
-                        self._logger.error(
-                            f"[{self._name}] Initialization failed: "
-                            f"code={error.get('code')}, message={error.get('message')} 🔴"
-                        )
-                    else:
-                        self._server_status = LanguageServerStatus.INITIALIZED
-
-                        self._logger.info(
-                            f"{self._name} ({self._server_process.pid}) initialized 🟢"
-                        )
-
-                        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initializeResult
-                        result = response.get("result")
-
-                        if result is not None:
-                            self._server_capabilities = result.get("capabilities")
-                            self._server_info = result.get("serverInfo")
-
-                        # The initialized notification is sent from the client to the server
-                        # after the client received the result of the initialize request
-                        # but before the client is sending any other request or notification to the server.
-                        #
-                        # The server can use the initialized notification, for example, to dynamically register capabilities.
-                        # The initialized notification may only be sent once.
-                        #
-                        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialized
-                        self._put(notification("initialized", {}))
-
-                callback(response)
-
-            self._put(request("initialize", params), _callback)
+        self._put(request("initialize", params), _callback)
 
     def shutdown(self, timeout: float = 5.0):
         """
