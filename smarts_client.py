@@ -1070,7 +1070,7 @@ class LanguageServerClient:
                     self._server_status = LanguageServerStatus.INITIALIZED
 
                     self._logger.info(
-                        f"{self._name} ({self._server_process.pid}) initialized 🟢"
+                        f"{self._name} ({self._server_process.pid}) initialized 🚀"
                     )
 
                     # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initializeResult
