@@ -667,7 +667,8 @@ class LanguageServerClient:
         # By catching exceptions and transitioning to FAILED state, we make crashes explicit
         # and allow the client to handle them gracefully (e.g., show error to user, attempt restart).
         try:
-            while not self.is_server_shutdown():
+            # Only run while server is in an active state (INITIALIZING or INITIALIZED).
+            while self.server_status() in (LanguageServerStatus.INITIALIZING, LanguageServerStatus.INITIALIZED):
                 out = self._server_process.stdout
 
                 # The base protocol consists of a header and a content part (comparable to HTTP).
@@ -682,12 +683,22 @@ class LanguageServerClient:
                 while True:
                     line = out.readline().decode("ascii").strip()
 
+                    # Empty line can mean either end of headers OR EOF (stdout closed).
+                    # If it's EOF and there are no headers yet, the server has died.
+                    # We need to detect this and exit the loop, otherwise we'll spin forever
+                    # reading EOF repeatedly.
                     if line == "":
                         break
 
                     k, v = line.split(": ", 1)
 
                     headers[k] = v
+
+                # If we got no headers at all, stdout is closed (EOF).
+                # Break the outer loop so the reader can exit cleanly.
+                if not headers:
+                    self._logger.debug(f"[{self._name}] Reader detected EOF (stdout closed)")
+                    break
 
                 # -- CONTENT
 
