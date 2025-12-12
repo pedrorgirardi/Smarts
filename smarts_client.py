@@ -668,7 +668,10 @@ class LanguageServerClient:
         # and allow the client to handle them gracefully (e.g., show error to user, attempt restart).
         try:
             # Only run while server is in an active state (INITIALIZING or INITIALIZED).
-            while self.server_status() in (LanguageServerStatus.INITIALIZING, LanguageServerStatus.INITIALIZED):
+            while self.server_status() in (
+                LanguageServerStatus.INITIALIZING,
+                LanguageServerStatus.INITIALIZED,
+            ):
                 out = self._server_process.stdout
 
                 # The base protocol consists of a header and a content part (comparable to HTTP).
@@ -697,7 +700,9 @@ class LanguageServerClient:
                 # If we got no headers at all, stdout is closed (EOF).
                 # Break the outer loop so the reader can exit cleanly.
                 if not headers:
-                    self._logger.debug(f"[{self._name}] Reader detected EOF (stdout closed)")
+                    self._logger.debug(
+                        f"[{self._name}] Reader detected EOF (stdout closed)"
+                    )
                     break
 
                 # -- CONTENT
@@ -853,29 +858,35 @@ class LanguageServerClient:
         callback: Optional[Callable[[LSPResponseMessage], None]] = None,
     ):
         with self._lock:
-            # Drop message if server is not ready - unless it's an initialization message.
+            method = message["method"]
+
+            # WHY: Allow certain lifecycle methods through regardless of state:
+            # - initialize: needed to start the server
+            # - shutdown/exit: needed to clean up FAILED or stuck servers
+            #
+            # This prevents situations where a FAILED server can't be cleaned up
+            # because shutdown messages are dropped.
+            lifecycle_methods = {"initialize", "shutdown", "exit"}
+
+            # Drop message if server is not ready - unless it's a lifecycle message.
             if (
                 self._server_status != LanguageServerStatus.INITIALIZED
-                and message["method"] != "initialize"
+                and method not in lifecycle_methods
             ):
                 self._logger.debug(
-                    f"Server {self._name} is not initialized; Will drop {message['method']}"
+                    f"Server {self._name} is not initialized; Will drop {method}"
                 )
                 return
 
-            # Drop messages to failed/shutdown servers to prevent queue buildup.
-            # Without this check, messages would accumulate in the send queue even though
-            # the server can't process them, wasting memory and potentially confusing callers
-            # who expect responses.
-            if self._server_status == LanguageServerStatus.SHUTDOWN:
+            # WHY: Drop messages to SHUTDOWN servers to prevent queue buildup.
+            # Once shutdown, the server won't process any more requests.
+            # Exception: still allow "exit" through in case shutdown didn't complete properly.
+            if (
+                self._server_status == LanguageServerStatus.SHUTDOWN
+                and method != "exit"
+            ):
                 self._logger.warn(
-                    f"Server {self._name} was shutdown; Will drop {message['method']}"
-                )
-                return
-
-            if self._server_status == LanguageServerStatus.FAILED:
-                self._logger.warn(
-                    f"Server {self._name} has failed; Will drop {message['method']}"
+                    f"Server {self._name} was shutdown; Will drop {method}"
                 )
                 return
 
@@ -995,7 +1006,7 @@ class LanguageServerClient:
 
             self._put(request("initialize", params), _callback)
 
-    def shutdown(self):
+    def shutdown(self, timeout: float = 5.0):
         """
         The shutdown request is sent from the client to the server.
         It asks the server to shut down,
@@ -1007,23 +1018,67 @@ class LanguageServerClient:
 
         Clients should also wait with sending the exit notification until they have received a response from the shutdown request.
 
+        timeout: If the server is hung or misbehaving, we need a way to force
+        shutdown after a reasonable time. Without a timeout, shutdown could hang forever.
+
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
         """
 
         self._logger.info(f"Shutdown {self._name}")
 
-        def _callback(response):
-            # Response
-            # result: null
-            # error: code and message set in case an exception happens during shutdown request.
-            if not response.get("error"):
-                self.exit()
+        current_status = self.server_status()
 
+        # If already SHUTDOWN, don't send another shutdown request
+        if current_status == LanguageServerStatus.SHUTDOWN:
+            self._logger.debug(f"[{self._name}] Already shutdown")
+            return
+
+        # If NOT_STARTED, there's nothing to shutdown
+        if current_status == LanguageServerStatus.NOT_STARTED:
+            self._logger.debug(f"[{self._name}] Server was never started")
+            return
+
+        # Event to signal when shutdown completes (success or failure)
+        shutdown_event = threading.Event()
+
+        def _callback(response):
+            # Always call exit(), even if shutdown returned an error.
+            # Rationale:
+            # 1. If server returned an error, it's likely in a bad state and we need to clean up
+            # 2. Not calling exit() leaves threads running and resources leaked
+            # 3. The LSP spec says to exit after shutdown response, regardless of error
+            #
+            # We log the error but proceed with cleanup.
+            if response.get("error"):
+                error = response["error"]
+                self._logger.error(
+                    f"[{self._name}] Shutdown request returned error: "
+                    f"code={error.get('code')}, message={error.get('message')}"
+                )
+
+            self._exit()
+            shutdown_event.set()
+
+        # Try to send graceful shutdown request
         self._put(request("shutdown"), _callback)
 
-    def exit(self):
+        # Wait for shutdown to complete with a timeout.
+        # If the server doesn't respond within the timeout, force cleanup.
+        # This prevents hanging forever if the server is deadlocked or ignoring us.
+        if not shutdown_event.wait(timeout):
+            self._logger.warning(
+                f"[{self._name}] Shutdown request timed out after {timeout}s, forcing exit"
+            )
+            self._exit()
+
+    def _exit(self):
         """
-        A notification to ask the server to exit its process.
+        Internal method to send exit notification and clean up resources.
+
+        This should only be called internally after shutdown completes.
+        The LSP protocol requires clients to call shutdown first, wait for response,
+        then call exit.
+
         The server should exit with success code 0 if the shutdown request has been received before;
         otherwise with error code 1.
 
@@ -1035,6 +1090,10 @@ class LanguageServerClient:
 
         with self._lock:
             self._server_status = LanguageServerStatus.SHUTDOWN
+
+            # Clear pending callbacks during shutdown to prevent memory leaks.
+            # Any in-flight requests won't receive responses since the server is exiting.
+            self._clear_callbacks()
 
         # Enqueue `None` to signal that workers must stop:
         self._send_queue.put(None)
