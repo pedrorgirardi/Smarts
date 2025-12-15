@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import pprint
@@ -7,7 +8,7 @@ import threading
 import uuid
 from itertools import groupby
 from pathlib import Path
-from typing import cast, Any, Callable, List, Dict, Optional, Set, TypedDict
+from typing import Any, Callable, Dict, List, Optional, Set, TypedDict, cast
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
@@ -109,6 +110,16 @@ kMINIHTML_STYLES = """
 
 .text-accent {
     color: var(--accent);
+}
+
+.text-xs {
+    font-size: 0.75rem;
+    line-height: 1rem;
+}
+
+.text-sm {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
 }
 """
 
@@ -1229,29 +1240,31 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
         for smart in window_smarts(self.window):
             client = smart["client"]
 
-            status = "Unknown"
-
-            if client.is_server_initializing():
-                status = "Initializing"
-            elif client.is_server_initialized():
-                status = "Running"
-            elif client.is_server_shutdown():
-                status = "Stopped"
-
             minihtml += f"<span class='text-foreground font-bold'>{client._name}</span>"
             minihtml += " "
+            minihtml += f"<span class='text-foreground-07 text-sm'>({client.server_status().name})</span><br /><br />"
+
+            # -- Info
+            minihtml += "<span class='text-sm font-bold'>Info:</span><br /><br />"
+
+            if server_info := client._server_info:
+                minihtml += f"<code class='text-sm' style='display: block; white-space: pre;'>{json.dumps(server_info, indent=2)}</code>"
+            else:
+                minihtml += "-"
+
+            minihtml += "<br /><br />"
+
+            # -- Capabilities
             minihtml += (
-                f"<span class='text-foreground-07'>({status})</span><br /><br />"
+                "<span class='text-sm font-bold'>Capabilities:</span><br /><br />"
             )
 
-            if client.is_server_initialized():
-                minihtml += "<ul class='m-0'>"
+            if server_capabilities := client._server_capabilities:
+                minihtml += f"<code class='text-sm' style='display: block; white-space: pre;'>{json.dumps(server_capabilities, indent=2)}</code>"
+            else:
+                minihtml += "-"
 
-                if server_capabilities := client._server_capabilities:
-                    for k, v in server_capabilities.items():
-                        minihtml += f"<li><span class='text-accent font-bold'>{k}:</span> {v}</li>"
-
-                minihtml += "</ul><br /><br />"
+            minihtml += "<br />---<br /><br />"
 
         if not minihtml:
             return
@@ -1399,23 +1412,8 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
             if result := response.get("result"):
                 restore_viewport_position = capture_viewport_position(self.view)
 
-                # Skip symbols 'contained'
-                #
-                # containerName?: string;
-                #
-                # The name of the symbol containing this symbol. This information is for
-                # user interface purposes (e.g. to render a qualifier in the user interface if necessary).
-                # It can't be used to re-infer a hierarchy for the document symbols.
-                #
-                # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#symbolInformation
-                symbols_information = [
-                    symbol_information
-                    for symbol_information in result
-                    if not symbol_information.get("containerName")
-                ]
-
                 def on_highlight(index):
-                    data = symbols_information[index]
+                    data = result[index]
 
                     show_at_center_range = None
 
@@ -1446,7 +1444,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                         restore_viewport_position()
 
                     else:
-                        data = symbols_information[index]
+                        data = result[index]
 
                         selected_range = None
 
@@ -1471,8 +1469,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                         self.view.show_at_center(show_at_center_region)
 
                 quick_panel_items = [
-                    document_symbol_quick_panel_item(data)
-                    for data in symbols_information
+                    document_symbol_quick_panel_item(data) for data in result
                 ]
 
                 self.view.window().show_quick_panel(

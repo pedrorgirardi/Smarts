@@ -418,15 +418,59 @@ def textDocumentSyncOptions(
 LSPNotificationHandler = Callable[[LSPNotificationMessage], None]
 
 
-class ServerStatus(Enum):
-    """Represents the lifecycle state of the language server."""
-    NOT_STARTED = auto()    # Server process hasn't been created yet
-    INITIALIZING = auto()   # Initialize request sent, waiting for response
-    INITIALIZED = auto()    # Successfully initialized and ready for requests
-    SHUTDOWN = auto()       # Server has been shutdown
+class LanguageServerStatus(Enum):
+    """Represents the lifecycle state of the language server.
+
+    State transitions:
+    NOT_STARTED -> INITIALIZING -> INITIALIZED -> SHUTDOWN
+                                -> FAILED
+
+    FAILED state can be reached from INITIALIZING (init error),
+    INITIALIZED (server crash), or during I/O operations.
+    """
+
+    NOT_STARTED = auto()  # Server process hasn't been created yet
+    INITIALIZING = auto()  # Initialize request sent, waiting for response
+    INITIALIZED = auto()  # Successfully initialized and ready for requests
+    FAILED = auto()  # Server crashed, I/O error, or initialization failed
+    SHUTDOWN = auto()  # Server has been shutdown gracefully
 
 
 class LanguageServerClient:
+    """LSP client that manages communication with a language server subprocess.
+
+    Thread Safety:
+        - Uses a single RLock (_lock) to protect all shared state
+        - Safe to call methods from multiple threads
+
+    Resilience Features:
+        - Detects server crashes via process monitoring thread
+        - Handles initialization failures explicitly (transitions to FAILED state)
+        - Recovers from I/O errors in reader/writer threads
+        - Clears pending callbacks on failure to prevent memory leaks
+
+    Known Limitations:
+        1. Reader can hang on incomplete messages:
+           If the server sends partial headers or crashes mid-message, readline()
+           blocks indefinitely. The outer loop only checks is_server_shutdown()
+           between messages, not during a read. Python's limited support for
+           non-blocking pipe I/O makes this difficult to solve without select/poll.
+
+        2. No automatic reconnection:
+           Once the client enters FAILED state, it stays failed. Callers must detect
+           the failure and create a new LanguageServerClient instance if they want
+           to retry.
+
+        3. Callback timeouts not enforced:
+           If a server never responds to a request, the callback is never invoked.
+           Callers should implement their own timeout logic if needed.
+
+        4. Queue size limits:
+           Send/receive queues have maxsize=100. If the server is slow to process
+           messages, queue.put() will block. This is intentional backpressure but
+           could cause deadlocks if not handled carefully.
+    """
+
     def __init__(
         self,
         logger: logging.Logger,
@@ -438,9 +482,9 @@ class LanguageServerClient:
         on_textDocument_publishDiagnostics: Optional[LSPNotificationHandler] = None,
     ):
         self._lock = threading.RLock()
-        self._status = ServerStatus.NOT_STARTED
         self._logger = logger
         self._name = name
+        self._server_status = LanguageServerStatus.NOT_STARTED
         self._server_args = server_args
         self._server_process: Optional[subprocess.Popen] = None
         self._server_info: Optional[LSPServerInfo] = None
@@ -450,6 +494,7 @@ class LanguageServerClient:
         self._reader: Optional[threading.Thread] = None
         self._writer: Optional[threading.Thread] = None
         self._handler: Optional[threading.Thread] = None
+        self._monitor: Optional[threading.Thread] = None
         self._request_callback: Dict[
             Union[int, str], Callable[[LSPResponseMessage], None]
         ] = {}
@@ -459,26 +504,37 @@ class LanguageServerClient:
         self._on_window_showMessage = on_window_showMessage
         self._on_textDocument_publishDiagnostics = on_textDocument_publishDiagnostics
 
+    def server_status(self) -> LanguageServerStatus:
+        with self._lock:
+            return self._server_status
+
     def is_server_initializing(self) -> bool:
         """
         Returns True if server is initializing.
         """
         with self._lock:
-            return self._status == ServerStatus.INITIALIZING
+            return self._server_status == LanguageServerStatus.INITIALIZING
 
     def is_server_initialized(self) -> bool:
         """
         Returns True if server is up and running and successfully processed an 'initialize' request.
         """
         with self._lock:
-            return self._status == ServerStatus.INITIALIZED
+            return self._server_status == LanguageServerStatus.INITIALIZED
 
     def is_server_shutdown(self) -> bool:
         """
         Returns True if server processed a 'shutdown' request and this client sent an 'exit' notification.
         """
         with self._lock:
-            return self._status == ServerStatus.SHUTDOWN
+            return self._server_status == LanguageServerStatus.SHUTDOWN
+
+    def is_server_failed(self) -> bool:
+        """
+        Returns True if server failed to initialize, crashed, or encountered an I/O error.
+        """
+        with self._lock:
+            return self._server_status == LanguageServerStatus.FAILED
 
     def support_method(self, method: str) -> Optional[bool]:
         if not self._server_capabilities:
@@ -517,6 +573,25 @@ class LanguageServerClient:
         else:
             return False
 
+    def _clear_callbacks(self):
+        """Clear all pending request callbacks (must be called with lock held).
+
+        When the server fails or crashes, any in-flight requests will never receive
+        responses. Without clearing the callback dict:
+        1. Memory leak - callbacks stay in memory forever
+        2. Confusion - callers might wait indefinitely for responses that will never come
+
+        By explicitly clearing callbacks, we free memory and make the failure mode explicit.
+        Callers should handle the case where their callback is never invoked (e.g., with timeouts).
+        """
+        n = len(self._request_callback)
+
+        if n > 0:
+            self._logger.warning(
+                f"[{self._name}] Clearing {n} pending request callback(s)"
+            )
+            self._request_callback.clear()
+
     def _read(self, out, n):
         remaining = n
 
@@ -535,69 +610,187 @@ class LanguageServerClient:
 
         return b"".join(chunks)
 
+    def _start_monitor(self):
+        """Monitor the server process and detect unexpected exits.
+
+        Without process monitoring, if the server crashes unexpectedly (segfault,
+        killed by OS, etc.), the client wouldn't know about it until trying to perform I/O,
+        which could hang or fail in confusing ways.
+
+        This thread blocks on process.wait() and immediately detects when the server exits,
+        allowing us to transition to FAILED state and clean up resources promptly.
+
+        The monitor distinguishes between:
+        - Expected shutdown (status is already SHUTDOWN): No action needed
+        - Unexpected crash (status is INITIALIZING/INITIALIZED): Transition to FAILED
+        """
+        self._logger.debug(f"[{self._name}] Monitor started 🟢")
+
+        try:
+            # Block until process exits
+            returncode = self._server_process.wait()
+
+            with self._lock:
+                # Only mark as failed if we weren't expecting the shutdown
+                if self._server_status not in (
+                    LanguageServerStatus.SHUTDOWN,
+                    LanguageServerStatus.FAILED,
+                ):
+                    self._logger.error(
+                        f"[{self._name}] Server crashed unexpectedly with exit code {returncode}"
+                    )
+                    self._server_status = LanguageServerStatus.FAILED
+                    self._clear_callbacks()
+
+                    # Signal worker threads to stop
+                    self._send_queue.put(None)
+                    self._receive_queue.put(None)
+                else:
+                    self._logger.debug(
+                        f"[{self._name}] Server exited with code {returncode}"
+                    )
+
+        except Exception as e:
+            self._logger.error(f"[{self._name}] Monitor thread error: {e}")
+
+        finally:
+            self._logger.debug(f"[{self._name}] Monitor stopped 🔴")
+
     def _start_reader(self):
         self._logger.debug(f"[{self._name}] Reader started 🟢")
 
-        while not self.is_server_shutdown():
-            out = self._server_process.stdout
+        # The reader performs I/O operations (readline, read) that can raise exceptions
+        # if the server subprocess crashes, closes stdout unexpectedly, or the pipe breaks.
+        # Without this try-except, the reader thread would crash silently, leaving the client
+        # in an inconsistent state where it thinks the server is running but can't receive messages.
+        #
+        # By catching exceptions and transitioning to FAILED state, we make crashes explicit
+        # and allow the client to handle them gracefully (e.g., show error to user, attempt restart).
+        try:
+            # Only run while server is in an active state (INITIALIZING or INITIALIZED).
+            while self.server_status() in (
+                LanguageServerStatus.INITIALIZING,
+                LanguageServerStatus.INITIALIZED,
+            ):
+                out = self._server_process.stdout
 
-            # The base protocol consists of a header and a content part (comparable to HTTP).
-            # The header and content part are separated by a ‘\r\n’.
-            #
-            # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#baseProtocol
+                # The base protocol consists of a header and a content part (comparable to HTTP).
+                # The header and content part are separated by a '\r\n'.
+                #
+                # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#baseProtocol
 
-            # -- HEADER
+                # -- HEADER
 
-            headers = {}
+                headers = {}
 
-            while True:
-                line = out.readline().decode("ascii").strip()
+                while True:
+                    line = out.readline().decode("ascii").strip()
 
-                if line == "":
+                    # Empty line can mean either end of headers OR EOF (stdout closed).
+                    # If it's EOF and there are no headers yet, the server has died.
+                    # We need to detect this and exit the loop, otherwise we'll spin forever
+                    # reading EOF repeatedly.
+                    if line == "":
+                        break
+
+                    k, v = line.split(": ", 1)
+
+                    headers[k] = v
+
+                # If we got no headers at all, stdout is closed (EOF).
+                # Break the outer loop so the reader can exit cleanly.
+                if not headers:
+                    self._logger.debug(
+                        f"[{self._name}] Reader detected EOF (stdout closed)"
+                    )
                     break
 
-                k, v = line.split(": ", 1)
+                # -- CONTENT
 
-                headers[k] = v
+                if content_length := headers.get("Content-Length"):
+                    content = (
+                        self._read(out, int(content_length)).decode("utf-8").strip()
+                    )
 
-            # -- CONTENT
+                    try:
+                        message = json.loads(content)
 
-            if content_length := headers.get("Content-Length"):
-                content = self._read(out, int(content_length)).decode("utf-8").strip()
+                        # Enqueue message; Blocks if queue is full.
+                        self._receive_queue.put(message)
 
-                try:
-                    message = json.loads(content)
+                    except json.JSONDecodeError:
+                        # The effect of not being able to decode a message,
+                        # is that an 'in-flight' request won't have its callback called.
+                        self._logger.error(f"Failed to decode message: {content}")
 
-                    # Enqueue message; Blocks if queue is full.
-                    self._receive_queue.put(message)
+        except Exception as e:
+            # Server crashed or I/O error occurred
+            self._logger.error(f"[{self._name}] Reader thread crashed: {e}")
 
-                except json.JSONDecodeError:
-                    # The effect of not being able to decode a message,
-                    # is that an 'in-flight' request won't have its callback called.
-                    self._logger.error(f"Failed to decode message: {content}")
+            with self._lock:
+                # Only transition to FAILED if we're not already shutting down
+                # (normal shutdown can cause I/O errors as pipes close)
+                if self._server_status not in (
+                    LanguageServerStatus.SHUTDOWN,
+                    LanguageServerStatus.FAILED,
+                ):
+                    self._server_status = LanguageServerStatus.FAILED
+                    self._clear_callbacks()
 
-        self._logger.debug(f"[{self._name}] Reader stopped 🔴")
+            # Signal other threads to stop
+            self._send_queue.put(None)
+            self._receive_queue.put(None)
+
+        finally:
+            self._logger.debug(f"[{self._name}] Reader stopped 🔴")
 
     def _start_writer(self):
         self._logger.debug(f"[{self._name}] Writer started 🟢")
 
         while (message := self._send_queue.get()) is not None:
+            task_done_called = False
+
             try:
                 content = json.dumps(message)
 
                 header = f"Content-Length: {len(content)}\r\n\r\n"
 
-                try:
-                    encoded = header.encode("ascii") + content.encode("utf-8")
-                    self._server_process.stdin.write(encoded)
-                    self._server_process.stdin.flush()
-                except BrokenPipeError as e:
-                    self._logger.error(
-                        f"{self._name} - Can't write to server's stdin: {e}"
-                    )
+                encoded = header.encode("ascii") + content.encode("utf-8")
+                self._server_process.stdin.write(encoded)
+                self._server_process.stdin.flush()
+
+            except BrokenPipeError as e:
+                # BrokenPipeError means the server's stdin pipe is closed, which happens
+                # when the server crashes or exits unexpectedly. Continuing to loop would just
+                # keep trying to write to a broken pipe, logging errors repeatedly.
+                #
+                # By transitioning to FAILED and breaking, we stop the writer cleanly and
+                # signal to other parts of the client that the server is no longer functional.
+                self._logger.error(
+                    f"[{self._name}] Can't write to server's stdin (broken pipe): {e}"
+                )
+
+                with self._lock:
+                    # Only transition to FAILED if we're not already shutting down
+                    if self._server_status not in (
+                        LanguageServerStatus.SHUTDOWN,
+                        LanguageServerStatus.FAILED,
+                    ):
+                        self._server_status = LanguageServerStatus.FAILED
+                        self._clear_callbacks()
+
+                # Signal other threads to stop
+                self._receive_queue.put(None)
+
+                # Mark current task as done before breaking
+                self._send_queue.task_done()
+                task_done_called = True
+                break
 
             finally:
-                self._send_queue.task_done()
+                # Only call task_done if we didn't already call it in the except block
+                if not task_done_called:
+                    self._send_queue.task_done()
 
         # 'None Task' is complete.
         self._send_queue.task_done()
@@ -665,20 +858,35 @@ class LanguageServerClient:
         callback: Optional[Callable[[LSPResponseMessage], None]] = None,
     ):
         with self._lock:
-            # Drop message if server is not ready - unless it's an initialization message.
+            method = message["method"]
+
+            # WHY: Allow certain lifecycle methods through regardless of state:
+            # - initialize: needed to start the server
+            # - shutdown/exit: needed to clean up FAILED or stuck servers
+            #
+            # This prevents situations where a FAILED server can't be cleaned up
+            # because shutdown messages are dropped.
+            lifecycle_methods = {"initialize", "shutdown", "exit"}
+
+            # Drop message if server is not ready - unless it's a lifecycle message.
             if (
-                self._status != ServerStatus.INITIALIZED
-                and message["method"] != "initialize"
+                self._server_status != LanguageServerStatus.INITIALIZED
+                and method not in lifecycle_methods
             ):
                 self._logger.debug(
-                    f"Server {self._name} is not initialized; Will drop {message['method']}"
+                    f"Server {self._name} is not initialized; Will drop {method}"
                 )
                 return
 
-            # Drop message if server was shutdown.
-            if self._status == ServerStatus.SHUTDOWN:
+            # WHY: Drop messages to SHUTDOWN servers to prevent queue buildup.
+            # Once shutdown, the server won't process any more requests.
+            # Exception: still allow "exit" through in case shutdown didn't complete properly.
+            if (
+                self._server_status == LanguageServerStatus.SHUTDOWN
+                and method != "exit"
+            ):
                 self._logger.warn(
-                    f"Server {self._name} was shutdown; Will drop {message['method']}"
+                    f"Server {self._name} was shutdown; Will drop {method}"
                 )
                 return
 
@@ -698,86 +906,195 @@ class LanguageServerClient:
         self,
         params,
         callback: Callable[[LSPResponseMessage], None],
+        timeout: float = 30.0,
     ):
         """
         The initialize request is sent as the first request from the client to the server.
         Until the server has responded to the initialize request with an InitializeResult,
         the client must not send any additional requests or notifications to the server.
 
+        timeout: Maximum time to wait for initialization response. If exceeded, transition
+        to FAILED state. Without a timeout, a hung server would leave the client stuck forever.
+
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
         """
 
-        with self._lock:
-            if self._status != ServerStatus.NOT_STARTED:
-                return
+        current_status = self.server_status()
 
-            self._status = ServerStatus.INITIALIZING
+        # Allow reinitializing FAILED servers for retry logic.
+        # If a server failed due to temporary issue (network, resource), caller should be
+        # able to try again without creating a new client instance.
+        if current_status not in (
+            LanguageServerStatus.NOT_STARTED,
+            LanguageServerStatus.FAILED,
+        ):
+            self._logger.warning(
+                f"[{self._name}] Cannot initialize - already in state {current_status.name}"
+            )
+            return
 
-            self._logger.debug(f"Initialize {self._name} {self._server_args}")
+        self._logger.debug(f"Initialize {self._name} {self._server_args}")
 
-            self._server_process = subprocess.Popen(
+        try:
+            server_process = subprocess.Popen(
                 self._server_args,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
+        except Exception as e:
+            # If we can't start the subprocess, we need to handle it gracefully.
+            # Common failures: command not found, permission denied, no memory.
+            # Without this try-except, we'd crash and leave client in inconsistent state.
+            self._logger.error(f"[{self._name}] Failed to start server process: {e}")
 
-            self._logger.info(
-                f"{self._name} is up and running; PID {self._server_process.pid}"
-            )
+            with self._lock:
+                self._server_status = LanguageServerStatus.FAILED
 
-            # Thread responsible for handling received messages.
-            self._handler = threading.Thread(
-                name="Handler",
-                target=self._start_handler,
-                daemon=True,
-            )
-            self._handler.start()
+            # Still call user callback with synthetic error response
+            error_response: LSPResponseMessage = {
+                "id": None,
+                "result": None,
+                "error": {
+                    "code": -1,
+                    "message": f"Failed to start server process: {e}",
+                    "data": None,
+                },
+            }
+            callback(error_response)
 
-            # Thread responsible for sending/writing messages.
-            self._writer = threading.Thread(
-                name="Writer",
-                target=self._start_writer,
-                daemon=True,
-            )
-            self._writer.start()
+            return
 
-            # Thread responsible for reading messages.
-            self._reader = threading.Thread(
-                name="Reader",
-                target=self._start_reader,
-                daemon=True,
-            )
-            self._reader.start()
+        with self._lock:
+            self._server_status = LanguageServerStatus.INITIALIZING
+            self._server_process = server_process
 
-            def _callback(response: LSPResponseMessage):
-                with self._lock:
-                    # The server should not be considered 'initialized' if there's an error.
-                    if not response.get("error"):
-                        self._status = ServerStatus.INITIALIZED
+        self._logger.debug(f"Initializing {self._name} ({self._server_process.pid}) ⏳")
 
-                        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initializeResult
-                        result = response.get("result")
+        # Thread responsible for handling received messages.
+        self._handler = threading.Thread(
+            name="Handler",
+            target=self._start_handler,
+            daemon=True,
+        )
+        self._handler.start()
 
-                        if result is not None:
-                            self._server_capabilities = result.get("capabilities")
-                            self._server_info = result.get("serverInfo")
+        # Thread responsible for sending/writing messages.
+        self._writer = threading.Thread(
+            name="Writer",
+            target=self._start_writer,
+            daemon=True,
+        )
+        self._writer.start()
 
-                        # The initialized notification is sent from the client to the server
-                        # after the client received the result of the initialize request
-                        # but before the client is sending any other request or notification to the server.
-                        #
-                        # The server can use the initialized notification, for example, to dynamically register capabilities.
-                        # The initialized notification may only be sent once.
-                        #
-                        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialized
-                        self._put(notification("initialized", {}))
+        # Thread responsible for reading messages.
+        self._reader = threading.Thread(
+            name="Reader",
+            target=self._start_reader,
+            daemon=True,
+        )
+        self._reader.start()
 
-                callback(response)
+        # Thread responsible for monitoring the server process.
+        self._monitor = threading.Thread(
+            name="Monitor",
+            target=self._start_monitor,
+            daemon=True,
+        )
+        self._monitor.start()
 
-            self._put(request("initialize", params), _callback)
+        # Use threading.Timer for timeout instead of blocking on Event.wait().
+        # Blocking would freeze the calling thread (often Sublime's main thread),
+        # making the UI unresponsive. With a timer, initialize() returns immediately (async),
+        # and the timeout check happens in a background thread.
 
-    def shutdown(self):
+        def _timeout_handler():
+            with self._lock:
+                # Only trigger timeout if still INITIALIZING
+                # If status changed (INITIALIZED or FAILED), the response already arrived
+                if self._server_status != LanguageServerStatus.INITIALIZING:
+                    return
+
+                self._logger.error(
+                    f"[{self._name}] Initialization timed out after {timeout}s"
+                )
+
+                self._server_status = LanguageServerStatus.FAILED
+
+                self._clear_callbacks()
+
+            # Call user callback with synthetic timeout error
+            timeout_response: LSPResponseMessage = {
+                "id": None,
+                "result": None,
+                "error": {
+                    "code": -2,
+                    "message": f"Initialization timed out after {timeout}s",
+                    "data": None,
+                },
+            }
+
+            callback(timeout_response)
+
+        # Start timeout timer
+        timeout_timer = threading.Timer(timeout, _timeout_handler)
+        timeout_timer.daemon = True
+        timeout_timer.start()
+
+        def _callback(response: LSPResponseMessage):
+            # Cancel timeout timer since we got a response
+            timeout_timer.cancel()
+
+            with self._lock:
+                # Only process if still INITIALIZING
+                # If status changed (FAILED by timeout), don't process the response
+                if self._server_status != LanguageServerStatus.INITIALIZING:
+                    return
+
+                # Without handling errors, the client stays in INITIALIZING state forever
+                # if the server rejects initialization. This leads to confusing behavior where
+                # the client appears stuck and won't accept new requests.
+                #
+                # By transitioning to FAILED state, we make the error explicit and allow
+                # higher-level code to detect the failure and potentially retry or alert the user.
+                if error := response.get("error"):
+                    self._server_status = LanguageServerStatus.FAILED
+
+                    self._clear_callbacks()
+
+                    self._logger.error(
+                        f"[{self._name}] Initialization failed: "
+                        f"code={error.get('code')}, message={error.get('message')} 🔴"
+                    )
+                else:
+                    self._server_status = LanguageServerStatus.INITIALIZED
+
+                    self._logger.info(
+                        f"{self._name} ({self._server_process.pid}) initialized 🚀"
+                    )
+
+                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initializeResult
+                    result = response.get("result")
+
+                    if result is not None:
+                        self._server_capabilities = result.get("capabilities")
+                        self._server_info = result.get("serverInfo")
+
+                    # The initialized notification is sent from the client to the server
+                    # after the client received the result of the initialize request
+                    # but before the client is sending any other request or notification to the server.
+                    #
+                    # The server can use the initialized notification, for example, to dynamically register capabilities.
+                    # The initialized notification may only be sent once.
+                    #
+                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialized
+                    self._put(notification("initialized", {}))
+
+            callback(response)
+
+        self._put(request("initialize", params), _callback)
+
+    def shutdown(self, timeout: float = 5.0):
         """
         The shutdown request is sent from the client to the server.
         It asks the server to shut down,
@@ -789,34 +1106,101 @@ class LanguageServerClient:
 
         Clients should also wait with sending the exit notification until they have received a response from the shutdown request.
 
+        timeout: If the server is hung or misbehaving, we need a way to force
+        shutdown after a reasonable time. Without a timeout, shutdown could hang forever.
+
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
         """
 
         self._logger.info(f"Shutdown {self._name}")
 
-        def _callback(response):
-            # Response
-            # result: null
-            # error: code and message set in case an exception happens during shutdown request.
-            if not response.get("error"):
-                self.exit()
+        current_status = self.server_status()
 
+        # If already SHUTDOWN, don't send another shutdown request
+        if current_status == LanguageServerStatus.SHUTDOWN:
+            self._logger.debug(f"[{self._name}] Already shutdown")
+            return
+
+        # If NOT_STARTED, there's nothing to shutdown
+        if current_status == LanguageServerStatus.NOT_STARTED:
+            self._logger.debug(f"[{self._name}] Server was never started")
+            return
+
+        # Use threading.Timer for timeout instead of blocking on Event.wait().
+        # Blocking would freeze the calling thread, making the UI unresponsive during shutdown.
+        # With a timer, shutdown() returns immediately (async).
+
+        def _timeout_handler():
+            # Only force exit if not already shutdown
+            if self.server_status() != LanguageServerStatus.SHUTDOWN:
+                self._logger.warning(
+                    f"[{self._name}] Shutdown request timed out after {timeout}s, forcing exit"
+                )
+                self._exit()
+
+        # Start timeout timer
+        timeout_timer = threading.Timer(timeout, _timeout_handler)
+        timeout_timer.daemon = True
+        timeout_timer.start()
+
+        def _callback(response):
+            # Cancel timeout timer since we got a response
+            timeout_timer.cancel()
+
+            # Only process if not already shutdown
+            if self.server_status() == LanguageServerStatus.SHUTDOWN:
+                return
+
+            # Always call exit(), even if shutdown returned an error.
+            # Rationale:
+            # 1. If server returned an error, it's likely in a bad state and we need to clean up
+            # 2. Not calling exit() leaves threads running and resources leaked
+            # 3. The LSP spec says to exit after shutdown response, regardless of error
+            #
+            # We log the error but proceed with cleanup.
+            if response.get("error"):
+                error = response["error"]
+                self._logger.error(
+                    f"[{self._name}] Shutdown request returned error: "
+                    f"code={error.get('code')}, message={error.get('message')}"
+                )
+
+            self._exit()
+
+        # Try to send graceful shutdown request
         self._put(request("shutdown"), _callback)
 
-    def exit(self):
+    def _exit(self):
         """
-        A notification to ask the server to exit its process.
+        Internal method to send exit notification and clean up resources.
+
+        This should only be called internally after shutdown completes.
+        The LSP protocol requires clients to call shutdown first, wait for response,
+        then call exit.
+
         The server should exit with success code 0 if the shutdown request has been received before;
         otherwise with error code 1.
 
+        NOTE: This method blocks on process.wait(). It's safe because it's only called
+        from background threads (shutdown callback or timeout handler).
+
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#exit
         """
-        self._logger.info(f"Exit {self._name}")
+
+        # Make this method idempotent - safe to call multiple times
+        with self._lock:
+            if self._server_status == LanguageServerStatus.SHUTDOWN:
+                return
+
+            self._logger.info(f"Exit {self._name}")
+
+            self._server_status = LanguageServerStatus.SHUTDOWN
+
+            # Clear pending callbacks during shutdown to prevent memory leaks.
+            # Any in-flight requests won't receive responses since the server is exiting.
+            self._clear_callbacks()
 
         self._put(notification("exit"))
-
-        with self._lock:
-            self._status = ServerStatus.SHUTDOWN
 
         # Enqueue `None` to signal that workers must stop:
         self._send_queue.put(None)
