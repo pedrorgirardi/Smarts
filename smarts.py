@@ -2015,13 +2015,13 @@ def plugin_loaded():
     client_logger.addHandler(console_logging_handler)
     client_logger.setLevel(settings().get("logger.client.level", "INFO"))
 
-    plugin_logger.debug("Plugin loaded; Initialize Smarts...")
+    plugin_logger.debug("Plugin loaded")
 
     initialize_project_smarts(sublime.active_window())
 
 
 def plugin_unloaded():
-    plugin_logger.debug("Plugin unloaded; Shutdown Smarts...")
+    plugin_logger.debug("Plugin unloaded")
 
     shutdown_smarts(sublime.active_window())
 

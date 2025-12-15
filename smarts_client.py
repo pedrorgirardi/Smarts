@@ -1,11 +1,12 @@
 import json
 import logging
+import shlex
 import subprocess
 import threading
 import uuid
 from enum import Enum, auto
 from queue import Queue
-from typing import cast, TypedDict, Any, Literal, Callable, List, Dict, Optional, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, TypedDict, Union, cast
 
 
 class LSPMarkupContent(TypedDict):
@@ -933,7 +934,7 @@ class LanguageServerClient:
             )
             return
 
-        self._logger.debug(f"Initialize {self._name} {self._server_args}")
+        self._logger.debug(f"Initialize {self._name} `{shlex.join(self._server_args)}`")
 
         try:
             server_process = subprocess.Popen(
