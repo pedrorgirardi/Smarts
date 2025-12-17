@@ -1240,9 +1240,16 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
         for smart in window_smarts(self.window):
             client = smart["client"]
 
-            minihtml += f"<span class='text-foreground font-bold'>{client._name}</span>"
-            minihtml += " "
-            minihtml += f"<span class='text-foreground-07 text-sm'>({client.server_status().name})</span><br /><br />"
+            minihtml += f"<span class='text-foreground font-bold'>{client._name}<br /><br /></span>"
+
+            # -- UUID
+            minihtml += f"<span class='text-foreground-07 text-sm'>UUID: {smart['uuid']}</span><br />"
+
+            # -- Status
+            minihtml += f"<span class='text-foreground-07 text-sm'>Status: {client.server_status().name}</span><br />"
+
+            # -- PID
+            minihtml += f"<span class='text-foreground-07 text-sm'>PID: {client._server_process.pid if client._server_process else None}</span><br /><br />"
 
             # -- Info
             minihtml += "<span class='text-sm font-bold'>Info:</span><br /><br />"
