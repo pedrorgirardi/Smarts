@@ -599,19 +599,12 @@ def show_signature_help_popup(
     <style>
         {kMINIHTML_STYLES}
     </style>
-    <body class='text-foreground-07'>
-
-        <div class='rounded p-3 bg-background-50 text-foreground text-sm'>{"<br />".join(popup_content)}</div>
+    <body>
+        <div class='rounded-lg p-3 bg-background-50 text-foreground-07 text-sm'>{"<br />".join(popup_content)}</div>
 
         <br />
 
         <span class='text-sm text-pinkish font-bold'>{smart["client"]._name}</span>
-
-        {"<br />".join(popup_content)}
-
-        <br /><br />
-
-        <span class='text-sm font-bold'>{smart["client"]._name}</span>
     </body>
     """
 
