@@ -88,6 +88,14 @@ kCOMPLETION_ITEM_KIND = {
 }
 
 kMINIHTML_STYLES = """
+.rounded {
+    border-radius: 0.25rem;
+}
+
+.rounded-lg {
+    border-radius: 0.75rem;
+}
+
 .m-0 {
     margin: 0px;
 }
@@ -96,12 +104,36 @@ kMINIHTML_STYLES = """
     padding: 0px;
 }
 
+.p-2 {
+    padding: 0.5rem;
+}
+
+.p-3 {
+    padding: 0.75rem;
+}
+
+.bg-accent {
+    background-color: var(--accent);
+}
+
+.bg-background-50 {
+    background-color: color(var(--background) alpha(0.50));
+}
+
 .font-bold {
     font-weight: bold;
 }
 
 .text-foreground {
     color: var(--foreground);
+}
+
+.text-pinkish {
+    color: var(--pinkish);
+}
+
+.text-background-50 {
+    color: color(var(--background) alpha(0.50));
 }
 
 .text-foreground-07 {
@@ -470,11 +502,11 @@ def show_hover_popup(
         {kMINIHTML_STYLES}
     </style>
     <body>
-        {"<br />".join(popup_content)}
+        <div class='rounded-lg p-3 bg-background-50 text-foreground text-sm'>{"<br />".join(popup_content)}</div>
 
-        <br /><br />
+        <br />
 
-        <span class='text-sm text-foreground-07'>{smart["client"]._name}</span>
+        <span class='text-sm text-pinkish font-bold'>{smart["client"]._name}</span>
     </body>
     """
 
@@ -534,12 +566,13 @@ def show_signature_help_popup(
             # Highlight the active parameter in the signature
             highlighted_label = (
                 text_to_html(signature_label[:start])
-                + '<b class="text-accent">'
+                + '<b class="text-foreground">'
                 + text_to_html(signature_label[start:end])
                 + "</b>"
                 + text_to_html(signature_label[end:])
             )
             popup_content.append(highlighted_label)
+
         elif isinstance(param_label, str):
             # Find the parameter in the signature and highlight it
             param_start = signature_label.find(param_label)
@@ -547,14 +580,16 @@ def show_signature_help_popup(
                 param_end = param_start + len(param_label)
                 highlighted_label = (
                     text_to_html(signature_label[:param_start])
-                    + '<b class="text-accent">'
+                    + '<b class="text-foreground">'
                     + text_to_html(signature_label[param_start:param_end])
                     + "</b>"
                     + text_to_html(signature_label[param_end:])
                 )
                 popup_content.append(highlighted_label)
+
             else:
                 popup_content.append(text_to_html(signature_label))
+
         else:
             popup_content.append(text_to_html(signature_label))
     else:
@@ -564,12 +599,19 @@ def show_signature_help_popup(
     <style>
         {kMINIHTML_STYLES}
     </style>
-    <body>
+    <body class='text-foreground-07'>
+
+        <div class='rounded p-3 bg-background-50 text-foreground text-sm'>{"<br />".join(popup_content)}</div>
+
+        <br />
+
+        <span class='text-sm text-pinkish font-bold'>{smart["client"]._name}</span>
+
         {"<br />".join(popup_content)}
 
         <br /><br />
 
-        <span class='text-sm text-foreground-07'>{smart["client"]._name}</span>
+        <span class='text-sm font-bold'>{smart["client"]._name}</span>
     </body>
     """
 
