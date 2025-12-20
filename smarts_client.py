@@ -370,6 +370,90 @@ class LSPCompletionList(TypedDict):
     items: List[LSPCompletionItem]
 
 
+class LSPParameterInformation(TypedDict, total=False):
+    """
+    Represents a parameter of a callable signature.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#parameterInformation
+    """
+
+    # The label of this parameter information.
+    # Either a string or an inclusive start and exclusive end offsets within its containing signature label.
+    label: Union[str, List[int]]
+
+    # The human-readable doc-comment of this parameter.
+    documentation: Union[str, LSPMarkupContent]
+
+
+class LSPSignatureInformation(TypedDict, total=False):
+    """
+    Represents the signature of a callable.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#signatureInformation
+    """
+
+    # The label of this signature. Will be shown in the UI.
+    label: str
+
+    # The human-readable doc-comment of this signature.
+    documentation: Union[str, LSPMarkupContent]
+
+    # The parameters of this signature.
+    parameters: List[LSPParameterInformation]
+
+    # The index of the active parameter.
+    activeParameter: Optional[int]
+
+
+class LSPSignatureHelpContext(TypedDict, total=False):
+    """
+    Additional information about the context in which a signature help request was triggered.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#signatureHelpContext
+    """
+
+    # Action that caused signature help to be triggered.
+    # 1 = Invoked, 2 = TriggerCharacter, 3 = ContentChange
+    triggerKind: Literal[1, 2, 3]
+
+    # Character that caused signature help to be triggered.
+    triggerCharacter: Optional[str]
+
+    # true if signature help was already showing when it was triggered.
+    isRetrigger: bool
+
+    # The currently active SignatureHelp.
+    activeSignatureHelp: Optional["LSPSignatureHelp"]
+
+
+class LSPSignatureHelpParams(LSPTextDocumentPositionParams, total=False):
+    """
+    Parameters for a signature help request.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#signatureHelpParams
+    """
+
+    # The signature help context.
+    context: LSPSignatureHelpContext
+
+
+class LSPSignatureHelp(TypedDict, total=False):
+    """
+    Signature help represents the signature of something callable.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#signatureHelp
+    """
+
+    # One or more signatures.
+    signatures: List[LSPSignatureInformation]
+
+    # The active signature.
+    activeSignature: Optional[int]
+
+    # The active parameter of the active signature.
+    activeParameter: Optional[int]
+
+
 # --------------------------------------------------------------------------------
 
 
@@ -559,6 +643,8 @@ class LanguageServerClient:
             return bool(self._server_capabilities.get("hoverProvider"))
         elif method == "textDocument/completion":
             return bool(self._server_capabilities.get("completionProvider"))
+        elif method == "textDocument/signatureHelp":
+            return bool(self._server_capabilities.get("signatureHelpProvider"))
         elif method == "textDocument/didOpen" or method == "textDocument/didClose":
             options = textDocumentSyncOptions(
                 self._server_capabilities.get("textDocumentSync")
@@ -1409,6 +1495,18 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_completion
         """
         self._put(request("textDocument/completion", params), callback)
+
+    def textDocument_signatureHelp(
+        self,
+        params: LSPSignatureHelpParams,
+        callback: Callable[[LSPResponseMessage], None],
+    ):
+        """
+        The signature help request is sent from the client to the server to request signature information at a given cursor position.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_signatureHelp
+        """
+        self._put(request("textDocument/signatureHelp", params), callback)
 
     def workspace_symbol(
         self,

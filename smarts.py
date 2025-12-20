@@ -428,7 +428,11 @@ def panel_log_error(
     )
 
 
-def show_hover_popup(view: sublime.View, smart: PgSmart, result: Any):
+def show_hover_popup(
+    view: sublime.View,
+    smart: PgSmart,
+    result: Any,
+):
     # The result of a hover request.
     # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#hover
 
@@ -461,10 +465,115 @@ def show_hover_popup(view: sublime.View, smart: PgSmart, result: Any):
             result_range["start"]["character"],
         )
 
-    minihtml = "<br /><br />".join(popup_content)
-    minihtml += f"<br /><br /><span>{smart['client']._name}</span>"
+    minihtml = f"""
+    <style>
+        {kMINIHTML_STYLES}
+    </style>
+    <body>
+        {"<br />".join(popup_content)}
+
+        <br /><br />
+
+        <span class='text-sm text-foreground-07'>{smart["client"]._name}</span>
+    </body>
+    """
 
     view.show_popup(minihtml, location=location, max_width=860)
+
+
+def show_signature_help_popup(
+    view: sublime.View,
+    smart: PgSmart,
+    result: smarts_client.LSPSignatureHelp,
+):
+    # The result of a signature help request.
+    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#signatureHelp
+
+    signatures = result.get("signatures", [])
+
+    if not signatures:
+        return
+
+    active_signature_index = result.get("activeSignature")
+    if active_signature_index is None:
+        active_signature_index = 0
+
+    # Clamp active signature index to valid range
+    if active_signature_index < 0 or active_signature_index >= len(signatures):
+        active_signature_index = 0
+
+    active_signature = signatures[active_signature_index]
+
+    # Active parameter can be at the top level or inside the active signature
+    # Per LSP spec, SignatureInformation.activeParameter is deprecated, but some servers still use it
+    active_parameter_index = result.get("activeParameter")
+    if active_parameter_index is None:
+        active_parameter_index = active_signature.get("activeParameter")
+
+    popup_content = []
+
+    # Add signature label
+    signature_label = active_signature.get("label", "")
+
+    # If active parameter is specified and parameters are available, highlight it
+    parameters = active_signature.get("parameters", [])
+
+    if active_parameter_index is not None and parameters:
+        # Clamp active parameter index to valid range
+        if active_parameter_index < 0:
+            active_parameter_index = 0
+        elif active_parameter_index >= len(parameters):
+            active_parameter_index = len(parameters) - 1
+
+        # After clamping, index is guaranteed to be valid
+        param_label = parameters[active_parameter_index].get("label")
+
+        # Parameter label can be a string or [start, end] offsets
+        if isinstance(param_label, list) and len(param_label) == 2:
+            start, end = param_label
+            # Highlight the active parameter in the signature
+            highlighted_label = (
+                text_to_html(signature_label[:start])
+                + '<b class="text-accent">'
+                + text_to_html(signature_label[start:end])
+                + "</b>"
+                + text_to_html(signature_label[end:])
+            )
+            popup_content.append(highlighted_label)
+        elif isinstance(param_label, str):
+            # Find the parameter in the signature and highlight it
+            param_start = signature_label.find(param_label)
+            if param_start >= 0:
+                param_end = param_start + len(param_label)
+                highlighted_label = (
+                    text_to_html(signature_label[:param_start])
+                    + '<b class="text-accent">'
+                    + text_to_html(signature_label[param_start:param_end])
+                    + "</b>"
+                    + text_to_html(signature_label[param_end:])
+                )
+                popup_content.append(highlighted_label)
+            else:
+                popup_content.append(text_to_html(signature_label))
+        else:
+            popup_content.append(text_to_html(signature_label))
+    else:
+        popup_content.append(text_to_html(signature_label))
+
+    minihtml = f"""
+    <style>
+        {kMINIHTML_STYLES}
+    </style>
+    <body>
+        {"<br />".join(popup_content)}
+
+        <br /><br />
+
+        <span class='text-sm text-foreground-07'>{smart["client"]._name}</span>
+    </body>
+    """
+
+    view.show_popup(minihtml, location=-1, max_width=1200)
 
 
 def severity_name(severity: int):
@@ -843,7 +952,7 @@ def view_textDocumentPositionParams(
     """
     default_point = view.sel()[0].begin()
 
-    line, character = view.rowcol(point or default_point)
+    line, character = view.rowcol_utf16(point or default_point)
 
     return {
         "textDocument": view_textDocumentIdentifier(view),
@@ -1150,6 +1259,15 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
                     },
                     "hover": {
                         "contentFormat": ["plaintext"],
+                    },
+                    # The signature help request is sent from the client to the server to request signature information at a given cursor position.
+                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_signatureHelp
+                    "signatureHelp": {
+                        "signatureInformation": {
+                            "documentationFormat": ["plaintext", "markdown"],
+                            "activeParameterSupport": True,
+                        },
+                        "contextSupport": True,
                     },
                 }
             },
@@ -1637,6 +1755,35 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
                 show_hover_popup(self.view, smart, result)
 
         smart["client"].textDocument_hover(params, callback)
+
+
+class PgSmartsShowSignatureHelpCommand(sublime_plugin.TextCommand):
+    def run(self, _, position=None):
+        smart = applicable_smart(self.view, method="textDocument/signatureHelp")
+
+        if not smart:
+            return
+
+        position = position or self.view.sel()[0].begin()
+
+        params: smarts_client.LSPSignatureHelpParams = {
+            **view_textDocumentPositionParams(self.view, position),
+            "context": {
+                "triggerKind": 1,  # Invoked manually
+                "isRetrigger": False,
+            },
+        }
+
+        def callback(response: smarts_client.LSPResponseMessage):
+            if error := response.get("error"):
+                if window := self.view.window():
+                    panel_log_error(window, error)
+                return
+
+            if result := response.get("result"):
+                show_signature_help_popup(self.view, smart, result)
+
+        smart["client"].textDocument_signatureHelp(params, callback)
 
 
 class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
