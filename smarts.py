@@ -1410,7 +1410,7 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
             minihtml += "<span class='text-sm font-bold'>Info:</span><br /><br />"
 
             if server_info := client._server_info:
-                minihtml += f"<code class='text-sm' style='display: block; white-space: pre;'>{json.dumps(server_info, indent=2)}</code>"
+                minihtml += f"<code class='text-sm' style='display: block; white-space: pre;'>{html.escape(json.dumps(server_info, indent=2))}</code>"
             else:
                 minihtml += "-"
 
@@ -1422,7 +1422,7 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
             )
 
             if server_capabilities := client._server_capabilities:
-                minihtml += f"<code class='text-sm' style='display: block; white-space: pre;'>{json.dumps(server_capabilities, indent=2)}</code>"
+                minihtml += f"<code class='text-sm' style='display: block; white-space: pre;'>{html.escape(json.dumps(server_capabilities, indent=2))}</code>"
             else:
                 minihtml += "-"
 
