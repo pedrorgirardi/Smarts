@@ -2059,12 +2059,21 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 if regions == regions_:
                     return
 
+            highlight_references = False
+
+            if window := self.view.window():
+                highlight_references = setting(
+                    window,
+                    "editor.highlight_references",
+                    False,
+                )
+
             self.view.add_regions(
                 kSMARTS_HIGHLIGHTS,
                 regions,
                 scope="comment",
                 icon="",
-                flags=sublime.DRAW_NO_FILL,
+                flags=sublime.DRAW_NO_FILL if highlight_references else sublime.HIDDEN,
             )
 
             self.view.settings().set(kSMARTS_HIGHLIGHTS, result)
@@ -2081,9 +2090,6 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         window = self.view.window()
 
         if not window:
-            return
-
-        if not setting(window, "editor.highlight_references", False):
             return
 
         highlighter = getattr(self, "pg_smarts_highlighter", None)
