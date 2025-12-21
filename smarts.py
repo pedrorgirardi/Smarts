@@ -1,3 +1,4 @@
+import html
 import json
 import logging
 import os
@@ -388,11 +389,12 @@ def applicable_smart(view: sublime.View, method: str) -> Optional[PgSmart]:
 
 
 def text_to_html(s: str) -> str:
-    html = re.sub(r"\n", "<br/>", s)
-    html = re.sub(r"\t", "&nbsp;&nbsp;&nbsp;&nbsp;", html)
-    html = re.sub(r" ", "&nbsp;", html)
+    result = html.escape(s)
+    result = re.sub(r"\n", "<br/>", result)
+    result = re.sub(r"\t", "&nbsp;&nbsp;&nbsp;&nbsp;", result)
+    result = re.sub(r" ", "&nbsp;", result)
 
-    return html
+    return result
 
 
 def output_panel(window: sublime.Window) -> sublime.View:
