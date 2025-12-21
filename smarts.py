@@ -508,7 +508,7 @@ def show_hover_popup(
 
         <br />
 
-        <span class='text-sm text-pinkish font-bold'>{smart["client"]._name}</span>
+        <span class='text-sm text-pinkish font-bold'>{html.escape(smart["client"]._name)}</span>
     </body>
     """
 
@@ -606,7 +606,7 @@ def show_signature_help_popup(
 
         <br />
 
-        <span class='text-sm text-pinkish font-bold'>{smart["client"]._name}</span>
+        <span class='text-sm text-pinkish font-bold'>{html.escape(smart["client"]._name)}</span>
     </body>
     """
 
@@ -1154,7 +1154,7 @@ def handle_textDocument_publishDiagnostics(
 
                 # Annotations (minihtml) by Severity
                 severity_annotations.append(
-                    f'<span style="font-size:0.8em">{d["message"]}</span>',
+                    f'<span style="font-size:0.8em">{html.escape(d["message"])}</span>',
                 )
 
             view.add_regions(
@@ -1395,7 +1395,7 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
         for smart in window_smarts(self.window):
             client = smart["client"]
 
-            minihtml += f"<span class='text-foreground font-bold'>{client._name}<br /><br /></span>"
+            minihtml += f"<span class='text-foreground font-bold'>{html.escape(client._name)}<br /><br /></span>"
 
             # -- UUID
             minihtml += f"<span class='text-foreground-07 text-sm'>UUID: {smart['uuid']}</span><br />"
