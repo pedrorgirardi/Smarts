@@ -24,7 +24,7 @@ class LSPServerCapabilities(TypedDict):
             "utf-8",
             #  Character offsets count UTF-16 code units.
             # This is the default and must always be supported by servers.
-            "'utf-16",
+            "utf-16",
             # Character offsets count UTF-32 code units.
             # Implementation note: these are the same as Unicode code points,
             # so this `PositionEncodingKind` may also be used for an

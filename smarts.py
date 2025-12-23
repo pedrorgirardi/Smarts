@@ -9,7 +9,7 @@ import threading
 import uuid
 from itertools import groupby
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, TypedDict, cast
+from typing import Any, Callable, Dict, List, Literal, Optional, Set, TypedDict, cast
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
@@ -694,6 +694,36 @@ def region_to_range16(
     }
 
 
+def region_to_range(
+    view: sublime.View,
+    region: sublime.Region,
+    encoding: Literal["utf-8", "utf-16", "utf-32"],
+) -> smarts_client.LSPRange:
+
+    if encoding == "utf-8":
+        begin_row, begin_col = view.rowcol_utf8(region.begin())
+        end_row, end_col = view.rowcol_utf8(region.end())
+
+    elif encoding == "utf-16":
+        begin_row, begin_col = view.rowcol_utf16(region.begin())
+        end_row, end_col = view.rowcol_utf16(region.end())
+
+    else:
+        begin_row, begin_col = view.rowcol_utf16(region.begin())
+        end_row, end_col = view.rowcol_utf16(region.end())
+
+    return {
+        "start": {
+            "line": int(begin_row),
+            "character": int(begin_col),
+        },
+        "end": {
+            "line": int(end_row),
+            "character": int(end_col),
+        },
+    }
+
+
 def diagnostic_quick_panel_item(data) -> sublime.QuickPanelItem:
     path = uri_to_path(data["uri"])
     start_line = data["range"]["start"]["line"] + 1
@@ -1282,6 +1312,9 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             "workspaceFolders": workspaceFolders,
             "trace": "verbose",
             "capabilities": {
+                "general": {
+                    "positionEncodings": ["utf-16", "utf-8"],
+                },
                 # Client support for textDocument/didOpen, textDocument/didChange
                 # and textDocument/didClose notifications is mandatory in the protocol
                 # and clients can not opt out supporting them.
@@ -1306,7 +1339,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
                         },
                         "contextSupport": True,
                     },
-                }
+                },
             },
         }
 
