@@ -11,3 +11,7 @@ dev = [
     "pyright>=1.1.407",
     "ty>=0.0.1a34",
 ]
+
+[tool.ty.environment]
+extra-paths = ["./typings"]
+python-version = "3.8"
