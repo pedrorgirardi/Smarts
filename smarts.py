@@ -16,7 +16,7 @@ from zipfile import ZipFile
 import sublime
 import sublime_plugin
 
-from . import smarts_client
+from .lib import smarts_client
 
 # -- Logging
 
