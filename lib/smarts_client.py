@@ -17,7 +17,7 @@ class LSPMarkupContent(TypedDict):
     value: str
 
 
-class LSPServerCapabilities(TypedDict):
+class LSPServerCapabilities(TypedDict, total=False):
     positionEncoding: Optional[
         Literal[
             # Character offsets count UTF-8 code units (e.g bytes).
@@ -573,7 +573,7 @@ class LanguageServerClient:
         self._server_args = server_args
         self._server_process: Optional[subprocess.Popen] = None
         self._server_info: Optional[LSPServerInfo] = None
-        self._server_capabilities: Optional[dict] = None
+        self._server_capabilities: Optional[LSPServerCapabilities] = None
         self._send_queue = Queue(maxsize=100)
         self._receive_queue = Queue(maxsize=100)
         self._reader: Optional[threading.Thread] = None
@@ -1160,10 +1160,7 @@ class LanguageServerClient:
                         f"{self._name} ({self._server_process.pid}) initialized 🚀"
                     )
 
-                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initializeResult
-                    result = response.get("result")
-
-                    if result is not None:
+                    if result := cast(LSPInitializeResult, response.get("result")):
                         self._server_capabilities = result.get("capabilities")
                         self._server_info = result.get("serverInfo")
 
