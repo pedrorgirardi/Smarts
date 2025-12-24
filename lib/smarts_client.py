@@ -8,6 +8,19 @@ from enum import Enum, auto
 from queue import Queue
 from typing import Any, Callable, Dict, List, Literal, Optional, TypedDict, Union, cast
 
+LSPPositionEncoding = Literal[
+    # Character offsets count UTF-8 code units (e.g bytes).
+    "utf-8",
+    #  Character offsets count UTF-16 code units.
+    # This is the default and must always be supported by servers.
+    "utf-16",
+    # Character offsets count UTF-32 code units.
+    # Implementation note: these are the same as Unicode code points,
+    # so this `PositionEncodingKind` may also be used for an
+    #  encoding-agnostic representation of character offsets.
+    "utf-32",
+]
+
 
 class LSPMarkupContent(TypedDict):
     # The type of the Markup
@@ -18,20 +31,7 @@ class LSPMarkupContent(TypedDict):
 
 
 class LSPServerCapabilities(TypedDict, total=False):
-    positionEncoding: Optional[
-        Literal[
-            # Character offsets count UTF-8 code units (e.g bytes).
-            "utf-8",
-            #  Character offsets count UTF-16 code units.
-            # This is the default and must always be supported by servers.
-            "utf-16",
-            # Character offsets count UTF-32 code units.
-            # Implementation note: these are the same as Unicode code points,
-            # so this `PositionEncodingKind` may also be used for an
-            #  encoding-agnostic representation of character offsets.
-            "utf-32",
-        ]
-    ]
+    positionEncoding: Optional[LSPPositionEncoding]
 
 
 class LSPServerInfo(TypedDict):
@@ -620,6 +620,12 @@ class LanguageServerClient:
         """
         with self._lock:
             return self._server_status == LanguageServerStatus.FAILED
+
+    def position_encoding(self) -> LSPPositionEncoding:
+        if capabilities := self._server_capabilities:
+            return capabilities.get("positionEncoding") or "utf-16"
+
+        return "utf-16"
 
     def support_method(self, method: str) -> Optional[bool]:
         if not self._server_capabilities:

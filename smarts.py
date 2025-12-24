@@ -25,6 +25,8 @@ from .lib.smarts_client import (
     LSPDocumentFormattingParams,
     LSPLocation,
     LSPNotificationMessage,
+    LSPPosition,
+    LSPPositionEncoding,
     LSPPublishDiagnosticsParams,
     LSPRange,
     LSPResponseError,
@@ -682,7 +684,49 @@ def severity_kind(severity: int):
         return (sublime.KIND_ID_AMBIGUOUS, "", "")
 
 
-def range16_to_region(view: sublime.View, range16) -> sublime.Region:
+def point_position(
+    view: sublime.View,
+    position_encoding: LSPPositionEncoding,
+    point: int,
+) -> LSPPosition:
+    if position_encoding == "utf-8":
+        row, col = view.rowcol_utf8(point)
+
+    elif position_encoding == "utf-16":
+        row, col = view.rowcol_utf16(point)
+
+    else:
+        row, col = view.rowcol_utf16(point)
+
+    return {
+        "line": int(row),
+        "character": int(col),
+    }
+
+
+def region_range(
+    view: sublime.View,
+    position_encoding: LSPPositionEncoding,
+    region: sublime.Region,
+) -> LSPRange:
+    return {
+        "start": point_position(
+            view,
+            position_encoding,
+            region.begin(),
+        ),
+        "end": point_position(
+            view,
+            position_encoding,
+            region.end(),
+        ),
+    }
+
+
+def range16_to_region(
+    view: sublime.View,
+    range16: LSPRange,
+) -> sublime.Region:
     return sublime.Region(
         view.text_point_utf16(
             range16["start"]["line"],
@@ -697,53 +741,30 @@ def range16_to_region(view: sublime.View, range16) -> sublime.Region:
     )
 
 
-def region_to_range16(
+def range_region(
     view: sublime.View,
-    region: sublime.Region,
-) -> LSPRange:
-    begin_row, begin_col = view.rowcol_utf16(region.begin())
-    end_row, end_col = view.rowcol_utf16(region.end())
+    position_encoding: LSPPositionEncoding,
+    range: LSPRange,
+) -> sublime.Region:
+    start_line = range["start"]["line"]
+    start_character = range["start"]["character"]
 
-    return {
-        "start": {
-            "line": int(begin_row),
-            "character": int(begin_col),
-        },
-        "end": {
-            "line": int(end_row),
-            "character": int(end_col),
-        },
-    }
+    end_line = range["end"]["line"]
+    end_character = range["end"]["character"]
 
+    a = (
+        view.text_point_utf8(start_line, start_character, clamp_column=True)
+        if position_encoding == "utf-8"
+        else view.text_point_utf16(start_line, start_character, clamp_column=True)
+    )
 
-def region_to_range(
-    view: sublime.View,
-    region: sublime.Region,
-    encoding: Literal["utf-8", "utf-16", "utf-32"],
-) -> LSPRange:
+    b = (
+        view.text_point_utf8(end_line, end_character, clamp_column=True)
+        if position_encoding == "utf-8"
+        else view.text_point_utf16(end_line, end_character, clamp_column=True)
+    )
 
-    if encoding == "utf-8":
-        begin_row, begin_col = view.rowcol_utf8(region.begin())
-        end_row, end_col = view.rowcol_utf8(region.end())
-
-    elif encoding == "utf-16":
-        begin_row, begin_col = view.rowcol_utf16(region.begin())
-        end_row, end_col = view.rowcol_utf16(region.end())
-
-    else:
-        begin_row, begin_col = view.rowcol_utf16(region.begin())
-        end_row, end_col = view.rowcol_utf16(region.end())
-
-    return {
-        "start": {
-            "line": int(begin_row),
-            "character": int(begin_col),
-        },
-        "end": {
-            "line": int(end_row),
-            "character": int(end_col),
-        },
-    }
+    return sublime.Region(a, b)
 
 
 def diagnostic_quick_panel_item(data) -> sublime.QuickPanelItem:
@@ -1032,7 +1053,8 @@ def view_textDocumentIdentifier(
 
 def view_textDocumentPositionParams(
     view: sublime.View,
-    point=None,
+    position_encoding: LSPPositionEncoding,
+    point: Optional[int] = None,
 ) -> LSPTextDocumentPositionParams:
     """
     A parameter literal used in requests to pass a text document and a position inside that document.
@@ -1041,14 +1063,9 @@ def view_textDocumentPositionParams(
     """
     default_point = view.sel()[0].begin()
 
-    line, character = view.rowcol_utf16(point or default_point)
-
     return {
         "textDocument": view_textDocumentIdentifier(view),
-        "position": {
-            "line": line,
-            "character": character,
-        },
+        "position": point_position(view, position_encoding, point or default_point),
     }
 
 
@@ -1145,6 +1162,7 @@ def handle_textDocument_publishDiagnostics(
 
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#publishDiagnosticsParams
     """
+    position_encoding = smart["client"].position_encoding()
 
     params = cast(LSPPublishDiagnosticsParams, message["params"])
 
@@ -1201,7 +1219,7 @@ def handle_textDocument_publishDiagnostics(
             for d in severity_diagnostics:
                 # Regions by Severity
                 severity_regions.append(
-                    range16_to_region(view, d["range"]),
+                    range_region(view, position_encoding, d["range"]),
                 )
 
                 # Annotations (minihtml) by Severity
@@ -1509,7 +1527,9 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
         if not smart:
             return
 
-        params = view_textDocumentPositionParams(self.view)
+        position_encoding = smart["client"].position_encoding()
+
+        params = view_textDocumentPositionParams(self.view, position_encoding)
 
         def callback(response: LSPResponseMessage):
             if error := response.get("error"):
@@ -1565,11 +1585,13 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
                     on_cancel=restore_view,
                 )
 
+        position_encoding = smart["client"].position_encoding()
+
         params = {
             "context": {
                 "includeDeclaration": False,
             },
-            **view_textDocumentPositionParams(self.view),
+            **view_textDocumentPositionParams(self.view, position_encoding),
         }
 
         smart["client"].textDocument_references(params, callback)
@@ -1617,6 +1639,8 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
         if not smart:
             return
 
+        position_encoding = smart["client"].position_encoding()
+
         def callback(response: LSPResponseMessage):
             if error := response.get("error"):
                 if window := self.view.window():
@@ -1646,8 +1670,9 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                     else:
                         show_at_center_range = data["selectionRange"]
 
-                    show_at_center_region = range16_to_region(
+                    show_at_center_region = range_region(
                         self.view,
+                        position_encoding,
                         show_at_center_range,
                     )
 
@@ -1670,8 +1695,9 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                         else:
                             selected_range = data["selectionRange"]
 
-                        selected_region = range16_to_region(
+                        selected_region = range_region(
                             self.view,
+                            position_encoding,
                             selected_range,
                         )
 
@@ -1833,9 +1859,11 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
         if not smart:
             return
 
+        position_encoding = smart["client"].position_encoding()
+
         position = position or self.view.sel()[0].begin()
 
-        params = view_textDocumentPositionParams(self.view, position)
+        params = view_textDocumentPositionParams(self.view, position_encoding, position)
 
         def callback(response: LSPResponseMessage):
             if error := response.get("error"):
@@ -1858,8 +1886,10 @@ class PgSmartsShowSignatureHelpCommand(sublime_plugin.TextCommand):
 
         position = position or self.view.sel()[0].begin()
 
+        position_encoding = smart["client"].position_encoding()
+
         params: LSPSignatureHelpParams = {
-            **view_textDocumentPositionParams(self.view, position),
+            **view_textDocumentPositionParams(self.view, position_encoding, position),
             "context": {
                 "triggerKind": 1,  # Invoked manually
                 "isRetrigger": False,
@@ -1885,6 +1915,8 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
         if not smart:
             return
 
+        position_encoding = smart["client"].position_encoding()
+
         params: LSPDocumentFormattingParams = {
             "textDocument": view_textDocumentIdentifier(self.view),
             "options": {
@@ -1906,6 +1938,7 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
                 self.view.run_command(
                     "pg_smarts_apply_edits",
                     {
+                        "position_encoding": position_encoding,
                         "edits": textEdits,
                     },
                 )
@@ -1931,11 +1964,13 @@ class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
                     )
             return
 
+        position_encoding = smart["client"].position_encoding()
+
         region = sublime.Region(region[0], region[1])
 
         params = {
             "textDocument": view_textDocumentIdentifier(self.view),
-            "range": region_to_range16(self.view, region),
+            "range": region_range(self.view, position_encoding, region),
             "options": {
                 "tabSize": self.view.settings().get("tab_size"),
                 "insertSpaces": True,
@@ -1963,9 +1998,9 @@ class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
 
 
 class PgSmartsApplyEditsCommand(sublime_plugin.TextCommand):
-    def run(self, edit, edits):
+    def run(self, edit, edits, position_encoding):
         for e in edits:
-            edit_region = range16_to_region(self.view, e["range"])
+            edit_region = range_region(self.view, position_encoding, e["range"])
             edit_new_text = e["newText"]
 
             self.view.replace(edit, edit_region, edit_new_text)
@@ -1985,6 +2020,8 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
 
         for smart in applicable_smarts(view, method="textDocument/didChange"):
             language_client = smart["client"]
+
+            position_encoding = language_client.position_encoding()
 
             textDocumentSync = textDocumentSyncOptions(
                 language_client._server_capabilities.get("textDocumentSync")
@@ -2033,14 +2070,20 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
                         "range": {
                             "start": {
                                 "line": change.a.row,
-                                "character": change.a.col_utf16,
+                                "character": change.a.col_utf8
+                                if position_encoding == "utf-8"
+                                else change.a.col_utf16,
                             },
                             "end": {
                                 "line": change.b.row,
-                                "character": change.b.col_utf16,
+                                "character": change.b.col_utf8
+                                if position_encoding == "utf-8"
+                                else change.b.col_utf16,
                             },
                         },
-                        "rangeLength": change.len_utf16,
+                        "rangeLength": change.len_utf8
+                        if position_encoding == "utf-8"
+                        else change.len_utf16,
                         "text": change.str,
                     })
 
@@ -2095,6 +2138,8 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if not smart:
             return
 
+        position_encoding = smart["client"].position_encoding()
+
         def callback(response: LSPResponseMessage):
             if error := response.get("error"):
                 if window := self.view.window():
@@ -2108,7 +2153,8 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 return
 
             regions = [
-                range16_to_region(self.view, location["range"]) for location in result
+                range_region(self.view, position_encoding, location["range"])
+                for location in result
             ]
 
             # Do nothing if result regions are the same as view regions.
@@ -2135,7 +2181,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
             self.view.settings().set(kSMARTS_HIGHLIGHTS, result)
 
-        params = view_textDocumentPositionParams(self.view)
+        params = view_textDocumentPositionParams(self.view, position_encoding)
 
         smart["client"].textDocument_documentHighlight(params, callback)
 
