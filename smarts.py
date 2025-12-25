@@ -210,11 +210,18 @@ class PgSmartsProjectData(TypedDict):
     initialize: List[PgSmartsInitializeData]
 
 
-class PgSmart(TypedDict):
-    uuid: str
-    window: int  # Window ID
-    config: PgSmartsServerConfig
-    client: LanguageServerClient
+class PgSmart:
+    def __init__(
+        self,
+        uuid: str,
+        window: int,
+        config: PgSmartsServerConfig,
+        client: LanguageServerClient,
+    ):
+        self.uuid = uuid
+        self.window = window
+        self.config = config
+        self.client = client
 
 
 # ---------------------------------------------------------------------------------------
@@ -276,13 +283,13 @@ def remove_smarts(uuids: Set[str]):
 
     global _SMARTS
     with _SMARTS_LOCK:
-        _SMARTS = [smart for smart in _SMARTS if smart["uuid"] not in uuids]
+        _SMARTS = [smart for smart in _SMARTS if smart.uuid not in uuids]
 
 
 def find_smart(uuid: str) -> Optional[PgSmart]:
     with _SMARTS_LOCK:
         for smart in _SMARTS:
-            if smart["uuid"] == uuid:
+            if smart.uuid == uuid:
                 return smart
 
     return None
@@ -301,7 +308,7 @@ def window_smarts(window: sublime.Window) -> List[PgSmart]:
     Returns Smarts associated with `window`.
     """
     with _SMARTS_LOCK:
-        return [smart for smart in _SMARTS if smart["window"] == window.id()]
+        return [smart for smart in _SMARTS if smart.window == window.id()]
 
 
 def window_running_smarts(window: sublime.Window) -> List[PgSmart]:
@@ -311,7 +318,7 @@ def window_running_smarts(window: sublime.Window) -> List[PgSmart]:
     return [
         smart
         for smart in window_smarts(window)
-        if not smart["client"].is_server_shutdown()
+        if not smart.client.is_server_shutdown()
     ]
 
 
@@ -322,7 +329,7 @@ def window_initialized_smarts(window: sublime.Window) -> List[PgSmart]:
     return [
         smart
         for smart in window_running_smarts(window)
-        if smart["client"].is_server_initialized()
+        if smart.client.is_server_initialized()
     ]
 
 
@@ -330,9 +337,9 @@ def shutdown_smarts(window: sublime.Window):
     shutdown_uuids = set()
 
     for smart in window_running_smarts(window):
-        smart["client"].shutdown()
+        smart.client.shutdown()
 
-        shutdown_uuids.add(smart["uuid"])
+        shutdown_uuids.add(smart.uuid)
 
     remove_smarts(shutdown_uuids)
 
@@ -391,10 +398,10 @@ def applicable_smarts(view: sublime.View, method: str) -> List[PgSmart]:
 
     if window := view.window():
         for smart in window_initialized_smarts(window):
-            if not view_applicable(smart["config"], view):
+            if not view_applicable(smart.config, view):
                 continue
 
-            if smart["client"].support_method(method):
+            if smart.client.support_method(method):
                 smarts.append(smart)
 
     return smarts
@@ -532,7 +539,7 @@ def show_hover_popup(
 
         <br />
 
-        <span class='text-sm text-pinkish font-bold'>{html.escape(smart["client"]._name)}</span>
+        <span class='text-sm text-pinkish font-bold'>{html.escape(smart.client._name)}</span>
     </body>
     """
 
@@ -630,7 +637,7 @@ def show_signature_help_popup(
 
         <br />
 
-        <span class='text-sm text-pinkish font-bold'>{html.escape(smart["client"]._name)}</span>
+        <span class='text-sm text-pinkish font-bold'>{html.escape(smart.client._name)}</span>
     </body>
     """
 
@@ -1162,7 +1169,7 @@ def handle_textDocument_publishDiagnostics(
 
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#publishDiagnosticsParams
     """
-    position_encoding = smart["client"].position_encoding()
+    position_encoding = smart.client.position_encoding()
 
     params = cast(LSPPublishDiagnosticsParams, message["params"])
 
@@ -1250,7 +1257,7 @@ def handle_notification(
     if not smart:
         return
 
-    window = find_window(smart["window"])
+    window = find_window(smart.window)
 
     if not window:
         return
@@ -1301,8 +1308,8 @@ class SmartsInputHandler(sublime_plugin.ListInputHandler):
         items = []
 
         for smart in window_running_smarts(sublime.active_window()):
-            smart_uuid = smart["uuid"]
-            smart_server_name = smart["client"]._name
+            smart_uuid = smart.uuid
+            smart_server_name = smart.client._name
 
             items.append((f"{smart_server_name} {smart_uuid}", smart_uuid))
 
@@ -1412,12 +1419,14 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
 
         global _SMARTS
         with _SMARTS_LOCK:
-            _SMARTS.append({
-                "uuid": smart_uuid,
-                "window": self.window.id(),
-                "config": server_config,
-                "client": client,
-            })
+            _SMARTS.append(
+                PgSmart(
+                    uuid=smart_uuid,
+                    window=self.window.id(),
+                    config=server_config,
+                    client=client,
+                )
+            )
 
         def callback(response: LSPResponseMessage):
             if error := response.get("error"):
@@ -1445,7 +1454,7 @@ class PgSmartsShutdownCommand(sublime_plugin.WindowCommand):
 
     def run(self, smart_uuid):
         if smart := find_smart(smart_uuid):
-            smart["client"].shutdown()
+            smart.client.shutdown()
             remove_smarts({smart_uuid})
 
 
@@ -1466,12 +1475,12 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
         minihtml = ""
 
         for smart in window_smarts(self.window):
-            client = smart["client"]
+            client = smart.client
 
             minihtml += f"<span class='text-foreground font-bold'>{html.escape(client._name)}<br /><br /></span>"
 
             # -- UUID
-            minihtml += f"<span class='text-foreground-07 text-sm'>UUID: {smart['uuid']}</span><br />"
+            minihtml += f"<span class='text-foreground-07 text-sm'>UUID: {smart.uuid}</span><br />"
 
             # -- Status
             minihtml += f"<span class='text-foreground-07 text-sm'>Status: {client.server_status().name}</span><br />"
@@ -1527,7 +1536,7 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
         if not smart:
             return
 
-        position_encoding = smart["client"].position_encoding()
+        position_encoding = smart.client.position_encoding()
 
         params = view_textDocumentPositionParams(self.view, position_encoding)
 
@@ -1554,7 +1563,7 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
                     on_cancel=restore_view,
                 )
 
-        smart["client"].textDocument_definition(params, callback)
+        smart.client.textDocument_definition(params, callback)
 
 
 class PgSmartsGotoReference(sublime_plugin.TextCommand):
@@ -1585,7 +1594,7 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
                     on_cancel=restore_view,
                 )
 
-        position_encoding = smart["client"].position_encoding()
+        position_encoding = smart.client.position_encoding()
 
         params = {
             "context": {
@@ -1594,7 +1603,7 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
             **view_textDocumentPositionParams(self.view, position_encoding),
         }
 
-        smart["client"].textDocument_references(params, callback)
+        smart.client.textDocument_references(params, callback)
 
 
 class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
@@ -1639,7 +1648,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
         if not smart:
             return
 
-        position_encoding = smart["client"].position_encoding()
+        position_encoding = smart.client.position_encoding()
 
         def callback(response: LSPResponseMessage):
             if error := response.get("error"):
@@ -1725,7 +1734,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
             "textDocument": view_textDocumentIdentifier(self.view),
         }
 
-        smart["client"].textDocument_documentSymbol(params, callback)
+        smart.client.textDocument_documentSymbol(params, callback)
 
 
 # WIP
@@ -1781,8 +1790,8 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
 
         # TODO: Support multiple Smarts
         for smart in window_running_smarts(self.window):
-            if smart["client"].support_method("workspace/symbol"):
-                smart["client"].workspace_symbol(params, callback)
+            if smart.client.support_method("workspace/symbol"):
+                smart.client.workspace_symbol(params, callback)
                 break
 
 
@@ -1859,7 +1868,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
         if not smart:
             return
 
-        position_encoding = smart["client"].position_encoding()
+        position_encoding = smart.client.position_encoding()
 
         position = position or self.view.sel()[0].begin()
 
@@ -1874,7 +1883,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
             if result := response.get("result"):
                 show_hover_popup(self.view, smart, result)
 
-        smart["client"].textDocument_hover(params, callback)
+        smart.client.textDocument_hover(params, callback)
 
 
 class PgSmartsShowSignatureHelpCommand(sublime_plugin.TextCommand):
@@ -1886,7 +1895,7 @@ class PgSmartsShowSignatureHelpCommand(sublime_plugin.TextCommand):
 
         position = position or self.view.sel()[0].begin()
 
-        position_encoding = smart["client"].position_encoding()
+        position_encoding = smart.client.position_encoding()
 
         params: LSPSignatureHelpParams = {
             **view_textDocumentPositionParams(self.view, position_encoding, position),
@@ -1905,7 +1914,7 @@ class PgSmartsShowSignatureHelpCommand(sublime_plugin.TextCommand):
             if result := response.get("result"):
                 show_signature_help_popup(self.view, smart, result)
 
-        smart["client"].textDocument_signatureHelp(params, callback)
+        smart.client.textDocument_signatureHelp(params, callback)
 
 
 class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
@@ -1915,7 +1924,7 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
         if not smart:
             return
 
-        position_encoding = smart["client"].position_encoding()
+        position_encoding = smart.client.position_encoding()
 
         params: LSPDocumentFormattingParams = {
             "textDocument": view_textDocumentIdentifier(self.view),
@@ -1943,7 +1952,7 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
                     },
                 )
 
-        smart["client"].textDocument_formatting(params, callback)
+        smart.client.textDocument_formatting(params, callback)
 
 
 class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
@@ -1964,7 +1973,7 @@ class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
                     )
             return
 
-        position_encoding = smart["client"].position_encoding()
+        position_encoding = smart.client.position_encoding()
 
         region = sublime.Region(region[0], region[1])
 
@@ -1994,7 +2003,7 @@ class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
                     },
                 )
 
-        smart["client"].textDocument_rangeFormatting(params, callback)
+        smart.client.textDocument_rangeFormatting(params, callback)
 
 
 class PgSmartsApplyEditsCommand(sublime_plugin.TextCommand):
@@ -2019,7 +2028,7 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
             return
 
         for smart in applicable_smarts(view, method="textDocument/didChange"):
-            language_client = smart["client"]
+            language_client = smart.client
 
             position_encoding = language_client.position_encoding()
 
@@ -2108,7 +2117,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
     def on_load_async(self):
         for smart in applicable_smarts(self.view, method="textDocument/didOpen"):
-            smart["client"].textDocument_didOpen({
+            smart.client.textDocument_didOpen({
                 "textDocument": view_text_document_item(self.view),
             })
 
@@ -2123,7 +2132,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
     def on_pre_close(self):
         for smart in applicable_smarts(self.view, method="textDocument/didClose"):
-            smart["client"].textDocument_didClose({
+            smart.client.textDocument_didClose({
                 "textDocument": view_textDocumentIdentifier(self.view),
             })
 
@@ -2138,7 +2147,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if not smart:
             return
 
-        position_encoding = smart["client"].position_encoding()
+        position_encoding = smart.client.position_encoding()
 
         def callback(response: LSPResponseMessage):
             if error := response.get("error"):
@@ -2183,7 +2192,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         params = view_textDocumentPositionParams(self.view, position_encoding)
 
-        smart["client"].textDocument_documentHighlight(params, callback)
+        smart.client.textDocument_documentHighlight(params, callback)
 
     def on_modified(self):
         # Erase highlights immediately.
@@ -2281,7 +2290,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         params = view_textDocumentPositionParams(self.view, locations[0])
 
-        smart["client"].textDocument_completion(params, callback)
+        smart.client.textDocument_completion(params, callback)
 
         # Return empty list immediately; completions will be shown when response arrives.
         return []
