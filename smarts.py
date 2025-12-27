@@ -791,13 +791,19 @@ def diagnostic_quick_panel_item(data) -> sublime.QuickPanelItem:
 
 
 def location_quick_panel_item(
+    window: sublime.Window,
     location: LSPLocation,
 ) -> sublime.QuickPanelItem:
     start_line = location["range"]["start"]["line"] + 1
     start_character = location["range"]["start"]["character"] + 1
 
+    path = uri_to_path(location["uri"])
+
+    if folders := window.folders():
+        path = os.path.relpath(path, folders[0])
+
     return sublime.QuickPanelItem(
-        uri_to_path(location["uri"]),
+        path,
         annotation=f"{start_line}:{start_character}",
     )
 
@@ -978,7 +984,7 @@ def capture_viewport_position(view: sublime.View) -> Callable[[], None]:
 def goto_location(
     window: sublime.Window,
     locations: List[LSPLocation],
-    item_builder: Callable[[LSPLocation], sublime.QuickPanelItem],
+    item_builder: Callable[[sublime.Window, LSPLocation], sublime.QuickPanelItem],
     on_cancel: Optional[Callable[[], None]] = None,
 ):
     if len(locations) == 1:
@@ -1007,7 +1013,7 @@ def goto_location(
             else:
                 open_location(window, locations[index])
 
-        items = [item_builder(location) for location in locations]
+        items = [item_builder(window, location) for location in locations]
 
         window.show_quick_panel(
             items,
@@ -1566,12 +1572,15 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
 
             restore_view = capture_view(self.view)
 
-            locations = [result] if isinstance(result, dict) else result
+            locations = cast(
+                List[LSPLocation],
+                [result] if isinstance(result, dict) else result,
+            )
 
             if window := self.view.window():
                 goto_location(
                     window,
-                    cast(List[LSPLocation], locations),
+                    locations,
                     location_quick_panel_item,
                     on_cancel=restore_view,
                 )
