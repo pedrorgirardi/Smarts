@@ -934,7 +934,17 @@ def open_location(
         row = location["range"]["start"]["line"] + 1
         col = location["range"]["start"]["character"] + 1
 
-        window.open_file(f"{fname}:{row}:{col}", flags)
+        view = window.open_file(f"{fname}:{row}:{col}", flags)
+
+        def select_range():
+            if view.is_loading():
+                sublime.set_timeout(select_range, 10)
+            else:
+                region = range16_to_region(view, location["range"])
+                view.sel().clear()
+                view.sel().add(region)
+
+        select_range()
 
 
 def capture_view(view: sublime.View) -> Callable[[], None]:
