@@ -1,6 +1,6 @@
 {
     "pythonVersion": "3.8",
-    "include": ["smarts.py", "smarts_client.py"],
+    "include": ["smarts.py", "lib/smarts_client.py"],
     "extraPaths": ["./typings"],
     "reportMissingImports": false,
     "reportMissingModuleSource": false,
