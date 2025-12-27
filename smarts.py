@@ -953,6 +953,32 @@ def open_location(
         select_range()
 
 
+def open_location2(
+    window: sublime.Window,
+    position_encoding: LSPPositionEncoding,
+    location: LSPLocation,
+    flags=0,
+):
+    file_path = uri_to_path(location["uri"])
+
+    if ".jar:" in file_path:
+        open_location_jar(window, location, flags)
+    else:
+        view = window.open_file(file_path, flags)
+
+        def select_range():
+            if view.is_loading():
+                sublime.set_timeout(select_range, 10)
+            else:
+                region = range_region(view, position_encoding, location["range"])
+
+                view.sel().clear()
+                view.sel().add(region)
+                view.show_at_center(region)
+
+        select_range()
+
+
 def capture_view(view: sublime.View) -> Callable[[], None]:
     regions = [region for region in view.sel()]
 
@@ -983,12 +1009,17 @@ def capture_viewport_position(view: sublime.View) -> Callable[[], None]:
 
 def goto_location(
     window: sublime.Window,
+    position_encoding: LSPPositionEncoding,
     locations: List[LSPLocation],
     item_builder: Callable[[sublime.Window, LSPLocation], sublime.QuickPanelItem],
     on_cancel: Optional[Callable[[], None]] = None,
 ):
     if len(locations) == 1:
-        open_location(window, locations[0])
+        open_location2(
+            window,
+            position_encoding=position_encoding,
+            location=locations[0],
+        )
     else:
         locations = sorted(
             locations,
@@ -1000,10 +1031,11 @@ def goto_location(
         )
 
         def on_highlight(index):
-            open_location(
+            open_location2(
                 window,
-                locations[index],
-                flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
+                position_encoding=position_encoding,
+                location=locations[index],
+                flags=sublime.TRANSIENT,
             )
 
         def on_select(index):
@@ -1011,7 +1043,11 @@ def goto_location(
                 if on_cancel:
                     on_cancel()
             else:
-                open_location(window, locations[index])
+                open_location2(
+                    window,
+                    position_encoding=position_encoding,
+                    location=locations[index],
+                )
 
         items = [item_builder(window, location) for location in locations]
 
@@ -1580,8 +1616,9 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
             if window := self.view.window():
                 goto_location(
                     window,
-                    locations,
-                    location_quick_panel_item,
+                    position_encoding=position_encoding,
+                    locations=locations,
+                    item_builder=location_quick_panel_item,
                     on_cancel=restore_view,
                 )
 
@@ -1611,8 +1648,9 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
             if window := self.view.window():
                 goto_location(
                     window,
-                    result,
-                    location_quick_panel_item,
+                    position_encoding=smart.position_encoding(),
+                    locations=result,
+                    item_builder=location_quick_panel_item,
                     on_cancel=restore_view,
                 )
 
