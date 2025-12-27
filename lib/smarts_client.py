@@ -621,11 +621,9 @@ class LanguageServerClient:
         with self._lock:
             return self._server_status == LanguageServerStatus.FAILED
 
-    def position_encoding(self) -> LSPPositionEncoding:
+    def position_encoding(self) -> Optional[LSPPositionEncoding]:
         if capabilities := self._server_capabilities:
-            return capabilities.get("positionEncoding") or "utf-16"
-
-        return "utf-16"
+            return capabilities.get("positionEncoding")
 
     def support_method(self, method: str) -> Optional[bool]:
         if not self._server_capabilities:

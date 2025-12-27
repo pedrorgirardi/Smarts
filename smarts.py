@@ -223,6 +223,9 @@ class PgSmart:
         self.config = config
         self.client = client
 
+    def position_encoding(self) -> LSPPositionEncoding:
+        return self.client.position_encoding() or "utf-16"
+
 
 # ---------------------------------------------------------------------------------------
 
@@ -1169,7 +1172,7 @@ def handle_textDocument_publishDiagnostics(
 
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#publishDiagnosticsParams
     """
-    position_encoding = smart.client.position_encoding()
+    position_encoding = smart.position_encoding()
 
     params = cast(LSPPublishDiagnosticsParams, message["params"])
 
@@ -1536,7 +1539,7 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
         if not smart:
             return
 
-        position_encoding = smart.client.position_encoding()
+        position_encoding = smart.position_encoding()
 
         params = view_textDocumentPositionParams(self.view, position_encoding)
 
@@ -1594,7 +1597,7 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
                     on_cancel=restore_view,
                 )
 
-        position_encoding = smart.client.position_encoding()
+        position_encoding = smart.position_encoding()
 
         params = {
             "context": {
@@ -1648,7 +1651,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
         if not smart:
             return
 
-        position_encoding = smart.client.position_encoding()
+        position_encoding = smart.position_encoding()
 
         def callback(response: LSPResponseMessage):
             if error := response.get("error"):
@@ -1868,7 +1871,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
         if not smart:
             return
 
-        position_encoding = smart.client.position_encoding()
+        position_encoding = smart.position_encoding()
 
         position = position or self.view.sel()[0].begin()
 
@@ -1895,7 +1898,7 @@ class PgSmartsShowSignatureHelpCommand(sublime_plugin.TextCommand):
 
         position = position or self.view.sel()[0].begin()
 
-        position_encoding = smart.client.position_encoding()
+        position_encoding = smart.position_encoding()
 
         params: LSPSignatureHelpParams = {
             **view_textDocumentPositionParams(self.view, position_encoding, position),
@@ -1924,7 +1927,7 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
         if not smart:
             return
 
-        position_encoding = smart.client.position_encoding()
+        position_encoding = smart.position_encoding()
 
         params: LSPDocumentFormattingParams = {
             "textDocument": view_textDocumentIdentifier(self.view),
@@ -1973,7 +1976,7 @@ class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
                     )
             return
 
-        position_encoding = smart.client.position_encoding()
+        position_encoding = smart.position_encoding()
 
         region = sublime.Region(region[0], region[1])
 
@@ -2147,7 +2150,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if not smart:
             return
 
-        position_encoding = smart.client.position_encoding()
+        position_encoding = smart.position_encoding()
 
         def callback(response: LSPResponseMessage):
             if error := response.get("error"):
