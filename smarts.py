@@ -901,7 +901,12 @@ def view_text_document_item(view: sublime.View) -> LSPTextDocumentItem:
     }
 
 
-def open_location_jar(window: sublime.Window, location, flags):
+def open_location_jar(
+    window: sublime.Window,
+    position_encoding: LSPPositionEncoding,
+    location: LSPLocation,
+    flags,
+):
     """
     Open JAR `fname` and call `f` with the path of the temporary file.
     """
@@ -924,36 +929,15 @@ def open_location_jar(window: sublime.Window, location, flags):
                 "range": location["range"],
             }
 
-            open_location(window, cast(LSPLocation, new_location), flags)
+            open_location(
+                window,
+                position_encoding,
+                cast(LSPLocation, new_location),
+                flags,
+            )
 
 
 def open_location(
-    window: sublime.Window,
-    location: LSPLocation,
-    flags=sublime.ENCODED_POSITION,
-):
-    fname = uri_to_path(location["uri"])
-
-    if ".jar:" in fname:
-        open_location_jar(window, location, flags)
-    else:
-        row = location["range"]["start"]["line"] + 1
-        col = location["range"]["start"]["character"] + 1
-
-        view = window.open_file(f"{fname}:{row}:{col}", flags)
-
-        def select_range():
-            if view.is_loading():
-                sublime.set_timeout(select_range, 10)
-            else:
-                region = range16_to_region(view, location["range"])
-                view.sel().clear()
-                view.sel().add(region)
-
-        select_range()
-
-
-def open_location2(
     window: sublime.Window,
     position_encoding: LSPPositionEncoding,
     location: LSPLocation,
@@ -962,7 +946,12 @@ def open_location2(
     file_path = uri_to_path(location["uri"])
 
     if ".jar:" in file_path:
-        open_location_jar(window, location, flags)
+        open_location_jar(
+            window,
+            position_encoding,
+            location,
+            flags,
+        )
     else:
         view = window.open_file(file_path, flags)
 
@@ -1015,7 +1004,7 @@ def goto_location(
     on_cancel: Optional[Callable[[], None]] = None,
 ):
     if len(locations) == 1:
-        open_location2(
+        open_location(
             window,
             position_encoding=position_encoding,
             location=locations[0],
@@ -1031,7 +1020,7 @@ def goto_location(
         )
 
         def on_highlight(index):
-            open_location2(
+            open_location(
                 window,
                 position_encoding=position_encoding,
                 location=locations[index],
@@ -1043,7 +1032,7 @@ def goto_location(
                 if on_cancel:
                     on_cancel()
             else:
-                open_location2(
+                open_location(
                     window,
                     position_encoding=position_encoding,
                     location=locations[index],
@@ -1064,7 +1053,8 @@ def goto_diagnostic(
     on_cancel: Optional[Callable[[], None]] = None,
 ):
     if len(diagnostics) == 1:
-        open_location(window, diagnostics[0])
+        # FIXME
+        open_location(window, "utf-16", diagnostics[0])
     else:
         diagnostics = sorted(
             diagnostics,
@@ -1077,8 +1067,10 @@ def goto_diagnostic(
         )
 
         def on_highlight(index):
+            # FIXME
             open_location(
                 window,
+                "utf-16",
                 diagnostics[index],
                 flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
             )
@@ -1088,7 +1080,12 @@ def goto_diagnostic(
                 if on_cancel:
                     on_cancel()
             else:
-                open_location(window, diagnostics[index])
+                # FIXME
+                open_location(
+                    window,
+                    "utf-16",
+                    diagnostics[index],
+                )
 
         window.show_quick_panel(
             [diagnostic_quick_panel_item(diagnostic) for diagnostic in diagnostics],
@@ -1815,8 +1812,10 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
                     restore_view = capture_view(view)
 
                 def on_highlight(index):
+                    # FIXME
                     open_location(
                         self.window,
+                        "utf-16",
                         result[index]["location"],
                         flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
                     )
@@ -1826,8 +1825,10 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
                         if restore_view:
                             restore_view()
                     else:
+                        # FIXME
                         open_location(
                             self.window,
+                            "utf-16",
                             result[index]["location"],
                             flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
                         )
