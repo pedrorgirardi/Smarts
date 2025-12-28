@@ -1901,6 +1901,7 @@ class PgSmartsJumpCommand(sublime_plugin.TextCommand):
         jump_loc_index = None
 
         for index, loc in enumerate(locations):
+            # FIXME
             r = range16_to_region(self.view, loc["range"])
 
             if r.contains(trampoline.begin()) or r.contains(trampoline.end()):
@@ -1912,9 +1913,14 @@ class PgSmartsJumpCommand(sublime_plugin.TextCommand):
                 break
 
         if jump_loc_index is not None:
-            jump_region = range16_to_region(
-                self.view, locations[jump_loc_index]["range"]
+            # FIXME
+            text_point = self.view.text_point_utf16(
+                locations[jump_loc_index]["range"]["end"]["line"],
+                locations[jump_loc_index]["range"]["end"]["character"],
+                clamp_column=True,
             )
+
+            jump_region = sublime.Region(text_point, text_point)
 
             self.view.sel().clear()
             self.view.sel().add(jump_region)
