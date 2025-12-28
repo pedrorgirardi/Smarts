@@ -931,9 +931,10 @@ def open_location_jar(
 
             open_location(
                 window,
-                position_encoding,
-                cast(LSPLocation, new_location),
-                flags,
+                position_encoding=position_encoding,
+                location=cast(LSPLocation, new_location),
+                empty_region=True,
+                flags=flags,
             )
 
 
@@ -941,6 +942,7 @@ def open_location(
     window: sublime.Window,
     position_encoding: LSPPositionEncoding,
     location: LSPLocation,
+    empty_region: Optional[bool] = False,
     flags=0,
 ):
     file_path = uri_to_path(location["uri"])
@@ -961,9 +963,21 @@ def open_location(
             else:
                 region = range_region(view, position_encoding, location["range"])
 
+                show_at_center_region = (
+                    sublime.Region(
+                        region.end(),
+                        region.end(),
+                    )
+                    if empty_region
+                    else sublime.Region(
+                        region.end(),
+                        region.begin(),
+                    )
+                )
+
                 view.sel().clear()
-                view.sel().add(region)
-                view.show_at_center(region)
+                view.sel().add(show_at_center_region)
+                view.show_at_center(show_at_center_region)
 
         select_range()
 
@@ -1008,6 +1022,7 @@ def goto_location(
             window,
             position_encoding=position_encoding,
             location=locations[0],
+            empty_region=True,
         )
     else:
         locations = sorted(
@@ -1036,6 +1051,7 @@ def goto_location(
                     window,
                     position_encoding=position_encoding,
                     location=locations[index],
+                    empty_region=True,
                 )
 
         items = [item_builder(window, location) for location in locations]
@@ -1054,7 +1070,12 @@ def goto_diagnostic(
 ):
     if len(diagnostics) == 1:
         # FIXME
-        open_location(window, "utf-16", diagnostics[0])
+        open_location(
+            window,
+            position_encoding="utf-16",
+            location=diagnostics[0],
+            empty_region=True,
+        )
     else:
         diagnostics = sorted(
             diagnostics,
@@ -1070,8 +1091,8 @@ def goto_diagnostic(
             # FIXME
             open_location(
                 window,
-                "utf-16",
-                diagnostics[index],
+                position_encoding="utf-16",
+                location=diagnostics[index],
                 flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
             )
 
@@ -1083,8 +1104,9 @@ def goto_diagnostic(
                 # FIXME
                 open_location(
                     window,
-                    "utf-16",
-                    diagnostics[index],
+                    position_encoding="utf-16",
+                    location=diagnostics[index],
+                    empty_region=True,
                 )
 
         window.show_quick_panel(
@@ -1818,8 +1840,8 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
                     # FIXME
                     open_location(
                         self.window,
-                        "utf-16",
-                        result[index]["location"],
+                        position_encoding="utf-16",
+                        location=result[index]["location"],
                         flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
                     )
 
@@ -1831,8 +1853,9 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
                         # FIXME
                         open_location(
                             self.window,
-                            "utf-16",
-                            result[index]["location"],
+                            position_encoding="utf-16",
+                            location=result[index]["location"],
+                            empty_region=True,
                             flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
                         )
 
