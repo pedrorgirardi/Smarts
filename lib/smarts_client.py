@@ -566,12 +566,16 @@ LSPNotificationHandler = Callable[[LSPNotificationMessage], None]
 # These callbacks receive the extracted, typed result instead of the raw LSPResponseMessage.
 # If the request fails (error response or null result), callback receives None.
 LSPHoverResultCallback = Callable[[Optional[Dict[str, Any]]], None]
-LSPDefinitionResultCallback = Callable[[Optional[Union[LSPLocation, List[LSPLocation]]]], None]
+LSPDefinitionResultCallback = Callable[
+    [Optional[Union[LSPLocation, List[LSPLocation]]]], None
+]
 LSPReferencesResultCallback = Callable[[Optional[List[LSPLocation]]], None]
 LSPDocumentHighlightResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
 LSPDocumentSymbolResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
 LSPFormattingResultCallback = Callable[[Optional[List[LSPTextEdit]]], None]
-LSPCompletionResultCallback = Callable[[Optional[Union[List[LSPCompletionItem], Dict[str, Any]]]], None]
+LSPCompletionResultCallback = Callable[
+    [Optional[Union[List[LSPCompletionItem], Dict[str, Any]]]], None
+]
 LSPSignatureHelpResultCallback = Callable[[Optional[LSPSignatureHelp]], None]
 LSPWorkspaceSymbolResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
 LSPRenameResultCallback = Callable[[Optional[LSPWorkspaceEdit]], None]
@@ -1507,7 +1511,7 @@ class LanguageServerClient:
     def textDocument_hover(
         self,
         params: LSPTextDocumentPositionParams,
-        callback: LSPHoverResultCallback,
+        on_result: LSPHoverResultCallback,
         on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
@@ -1521,7 +1525,7 @@ class LanguageServerClient:
 
         self._put(
             request("textDocument/hover", params),
-            self._wrap_result_callback(callback, on_error),
+            self._wrap_result_callback(on_result, on_error),
         )
 
     def textDocument_definition(
