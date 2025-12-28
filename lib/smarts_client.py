@@ -562,6 +562,20 @@ def textDocumentSyncOptions(
 # Type alias for notification handlers
 LSPNotificationHandler = Callable[[LSPNotificationMessage], None]
 
+# Type aliases for typed LSP result callbacks
+# These callbacks receive the extracted, typed result instead of the raw LSPResponseMessage.
+# If the request fails (error response or null result), callback receives None.
+LSPHoverResultCallback = Callable[[Optional[Dict[str, Any]]], None]
+LSPDefinitionResultCallback = Callable[[Optional[Union[LSPLocation, List[LSPLocation]]]], None]
+LSPReferencesResultCallback = Callable[[Optional[List[LSPLocation]]], None]
+LSPDocumentHighlightResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
+LSPDocumentSymbolResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
+LSPFormattingResultCallback = Callable[[Optional[List[LSPTextEdit]]], None]
+LSPCompletionResultCallback = Callable[[Optional[Union[List[LSPCompletionItem], Dict[str, Any]]]], None]
+LSPSignatureHelpResultCallback = Callable[[Optional[LSPSignatureHelp]], None]
+LSPWorkspaceSymbolResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
+LSPRenameResultCallback = Callable[[Optional[LSPWorkspaceEdit]], None]
+
 
 class LanguageServerStatus(Enum):
     """Represents the lifecycle state of the language server.
@@ -1055,6 +1069,44 @@ class LanguageServerClient:
                 if callback:
                     self._request_callback[message_id] = callback
 
+    def _wrap_result_callback(
+        self,
+        callback: Callable[[Optional[Any]], None],
+        on_error: Optional[Callable[[LSPResponseError], None]] = None,
+    ) -> Callable[[LSPResponseMessage], None]:
+        """
+        Wraps a typed result callback to handle LSPResponseMessage extraction.
+
+        This wrapper:
+        1. Extracts the result from the LSPResponseMessage
+        2. Handles errors (either via on_error callback or logging)
+        3. Calls the user's callback with the typed result or None
+
+        Args:
+            callback: User callback that receives the typed result or None
+            on_error: Optional callback for handling errors. If not provided, errors are logged.
+
+        Returns:
+            A callback that accepts LSPResponseMessage
+        """
+
+        def wrapper(response: LSPResponseMessage) -> None:
+            if error := response.get("error"):
+                if on_error:
+                    on_error(error)
+                else:
+                    # Default error logging
+                    self._logger.error(
+                        f"[{self._name}] LSP error: code={error.get('code')}, "
+                        f"message={error.get('message')}, data={error.get('data')}"
+                    )
+                callback(None)
+            else:
+                result = response.get("result")
+                callback(result)
+
+        return wrapper
+
     def initialize(
         self,
         params,
@@ -1455,49 +1507,68 @@ class LanguageServerClient:
     def textDocument_hover(
         self,
         params: LSPTextDocumentPositionParams,
-        callback: Callable[[LSPResponseMessage], None],
+        callback: LSPHoverResultCallback,
+        on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
         The hover request is sent from the client to the server to request
         hover information at a given text document position.
 
+        Response result: Hover | null
+
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_hover
         """
 
-        self._put(request("textDocument/hover", params), callback)
+        self._put(
+            request("textDocument/hover", params),
+            self._wrap_result_callback(callback, on_error),
+        )
 
     def textDocument_definition(
         self,
         params: LSPTextDocumentPositionParams,
-        callback: Callable[[LSPResponseMessage], None],
+        callback: LSPDefinitionResultCallback,
+        on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
         The go to definition request is sent from the client to the server
         to resolve the definition location of a symbol at a given text document position.
 
+        Response result: Location | Location[] | null
+
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_definition
         """
 
-        self._put(request("textDocument/definition", params), callback)
+        self._put(
+            request("textDocument/definition", params),
+            self._wrap_result_callback(callback, on_error),
+        )
 
     def textDocument_references(
         self,
         params,
-        callback: Callable[[LSPResponseMessage], None],
+        callback: LSPReferencesResultCallback,
+        on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
         The references request is sent from the client to the server
         to resolve project-wide references for the symbol denoted by the given text document position.
 
+        Response result: Location[] | null
+
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_references
         """
 
-        self._put(request("textDocument/references", params), callback)
+        self._put(
+            request("textDocument/references", params),
+            self._wrap_result_callback(callback, on_error),
+        )
 
     def textDocument_documentHighlight(
         self,
         params: LSPTextDocumentPositionParams,
-        callback: Callable[[LSPResponseMessage], None],
+        callback: LSPDocumentHighlightResultCallback,
+        on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
         The document highlight request is sent from the client to
@@ -1505,89 +1576,131 @@ class LanguageServerClient:
 
         For programming languages this usually highlights all references to the symbol scoped to this file.
 
+        Response result: DocumentHighlight[] | null
+
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentHighlight
         """
 
-        self._put(request("textDocument/documentHighlight", params), callback)
+        self._put(
+            request("textDocument/documentHighlight", params),
+            self._wrap_result_callback(callback, on_error),
+        )
 
     def textDocument_documentSymbol(
         self,
         params,
-        callback: Callable[[LSPResponseMessage], None],
+        callback: LSPDocumentSymbolResultCallback,
+        on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
         The document symbol request is sent from the client to the server.
 
+        Response result: DocumentSymbol[] | SymbolInformation[] | null
+
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
         """
 
-        self._put(request("textDocument/documentSymbol", params), callback)
+        self._put(
+            request("textDocument/documentSymbol", params),
+            self._wrap_result_callback(callback, on_error),
+        )
 
     def textDocument_formatting(
         self,
         params: LSPDocumentFormattingParams,
-        callback: Callable[[LSPResponseMessage], None],
+        callback: LSPFormattingResultCallback,
+        on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
         The document formatting request is sent from the client to the server to format a whole document.
 
+        Response result: TextEdit[] | null
+
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_formatting
         """
-        self._put(request("textDocument/formatting", params), callback)
+        self._put(
+            request("textDocument/formatting", params),
+            self._wrap_result_callback(callback, on_error),
+        )
 
     def textDocument_rangeFormatting(
         self,
         params,
-        callback: Callable[[LSPResponseMessage], None],
+        callback: LSPFormattingResultCallback,
+        on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
         The document range formatting request is sent from the client to the server to format a specific range in a document.
 
+        Response result: TextEdit[] | null
+
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#documentRangeFormattingParams
         """
-        self._put(request("textDocument/rangeFormatting", params), callback)
+        self._put(
+            request("textDocument/rangeFormatting", params),
+            self._wrap_result_callback(callback, on_error),
+        )
 
     def textDocument_completion(
         self,
         params: LSPTextDocumentPositionParams,
-        callback: Callable[[LSPResponseMessage], None],
+        callback: LSPCompletionResultCallback,
+        on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
         The completion request is sent from the client to the server to compute completion items at a given cursor position.
 
+        Response result: CompletionItem[] | CompletionList | null
+
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_completion
         """
-        self._put(request("textDocument/completion", params), callback)
+        self._put(
+            request("textDocument/completion", params),
+            self._wrap_result_callback(callback, on_error),
+        )
 
     def textDocument_signatureHelp(
         self,
         params: LSPSignatureHelpParams,
-        callback: Callable[[LSPResponseMessage], None],
+        callback: LSPSignatureHelpResultCallback,
+        on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
         The signature help request is sent from the client to the server to request signature information at a given cursor position.
 
+        Response result: SignatureHelp | null
+
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_signatureHelp
         """
-        self._put(request("textDocument/signatureHelp", params), callback)
+        self._put(
+            request("textDocument/signatureHelp", params),
+            self._wrap_result_callback(callback, on_error),
+        )
 
     def workspace_symbol(
         self,
         params: LSPWorkspaceSymbolParams,
-        callback: Callable[[LSPResponseMessage], None],
+        callback: LSPWorkspaceSymbolResultCallback,
+        on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
         The workspace symbol request is sent from the client to the server to list project-wide symbols matching the query string.
 
+        Response result: SymbolInformation[] | WorkspaceSymbol[] | null
+
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspace_symbol
         """
 
-        self._put(request("workspace/symbol", params), callback)
+        self._put(
+            request("workspace/symbol", params),
+            self._wrap_result_callback(callback, on_error),
+        )
 
     def textDocument_rename(
         self,
         params: LSPRenameParams,
-        callback: Callable[[LSPResponseMessage], None],
+        callback: LSPRenameResultCallback,
+        on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
         The rename request is sent from the client to the server to perform a workspace-wide rename of a symbol.
@@ -1597,4 +1710,7 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_rename
         """
 
-        self._put(request("textDocument/rename", params), callback)
+        self._put(
+            request("textDocument/rename", params),
+            self._wrap_result_callback(callback, on_error),
+        )

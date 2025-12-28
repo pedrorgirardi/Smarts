@@ -1680,18 +1680,11 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
 
         params = view_textDocumentPositionParams(self.view, position_encoding)
 
-        def callback(response: LSPResponseMessage):
-            if error := response.get("error"):
-                if window := self.view.window():
-                    panel_log_error(window, error)
-                return
+        restore_view = capture_view(self.view)
 
-            result = response.get("result")
-
+        def callback(result: Optional[Union[LSPLocation, List[LSPLocation]]]):
             if not result:
                 return
-
-            restore_view = capture_view(self.view)
 
             locations = cast(
                 List[LSPLocation],
@@ -1707,7 +1700,11 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
                     on_cancel=restore_view,
                 )
 
-        smart.client.textDocument_definition(params, callback)
+        def on_error(error: LSPResponseError):
+            if window := self.view.window():
+                panel_log_error(window, error)
+
+        smart.client.textDocument_definition(params, callback, on_error)
 
 
 class PgSmartsGotoReference(sublime_plugin.TextCommand):
@@ -1717,29 +1714,26 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
         if not smart:
             return
 
-        def callback(response: LSPResponseMessage):
-            if error := response.get("error"):
-                if window := self.view.window():
-                    panel_log_error(window, error)
-                return
+        position_encoding = smart.position_encoding()
 
-            result = response.get("result")
+        restore_view = capture_view(self.view)
 
+        def callback(result: Optional[List[LSPLocation]]):
             if not result:
                 return
-
-            restore_view = capture_view(self.view)
 
             if window := self.view.window():
                 goto_location(
                     window,
-                    position_encoding=smart.position_encoding(),
+                    position_encoding=position_encoding,
                     locations=result,
                     item_builder=location_quick_panel_item,
                     on_cancel=restore_view,
                 )
 
-        position_encoding = smart.position_encoding()
+        def on_error(error: LSPResponseError):
+            if window := self.view.window():
+                panel_log_error(window, error)
 
         params = {
             "context": {
@@ -1748,7 +1742,7 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
             **view_textDocumentPositionParams(self.view, position_encoding),
         }
 
-        smart.client.textDocument_references(params, callback)
+        smart.client.textDocument_references(params, callback, on_error)
 
 
 class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
@@ -1795,16 +1789,11 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
 
         position_encoding = smart.position_encoding()
 
-        def callback(response: LSPResponseMessage):
-            if error := response.get("error"):
-                if window := self.view.window():
-                    panel_log_error(window, error)
-                return
-
+        def callback(result: Optional[List[Dict[str, Any]]]):
             # Document Symbols Request
             # DocumentSymbol[] | SymbolInformation[] | null
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
-            if result := response.get("result"):
+            if result:
                 restore_viewport_position = capture_viewport_position(self.view)
 
                 def on_highlight(index):
@@ -1882,21 +1871,21 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
             "textDocument": view_textDocumentIdentifier(self.view),
         }
 
-        smart.client.textDocument_documentSymbol(params, callback)
+        def on_error(error: LSPResponseError):
+            if window := self.view.window():
+                panel_log_error(window, error)
+
+        smart.client.textDocument_documentSymbol(params, callback, on_error)
 
 
 # WIP
 class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
     def run(self):
-        def callback(response: LSPResponseMessage):
-            if error := response.get("error"):
-                panel_log_error(self.window, error)
-                return
-
+        def callback(result: Optional[List[Dict[str, Any]]]):
             # Workspace Symbols Request
             # SymbolInformation[] | WorkspaceSymbol[] | null
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspace_symbol
-            if result := response.get("result"):
+            if result:
                 restore_view = None
 
                 if view := self.window.active_view():
@@ -1941,10 +1930,13 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
             "query": "",
         }
 
+        def on_error(error: LSPResponseError):
+            panel_log_error(self.window, error)
+
         # TODO: Support multiple Smarts
         for smart in window_running_smarts(self.window):
             if smart.client.support_method("workspace/symbol"):
-                smart.client.workspace_symbol(params, callback)
+                smart.client.workspace_symbol(params, callback, on_error)
                 break
 
 
@@ -2039,16 +2031,15 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
 
         params = view_textDocumentPositionParams(self.view, position_encoding, position)
 
-        def callback(response: LSPResponseMessage):
-            if error := response.get("error"):
-                if window := self.view.window():
-                    panel_log_error(window, error)
-                return
-
-            if result := response.get("result"):
+        def callback(result: Optional[Dict[str, Any]]):
+            if result:
                 show_hover_popup(self.view, smart, result)
 
-        smart.client.textDocument_hover(params, callback)
+        def on_error(error: LSPResponseError):
+            if window := self.view.window():
+                panel_log_error(window, error)
+
+        smart.client.textDocument_hover(params, callback, on_error)
 
 
 class PgSmartsShowSignatureHelpCommand(sublime_plugin.TextCommand):
@@ -2075,16 +2066,15 @@ class PgSmartsShowSignatureHelpCommand(sublime_plugin.TextCommand):
             },
         )
 
-        def callback(response: LSPResponseMessage):
-            if error := response.get("error"):
-                if window := self.view.window():
-                    panel_log_error(window, error)
-                return
-
-            if result := response.get("result"):
+        def callback(result: Optional[LSPSignatureHelp]):
+            if result:
                 show_signature_help_popup(self.view, smart, result)
 
-        smart.client.textDocument_signatureHelp(params, callback)
+        def on_error(error: LSPResponseError):
+            if window := self.view.window():
+                panel_log_error(window, error)
+
+        smart.client.textDocument_signatureHelp(params, callback, on_error)
 
 
 class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
@@ -2107,13 +2097,8 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
             },
         }
 
-        def callback(response: LSPResponseMessage):
-            if error := response.get("error"):
-                if window := self.view.window():
-                    panel_log_error(window, error)
-                return
-
-            if textEdits := response.get("result"):
+        def callback(textEdits: Optional[List[LSPTextEdit]]):
+            if textEdits:
                 self.view.run_command(
                     "pg_smarts_apply_edits",
                     {
@@ -2122,7 +2107,11 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
                     },
                 )
 
-        smart.client.textDocument_formatting(params, callback)
+        def on_error(error: LSPResponseError):
+            if window := self.view.window():
+                panel_log_error(window, error)
+
+        smart.client.textDocument_formatting(params, callback, on_error)
 
 
 class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
@@ -2159,21 +2148,21 @@ class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
             },
         }
 
-        def callback(response: LSPResponseMessage):
-            if error := response.get("error"):
-                if window := self.view.window():
-                    panel_log_error(window, error)
-                return
-
-            if edits := response.get("result"):
+        def callback(edits: Optional[List[LSPTextEdit]]):
+            if edits:
                 self.view.run_command(
                     "pg_smarts_apply_edits",
                     {
+                        "position_encoding": position_encoding,
                         "edits": edits,
                     },
                 )
 
-        smart.client.textDocument_rangeFormatting(params, callback)
+        def on_error(error: LSPResponseError):
+            if window := self.view.window():
+                panel_log_error(window, error)
+
+        smart.client.textDocument_rangeFormatting(params, callback, on_error)
 
 
 class PgSmartsApplyEditsCommand(sublime_plugin.TextCommand):
@@ -2212,22 +2201,19 @@ class PgSmartsRenameCommand(sublime_plugin.TextCommand):
                 },
             )
 
-            def callback(response: LSPResponseMessage):
-                if error := response.get("error"):
-                    if window := self.view.window():
-                        panel_log_error(window, error)
-                    return
+            def callback(workspace_edit: Optional[LSPWorkspaceEdit]):
+                if workspace_edit and (window := self.view.window()):
+                    apply_workspace_edit(
+                        window,
+                        position_encoding,
+                        workspace_edit,
+                    )
 
-                if result := response.get("result"):
-                    workspace_edit = cast(LSPWorkspaceEdit, result)
-                    if window := self.view.window():
-                        apply_workspace_edit(
-                            window,
-                            position_encoding,
-                            workspace_edit,
-                        )
+            def on_error(error: LSPResponseError):
+                if window := self.view.window():
+                    panel_log_error(window, error)
 
-            smart.client.textDocument_rename(params, callback)
+            smart.client.textDocument_rename(params, callback, on_error)
 
         if window := self.view.window():
             window.show_input_panel("New Name:", current_name, on_done, None, None)
@@ -2372,14 +2358,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         position_encoding = smart.position_encoding()
 
-        def callback(response: LSPResponseMessage):
-            if error := response.get("error"):
-                if window := self.view.window():
-                    panel_log_error(window, error)
-                return
-
-            result = response.get("result")
-
+        def callback(result: Optional[List[Dict[str, Any]]]):
             if not result:
                 self.erase_highlights()
                 return
@@ -2423,7 +2402,11 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         params = view_textDocumentPositionParams(self.view, position_encoding)
 
-        smart.client.textDocument_documentHighlight(params, callback)
+        def on_error(error: LSPResponseError):
+            if window := self.view.window():
+                panel_log_error(window, error)
+
+        smart.client.textDocument_documentHighlight(params, callback, on_error)
 
     def on_modified(self):
         # Erase highlights immediately.
@@ -2500,15 +2483,11 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if not smart:
             return None
 
-        def callback(response: LSPResponseMessage):
-            if error := response.get("error"):
-                if window := self.view.window():
-                    panel_log_error(window, error)
-                return
-
+        def callback(result: Optional[Union[List[LSPCompletionItem], Dict[str, Any]]]):
             # result: CompletionItem[] | CompletionList | null
             #  If a CompletionItem[] is provided it is interpreted to be complete. So it is the same as { isIncomplete: false, items }
-            result = response.get("result", [])
+            if result is None:
+                result = []
 
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#completionList
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#completionItem
@@ -2519,9 +2498,13 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
             sublime.set_timeout(lambda: self.view.run_command("auto_complete"), 0)
 
+        def on_error(error: LSPResponseError):
+            if window := self.view.window():
+                panel_log_error(window, error)
+
         params = view_textDocumentPositionParams(self.view, locations[0])
 
-        smart.client.textDocument_completion(params, callback)
+        smart.client.textDocument_completion(params, callback, on_error)
 
         # Return empty list immediately; completions will be shown when response arrives.
         return []
