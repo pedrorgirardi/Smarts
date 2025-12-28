@@ -70,6 +70,7 @@ kOUTPUT_PANEL_NAME_PREFIXED = f"output.{kOUTPUT_PANEL_NAME}"
 
 kDIAGNOSTICS = "PG_SMARTS_DIAGNOSTICS"
 kSMARTS_HIGHLIGHTS = "PG_SMARTS_HIGHLIGHTS"
+kSMARTS_HIGHLIGHTS_POSITION_ENCODING = "PG_SMARTS_HIGHLIGHTS_POSITION_ENCODING"
 kSMARTS_COMPLETIONS = "PG_SMARTS_COMPLETIONS"
 
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnosticSeverity
@@ -1896,15 +1897,23 @@ class PgSmartsSelectCommand(sublime_plugin.TextCommand):
     def run(self, _):
         locations = self.view.settings().get(kSMARTS_HIGHLIGHTS)
 
+        position_encoding = self.view.settings().get(
+            kSMARTS_HIGHLIGHTS_POSITION_ENCODING
+        )
+
         if not locations:
             return
 
         self.view.sel().clear()
 
         for loc in locations:
-            self.view.sel().add(range16_to_region(self.view, loc["range"]))
-
-        self.view.show(self.view.sel())
+            self.view.sel().add(
+                range_region(
+                    self.view,
+                    position_encoding=position_encoding,
+                    range=loc["range"],
+                )
+            )
 
 
 class PgSmartsJumpCommand(sublime_plugin.TextCommand):
@@ -2286,7 +2295,15 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 flags=sublime.DRAW_NO_FILL if highlight_references else sublime.HIDDEN,
             )
 
-            self.view.settings().set(kSMARTS_HIGHLIGHTS, result)
+            self.view.settings().set(
+                kSMARTS_HIGHLIGHTS,
+                result,
+            )
+
+            self.view.settings().set(
+                kSMARTS_HIGHLIGHTS_POSITION_ENCODING,
+                position_encoding,
+            )
 
         params = view_textDocumentPositionParams(self.view, position_encoding)
 
