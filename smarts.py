@@ -1920,9 +1920,9 @@ class PgSmartsJumpCommand(sublime_plugin.TextCommand):
 
             if r.contains(trampoline.begin()) or r.contains(trampoline.end()):
                 if movement == "back":
-                    jump_loc_index = max([0, index - 1])
+                    jump_loc_index = max(0, index - 1)
                 elif movement == "forward":
-                    jump_loc_index = min([index + 1, len(locations) - 1])
+                    jump_loc_index = min(index + 1, len(locations) - 1)
 
                 break
 
