@@ -1722,29 +1722,33 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                 def on_highlight(index):
                     data = result[index]
 
-                    show_at_center_range = None
+                    selected_range = None
 
                     # Represents information about programming constructs like variables, classes, interfaces etc.
                     # @deprecated use DocumentSymbol or WorkspaceSymbol instead.
                     # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#symbolInformation
                     if location := data.get("location"):
-                        show_at_center_range = location["range"]
+                        selected_range = location["range"]
 
                     # The range that should be selected and revealed when this symbol is being
                     # picked, e.g. the name of a function. Must be contained by the `range`.
                     # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#documentSymbol
                     else:
-                        show_at_center_range = data["selectionRange"]
+                        selected_range = data["selectionRange"]
 
-                    show_at_center_region = range_region(
+                    selected_region = range_region(
                         self.view,
                         position_encoding,
-                        show_at_center_range,
+                        selected_range,
+                    )
+
+                    show_at_center_region = sublime.Region(
+                        selected_region.end(),
+                        selected_region.begin(),
                     )
 
                     self.view.sel().clear()
                     self.view.sel().add(show_at_center_region)
-
                     self.view.show_at_center(show_at_center_region)
 
                 def on_select(index):
@@ -1767,14 +1771,13 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                             selected_range,
                         )
 
-                        self.view.sel().clear()
-                        self.view.sel().add(selected_region)
-
                         show_at_center_region = sublime.Region(
-                            selected_region.end(),
-                            selected_region.end(),
+                            selected_region.begin(),
+                            selected_region.begin(),
                         )
 
+                        self.view.sel().clear()
+                        self.view.sel().add(show_at_center_region)
                         self.view.show_at_center(show_at_center_region)
 
                 quick_panel_items = [
