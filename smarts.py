@@ -2203,6 +2203,11 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         self.view.settings().erase(kSMARTS_HIGHLIGHTS)
 
     def highlight(self):
+        # Let Sublime Text highlight selection based on `match_selection` setting.
+        if self.view.sel().has_non_empty_region():
+            self.erase_highlights()
+            return
+
         smart = applicable_smart(self.view, method="textDocument/documentHighlight")
 
         if not smart:
