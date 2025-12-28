@@ -29,6 +29,7 @@ from .lib.smarts_client import (
     LSPPositionEncoding,
     LSPPublishDiagnosticsParams,
     LSPRange,
+    LSPRenameParams,
     LSPResponseError,
     LSPResponseMessage,
     LSPSignatureHelp,
@@ -37,7 +38,9 @@ from .lib.smarts_client import (
     LSPTextDocumentIdentifier,
     LSPTextDocumentItem,
     LSPTextDocumentPositionParams,
+    LSPTextEdit,
     LSPVersionedTextDocumentIdentifier,
+    LSPWorkspaceEdit,
     LSPWorkspaceSymbolParams,
     textDocumentSyncOptions,
 )
@@ -991,6 +994,86 @@ def capture_viewport_position(view: sublime.View) -> Callable[[], None]:
         view.set_viewport_position(viewport_position, True)
 
     return restore
+
+
+def apply_workspace_edit(
+    window: sublime.Window,
+    position_encoding: LSPPositionEncoding,
+    workspace_edit: LSPWorkspaceEdit,
+):
+    """
+    Apply a WorkspaceEdit to the workspace.
+
+    Handles both 'changes' and 'documentChanges' formats.
+    """
+    # Handle documentChanges format (preferred)
+    if document_changes := workspace_edit.get("documentChanges"):
+        for doc_edit in document_changes:
+            uri = doc_edit["textDocument"]["uri"]
+            edits = doc_edit["edits"]
+            file_path = uri_to_path(uri)
+
+            # Open the file if not already open
+            view = window.find_open_file(file_path)
+
+            if not view:
+                view = window.open_file(file_path)
+
+                # Wait for file to load
+                while view.is_loading():
+                    pass
+
+            # Apply edits in reverse order to avoid offset issues
+            # Sort edits by position (descending) so we apply from end to start
+            sorted_edits = sorted(
+                edits,
+                key=lambda e: (
+                    e["range"]["start"]["line"],
+                    e["range"]["start"]["character"],
+                ),
+                reverse=True,
+            )
+
+            view.run_command(
+                "pg_smarts_apply_edits",
+                {
+                    "position_encoding": position_encoding,
+                    "edits": sorted_edits,
+                },
+            )
+
+    # Handle changes format (older format)
+    elif changes := workspace_edit.get("changes"):
+        for uri, edits in changes.items():
+            file_path = uri_to_path(uri)
+
+            # Open the file if not already open
+            view = window.find_open_file(file_path)
+
+            if not view:
+                view = window.open_file(file_path)
+
+                # Wait for file to load
+                while view.is_loading():
+                    pass
+
+            # Apply edits in reverse order to avoid offset issues
+            sorted_edits = sorted(
+                edits,
+                key=lambda e: (
+                    e["range"]["start"]["line"],
+                    e["range"]["start"]["character"],
+                ),
+                reverse=True,
+            )
+
+            view.run_command(
+                "pg_smarts_apply_edits",
+                {
+                    "position_encoding": position_encoding,
+                    "edits": sorted_edits,
+                },
+            )
 
 
 def goto_location(
@@ -2100,6 +2183,54 @@ class PgSmartsApplyEditsCommand(sublime_plugin.TextCommand):
             edit_new_text = e["newText"]
 
             self.view.replace(edit, edit_region, edit_new_text)
+
+
+class PgSmartsRenameCommand(sublime_plugin.TextCommand):
+    def run(self, _):
+        smart = applicable_smart(self.view, method="textDocument/rename")
+
+        if not smart:
+            return
+
+        position_encoding = smart.position_encoding()
+
+        # Get the word at the current cursor position to use as placeholder
+        word_point = self.view.sel()[0].begin()
+        word_region = self.view.word(word_point)
+
+        current_name = self.view.substr(word_region)
+
+        def on_done(new_name: str):
+            if not new_name or new_name == current_name:
+                return
+
+            params = cast(
+                LSPRenameParams,
+                {
+                    **view_textDocumentPositionParams(self.view, position_encoding),
+                    "newName": new_name,
+                },
+            )
+
+            def callback(response: LSPResponseMessage):
+                if error := response.get("error"):
+                    if window := self.view.window():
+                        panel_log_error(window, error)
+                    return
+
+                if result := response.get("result"):
+                    workspace_edit = cast(LSPWorkspaceEdit, result)
+                    if window := self.view.window():
+                        apply_workspace_edit(
+                            window,
+                            position_encoding,
+                            workspace_edit,
+                        )
+
+            smart.client.textDocument_rename(params, callback)
+
+        if window := self.view.window():
+            window.show_input_panel("New Name:", current_name, on_done, None, None)
 
 
 ## -- Listeners

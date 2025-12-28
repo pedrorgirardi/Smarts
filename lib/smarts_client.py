@@ -454,6 +454,66 @@ class LSPSignatureHelp(TypedDict, total=False):
     activeParameter: Optional[int]
 
 
+class LSPTextEdit(TypedDict):
+    """
+    A textual edit applicable to a text document.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textEdit
+    """
+
+    # The range of the text document to be manipulated. To insert text into a document
+    # create a range where start === end.
+    range: LSPRange
+
+    # The string to be inserted. For delete operations use an empty string.
+    newText: str
+
+
+class LSPTextDocumentEdit(TypedDict):
+    """
+    Describes textual changes on a single text document. The text document is referred to as a
+    VersionedTextDocumentIdentifier to allow clients to check the text document version before an
+    edit is applied.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentEdit
+    """
+
+    # The text document to change.
+    textDocument: LSPVersionedTextDocumentIdentifier
+
+    # The edits to be applied.
+    edits: List[LSPTextEdit]
+
+
+class LSPWorkspaceEdit(TypedDict, total=False):
+    """
+    A workspace edit represents changes to many resources managed in the workspace.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspaceEdit
+    """
+
+    # Holds changes to existing resources.
+    changes: Dict[str, List[LSPTextEdit]]
+
+    # Depending on the client capability
+    # `workspace.workspaceEdit.resourceOperations` document changes are either
+    # an array of `TextDocumentEdit`s to express changes to n different text documents
+    # where each text document edit addresses a specific version of a text document.
+    documentChanges: List[LSPTextDocumentEdit]
+
+
+class LSPRenameParams(LSPTextDocumentPositionParams):
+    """
+    Parameters for a rename request.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#renameParams
+    """
+
+    # The new name of the symbol. If the given name is not valid the
+    # request must return a ResponseError with an appropriate message set.
+    newName: str
+
+
 # --------------------------------------------------------------------------------
 
 
@@ -649,6 +709,8 @@ class LanguageServerClient:
             return bool(self._server_capabilities.get("completionProvider"))
         elif method == "textDocument/signatureHelp":
             return bool(self._server_capabilities.get("signatureHelpProvider"))
+        elif method == "textDocument/rename":
+            return bool(self._server_capabilities.get("renameProvider"))
         elif method == "textDocument/didOpen" or method == "textDocument/didClose":
             options = textDocumentSyncOptions(
                 self._server_capabilities.get("textDocumentSync")
@@ -1521,3 +1583,18 @@ class LanguageServerClient:
         """
 
         self._put(request("workspace/symbol", params), callback)
+
+    def textDocument_rename(
+        self,
+        params: LSPRenameParams,
+        callback: Callable[[LSPResponseMessage], None],
+    ):
+        """
+        The rename request is sent from the client to the server to perform a workspace-wide rename of a symbol.
+
+        Response result: WorkspaceEdit | null
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_rename
+        """
+
+        self._put(request("textDocument/rename", params), callback)

@@ -7,7 +7,7 @@
     "Smarts": {
         "initialize": [
             {
-                "name": "Ty"
+                "name": "Pyright"
             },
             {
                 "name": "Ruff"
