@@ -786,7 +786,7 @@ def location_quick_panel_item(
         path = os.path.relpath(path, folders[0])
 
     return sublime.QuickPanelItem(
-        path,
+        str(path),
         annotation=f"{start_line}:{start_character}",
     )
 
@@ -1979,13 +1979,18 @@ class PgSmartsShowSignatureHelpCommand(sublime_plugin.TextCommand):
 
         position_encoding = smart.position_encoding()
 
-        params: LSPSignatureHelpParams = {
-            **view_textDocumentPositionParams(self.view, position_encoding, position),
-            "context": {
-                "triggerKind": 1,  # Invoked manually
-                "isRetrigger": False,
+        params = cast(
+            LSPSignatureHelpParams,
+            {
+                **view_textDocumentPositionParams(
+                    self.view, position_encoding, position
+                ),
+                "context": {
+                    "triggerKind": 1,  # Invoked manually
+                    "isRetrigger": False,
+                },
             },
-        }
+        )
 
         def callback(response: LSPResponseMessage):
             if error := response.get("error"):
