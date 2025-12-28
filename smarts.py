@@ -734,24 +734,6 @@ def region_range(
     }
 
 
-def range16_to_region(
-    view: sublime.View,
-    range16: LSPRange,
-) -> sublime.Region:
-    return sublime.Region(
-        view.text_point_utf16(
-            range16["start"]["line"],
-            range16["start"]["character"],
-            clamp_column=True,
-        ),
-        view.text_point_utf16(
-            range16["end"]["line"],
-            range16["end"]["character"],
-            clamp_column=True,
-        ),
-    )
-
-
 def range_region(
     view: sublime.View,
     position_encoding: LSPPositionEncoding,
@@ -1910,6 +1892,10 @@ class PgSmartsJumpCommand(sublime_plugin.TextCommand):
     def run(self, _, movement):
         locations = self.view.settings().get(kSMARTS_HIGHLIGHTS)
 
+        position_encoding = self.view.settings().get(
+            kSMARTS_HIGHLIGHTS_POSITION_ENCODING
+        )
+
         if not locations:
             return
 
@@ -1926,8 +1912,11 @@ class PgSmartsJumpCommand(sublime_plugin.TextCommand):
         jump_loc_index = None
 
         for index, loc in enumerate(locations):
-            # FIXME
-            r = range16_to_region(self.view, loc["range"])
+            r = range_region(
+                self.view,
+                position_encoding=position_encoding,
+                range=loc["range"],
+            )
 
             if r.contains(trampoline.begin()) or r.contains(trampoline.end()):
                 if movement == "back":
@@ -1938,18 +1927,19 @@ class PgSmartsJumpCommand(sublime_plugin.TextCommand):
                 break
 
         if jump_loc_index is not None:
-            # FIXME
-            text_point = self.view.text_point_utf16(
-                locations[jump_loc_index]["range"]["end"]["line"],
-                locations[jump_loc_index]["range"]["end"]["character"],
-                clamp_column=True,
+            jump_region = range_region(
+                self.view,
+                position_encoding=position_encoding,
+                range=locations[jump_loc_index]["range"],
             )
 
-            jump_region = sublime.Region(text_point, text_point)
+            jump_region = sublime.Region(
+                jump_region.end(),
+                jump_region.end(),
+            )
 
             self.view.sel().clear()
             self.view.sel().add(jump_region)
-
             self.view.show(jump_region)
 
 
