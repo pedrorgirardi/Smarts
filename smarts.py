@@ -1883,16 +1883,6 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
                 break
 
 
-class PgSmartsSelectRanges(sublime_plugin.TextCommand):
-    def run(self, _, ranges):
-        self.view.sel().clear()
-
-        for r in ranges:
-            self.view.sel().add(range16_to_region(self.view, r))
-
-        self.view.show(self.view.sel())
-
-
 class PgSmartsSelectCommand(sublime_plugin.TextCommand):
     def run(self, _):
         locations = self.view.settings().get(kSMARTS_HIGHLIGHTS)
