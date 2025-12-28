@@ -2022,7 +2022,7 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
 
         restore_view = capture_view(self.view)
 
-        def callback(result: Optional[Union[LSPLocation, List[LSPLocation]]]):
+        def on_result(result: Optional[Union[LSPLocation, List[LSPLocation]]]):
             if not result:
                 return
 
@@ -2044,7 +2044,7 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
             if window := self.view.window():
                 panel_log_error(window, error)
 
-        smart.client.textDocument_definition(params, callback, on_error)
+        smart.client.textDocument_definition(params, on_result, on_error)
 
 
 class PgSmartsGotoReference(sublime_plugin.TextCommand):

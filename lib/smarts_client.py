@@ -1073,9 +1073,9 @@ class LanguageServerClient:
                 if callback:
                     self._request_callback[message_id] = callback
 
-    def _wrap_result_callback(
+    def _make_callback(
         self,
-        callback: Callable[[Optional[Any]], None],
+        on_result: Callable[[Optional[Any]], None],
         on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ) -> Callable[[LSPResponseMessage], None]:
         """
@@ -1087,29 +1087,27 @@ class LanguageServerClient:
         3. Calls the user's callback with the typed result or None
 
         Args:
-            callback: User callback that receives the typed result or None
+            on_result: User callback that receives the typed result or None
             on_error: Optional callback for handling errors. If not provided, errors are logged.
 
         Returns:
             A callback that accepts LSPResponseMessage
         """
 
-        def wrapper(response: LSPResponseMessage) -> None:
+        def callback(response: LSPResponseMessage) -> None:
             if error := response.get("error"):
+                self._logger.error(
+                    f"[{self._name}] Error: code={error.get('code')}, "
+                    f"message={error.get('message')}, data={error.get('data')}"
+                )
+
                 if on_error:
                     on_error(error)
-                else:
-                    # Default error logging
-                    self._logger.error(
-                        f"[{self._name}] LSP error: code={error.get('code')}, "
-                        f"message={error.get('message')}, data={error.get('data')}"
-                    )
-                callback(None)
-            else:
-                result = response.get("result")
-                callback(result)
 
-        return wrapper
+            else:
+                on_result(response.get("result"))
+
+        return callback
 
     def initialize(
         self,
@@ -1525,13 +1523,13 @@ class LanguageServerClient:
 
         self._put(
             request("textDocument/hover", params),
-            self._wrap_result_callback(on_result, on_error),
+            self._make_callback(on_result, on_error),
         )
 
     def textDocument_definition(
         self,
         params: LSPTextDocumentPositionParams,
-        callback: LSPDefinitionResultCallback,
+        on_result: LSPDefinitionResultCallback,
         on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
@@ -1545,7 +1543,7 @@ class LanguageServerClient:
 
         self._put(
             request("textDocument/definition", params),
-            self._wrap_result_callback(callback, on_error),
+            self._make_callback(on_result, on_error),
         )
 
     def textDocument_references(
@@ -1565,7 +1563,7 @@ class LanguageServerClient:
 
         self._put(
             request("textDocument/references", params),
-            self._wrap_result_callback(callback, on_error),
+            self._make_callback(callback, on_error),
         )
 
     def textDocument_documentHighlight(
@@ -1587,7 +1585,7 @@ class LanguageServerClient:
 
         self._put(
             request("textDocument/documentHighlight", params),
-            self._wrap_result_callback(callback, on_error),
+            self._make_callback(callback, on_error),
         )
 
     def textDocument_documentSymbol(
@@ -1606,7 +1604,7 @@ class LanguageServerClient:
 
         self._put(
             request("textDocument/documentSymbol", params),
-            self._wrap_result_callback(callback, on_error),
+            self._make_callback(callback, on_error),
         )
 
     def textDocument_formatting(
@@ -1624,7 +1622,7 @@ class LanguageServerClient:
         """
         self._put(
             request("textDocument/formatting", params),
-            self._wrap_result_callback(callback, on_error),
+            self._make_callback(callback, on_error),
         )
 
     def textDocument_rangeFormatting(
@@ -1642,7 +1640,7 @@ class LanguageServerClient:
         """
         self._put(
             request("textDocument/rangeFormatting", params),
-            self._wrap_result_callback(callback, on_error),
+            self._make_callback(callback, on_error),
         )
 
     def textDocument_completion(
@@ -1660,7 +1658,7 @@ class LanguageServerClient:
         """
         self._put(
             request("textDocument/completion", params),
-            self._wrap_result_callback(callback, on_error),
+            self._make_callback(callback, on_error),
         )
 
     def textDocument_signatureHelp(
@@ -1678,7 +1676,7 @@ class LanguageServerClient:
         """
         self._put(
             request("textDocument/signatureHelp", params),
-            self._wrap_result_callback(callback, on_error),
+            self._make_callback(callback, on_error),
         )
 
     def workspace_symbol(
@@ -1697,7 +1695,7 @@ class LanguageServerClient:
 
         self._put(
             request("workspace/symbol", params),
-            self._wrap_result_callback(callback, on_error),
+            self._make_callback(callback, on_error),
         )
 
     def textDocument_rename(
@@ -1716,5 +1714,5 @@ class LanguageServerClient:
 
         self._put(
             request("textDocument/rename", params),
-            self._wrap_result_callback(callback, on_error),
+            self._make_callback(callback, on_error),
         )
