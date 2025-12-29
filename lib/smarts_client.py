@@ -575,7 +575,12 @@ LSPDefinitionResult = Union[
     None,
 ]
 
-LSPReferencesResultCallback = Callable[[Optional[List[LSPLocation]]], None]
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_references
+LSPReferencesResult = Union[
+    List[LSPLocation],
+    None,
+]
+
 LSPDocumentHighlightResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
 LSPDocumentSymbolResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
 LSPFormattingResultCallback = Callable[[Optional[List[LSPTextEdit]]], None]
@@ -1555,7 +1560,7 @@ class LanguageServerClient:
     def textDocument_references(
         self,
         params,
-        callback: LSPReferencesResultCallback,
+        on_result: Callable[[LSPReferencesResult], None],
         on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
@@ -1569,7 +1574,7 @@ class LanguageServerClient:
 
         self._put(
             request("textDocument/references", params),
-            self._make_callback(callback, on_error),
+            self._make_callback(on_result, on_error),
         )
 
     def textDocument_documentHighlight(

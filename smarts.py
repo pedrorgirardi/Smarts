@@ -41,6 +41,7 @@ from .lib.smarts_client import (
     LSPPositionEncoding,
     LSPPublishDiagnosticsParams,
     LSPRange,
+    LSPReferencesResult,
     LSPRenameParams,
     LSPResponseError,
     LSPResponseMessage,
@@ -2059,7 +2060,7 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
 
         restore_view = capture_view(self.view)
 
-        def callback(result: Optional[List[LSPLocation]]):
+        def on_result(result: LSPReferencesResult):
             if not result:
                 return
 
@@ -2083,7 +2084,7 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
             **view_textDocumentPositionParams(self.view, position_encoding),
         }
 
-        smart.client.textDocument_references(params, callback, on_error)
+        smart.client.textDocument_references(params, on_result, on_error)
 
 
 class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
