@@ -30,6 +30,7 @@ import sublime_plugin
 from .lib.smarts_client import (
     LanguageServerClient,
     LSPCompletionItem,
+    LSPDefinitionResult,
     LSPDiagnostic,
     LSPDidChangeTextDocumentParams,
     LSPDidOpenTextDocumentParams,
@@ -2022,7 +2023,7 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
 
         restore_view = capture_view(self.view)
 
-        def on_result(result: Optional[Union[LSPLocation, List[LSPLocation]]]):
+        def on_result(result: LSPDefinitionResult):
             if not result:
                 return
 

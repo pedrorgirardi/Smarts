@@ -87,7 +87,7 @@ class LSPResponseError(TypedDict):
     data: Optional[Any]
 
 
-class LSPResponseMessage(TypedDict):
+class LSPResponseMessage(TypedDict, total=False):
     """
     A Response Message sent as a result of a request.
 
@@ -102,7 +102,7 @@ class LSPResponseMessage(TypedDict):
 
     id: Optional[Union[int, str]]
     result: Optional[Any]
-    error: Optional[LSPResponseError]
+    error: LSPResponseError
 
 
 class LSPTextDocumentIdentifier(TypedDict):
@@ -566,9 +566,15 @@ LSPNotificationHandler = Callable[[LSPNotificationMessage], None]
 # These callbacks receive the extracted, typed result instead of the raw LSPResponseMessage.
 # If the request fails (error response or null result), callback receives None.
 LSPHoverResultCallback = Callable[[Optional[Dict[str, Any]]], None]
-LSPDefinitionResultCallback = Callable[
-    [Optional[Union[LSPLocation, List[LSPLocation]]]], None
+
+
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_definition
+LSPDefinitionResult = Union[
+    LSPLocation,
+    List[LSPLocation],
+    None,
 ]
+
 LSPReferencesResultCallback = Callable[[Optional[List[LSPLocation]]], None]
 LSPDocumentHighlightResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
 LSPDocumentSymbolResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
@@ -1529,7 +1535,7 @@ class LanguageServerClient:
     def textDocument_definition(
         self,
         params: LSPTextDocumentPositionParams,
-        on_result: LSPDefinitionResultCallback,
+        on_result: Callable[[LSPDefinitionResult], None],
         on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
