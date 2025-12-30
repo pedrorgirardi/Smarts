@@ -14,7 +14,6 @@ from typing import (
     Callable,
     Dict,
     List,
-    Literal,
     Optional,
     Set,
     TypedDict,
@@ -549,7 +548,7 @@ def markdown_to_minihtml(view: sublime.View, markdown: str) -> str:
                 code_content = "\n".join(code_block_lines)
 
                 # Apply basic syntax highlighting based on language
-                highlighted_code = _highlight_code(view, code_content, code_lang)
+                highlighted_code = _highlight_code(view, code_content, code_lang or "")
                 html_parts.append(
                     f'<div class="code-block"><pre>{highlighted_code}</pre></div>'
                 )
@@ -1657,11 +1656,14 @@ def handle_textDocument_publishDiagnostics(
 
     # Including URI to a Diagnostic make it equivalent to a Location - `uri` and `range`.
     # (Anything that works with a Location also works with this Diagnostic.)
-    diagnostics: List[PgSmartsDiagnostic] = [
-        {
-            "uri": params["uri"],
-            **diagnostic,
-        }
+    diagnostics = [
+        cast(
+            PgSmartsDiagnostic,
+            {
+                "uri": params["uri"],
+                **diagnostic,
+            },
+        )
         for diagnostic in params["diagnostics"]
     ]
 
@@ -2566,7 +2568,12 @@ class PgSmartsRenameCommand(sublime_plugin.TextCommand):
 
 class PgSmartsTextListener(sublime_plugin.TextChangeListener):
     def on_text_changed_async(self, changes):
-        view = self.buffer.primary_view()
+        buffer = self.buffer
+
+        if not buffer:
+            return
+
+        view = buffer.primary_view()
 
         view_file_name = view.file_name()
 
@@ -2609,9 +2616,12 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
             # Documents are synced by always sending the full content of the document.
             if textDocumentSync["change"] == 1:
                 contentChanges = [
-                    {
-                        "text": view.substr(sublime.Region(0, view.size())),
-                    }
+                    cast(
+                        LSPTextDocumentContentChangeEvent,
+                        {
+                            "text": view.substr(sublime.Region(0, view.size())),
+                        },
+                    )
                 ]
 
             # Incremental
@@ -2621,26 +2631,31 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
                 contentChanges = []
 
                 for change in changes:
-                    contentChanges.append({
-                        "range": {
-                            "start": {
-                                "line": change.a.row,
-                                "character": change.a.col_utf8
+                    contentChanges.append(
+                        cast(
+                            LSPTextDocumentContentChangeEvent,
+                            {
+                                "range": {
+                                    "start": {
+                                        "line": change.a.row,
+                                        "character": change.a.col_utf8
+                                        if position_encoding == "utf-8"
+                                        else change.a.col_utf16,
+                                    },
+                                    "end": {
+                                        "line": change.b.row,
+                                        "character": change.b.col_utf8
+                                        if position_encoding == "utf-8"
+                                        else change.b.col_utf16,
+                                    },
+                                },
+                                "rangeLength": change.len_utf8
                                 if position_encoding == "utf-8"
-                                else change.a.col_utf16,
+                                else change.len_utf16,
+                                "text": change.str,
                             },
-                            "end": {
-                                "line": change.b.row,
-                                "character": change.b.col_utf8
-                                if position_encoding == "utf-8"
-                                else change.b.col_utf16,
-                            },
-                        },
-                        "rangeLength": change.len_utf8
-                        if position_encoding == "utf-8"
-                        else change.len_utf16,
-                        "text": change.str,
-                    })
+                        )
+                    )
 
             params: LSPDidChangeTextDocumentParams = {
                 "textDocument": textDocument,
