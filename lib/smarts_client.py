@@ -1108,8 +1108,7 @@ class LanguageServerClient:
         def callback(response: LSPResponseMessage) -> None:
             if error := response.get("error"):
                 self._logger.error(
-                    f"[{self._name}] Error: code={error.get('code')}, "
-                    f"message={error.get('message')}, data={error.get('data')}"
+                    f"[{self._name}] Error: code={error.get('code')}, message={error.get('message')}, data={error.get('data')}"
                 )
 
                 if on_error:
@@ -1602,7 +1601,7 @@ class LanguageServerClient:
     def textDocument_documentSymbol(
         self,
         params,
-        callback: LSPDocumentSymbolResultCallback,
+        on_result: LSPDocumentSymbolResultCallback,
         on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
@@ -1615,7 +1614,7 @@ class LanguageServerClient:
 
         self._put(
             request("textDocument/documentSymbol", params),
-            self._make_callback(callback, on_error),
+            self._make_callback(on_result, on_error),
         )
 
     def textDocument_formatting(

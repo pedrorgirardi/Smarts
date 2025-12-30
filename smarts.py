@@ -2133,7 +2133,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
 
         position_encoding = smart.position_encoding()
 
-        def callback(result: Optional[List[Dict[str, Any]]]):
+        def on_result(result: Optional[List[Dict[str, Any]]]):
             # Document Symbols Request
             # DocumentSymbol[] | SymbolInformation[] | null
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
@@ -2205,7 +2205,12 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                     document_symbol_quick_panel_item(data) for data in result
                 ]
 
-                self.view.window().show_quick_panel(
+                window = self.view.window()
+
+                if not window:
+                    return
+
+                window.show_quick_panel(
                     quick_panel_items,
                     on_select,
                     on_highlight=on_highlight,
@@ -2219,7 +2224,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
             if window := self.view.window():
                 panel_log_error(window, error)
 
-        smart.client.textDocument_documentSymbol(params, callback, on_error)
+        smart.client.textDocument_documentSymbol(params, on_result, on_error)
 
 
 # WIP
