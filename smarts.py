@@ -2230,7 +2230,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
 # WIP
 class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
     def run(self):
-        def callback(result: Optional[List[Dict[str, Any]]]):
+        def on_result(result: Optional[List[Dict[str, Any]]]):
             # Workspace Symbols Request
             # SymbolInformation[] | WorkspaceSymbol[] | null
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspace_symbol
@@ -2285,7 +2285,7 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
         # TODO: Support multiple Smarts
         for smart in window_running_smarts(self.window):
             if smart.client.support_method("workspace/symbol"):
-                smart.client.workspace_symbol(params, callback, on_error)
+                smart.client.workspace_symbol(params, on_result, on_error)
                 break
 
 
@@ -2415,7 +2415,7 @@ class PgSmartsShowSignatureHelpCommand(sublime_plugin.TextCommand):
             },
         )
 
-        def callback(result: Optional[LSPSignatureHelp]):
+        def on_result(result: Optional[LSPSignatureHelp]):
             if result:
                 show_signature_help_popup(self.view, smart, result)
 
@@ -2423,7 +2423,7 @@ class PgSmartsShowSignatureHelpCommand(sublime_plugin.TextCommand):
             if window := self.view.window():
                 panel_log_error(window, error)
 
-        smart.client.textDocument_signatureHelp(params, callback, on_error)
+        smart.client.textDocument_signatureHelp(params, on_result, on_error)
 
 
 class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
@@ -2446,7 +2446,7 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
             },
         }
 
-        def callback(textEdits: Optional[List[LSPTextEdit]]):
+        def on_result(textEdits: Optional[List[LSPTextEdit]]):
             if textEdits:
                 self.view.run_command(
                     "pg_smarts_apply_edits",
@@ -2460,7 +2460,7 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
             if window := self.view.window():
                 panel_log_error(window, error)
 
-        smart.client.textDocument_formatting(params, callback, on_error)
+        smart.client.textDocument_formatting(params, on_result, on_error)
 
 
 class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
@@ -2497,7 +2497,7 @@ class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
             },
         }
 
-        def callback(edits: Optional[List[LSPTextEdit]]):
+        def on_result(edits: Optional[List[LSPTextEdit]]):
             if edits:
                 self.view.run_command(
                     "pg_smarts_apply_edits",
@@ -2511,7 +2511,7 @@ class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
             if window := self.view.window():
                 panel_log_error(window, error)
 
-        smart.client.textDocument_rangeFormatting(params, callback, on_error)
+        smart.client.textDocument_rangeFormatting(params, on_result, on_error)
 
 
 class PgSmartsApplyEditsCommand(sublime_plugin.TextCommand):
@@ -2550,7 +2550,7 @@ class PgSmartsRenameCommand(sublime_plugin.TextCommand):
                 },
             )
 
-            def callback(workspace_edit: Optional[LSPWorkspaceEdit]):
+            def on_result(workspace_edit: Optional[LSPWorkspaceEdit]):
                 if workspace_edit and (window := self.view.window()):
                     apply_workspace_edit(
                         window,
@@ -2562,7 +2562,7 @@ class PgSmartsRenameCommand(sublime_plugin.TextCommand):
                 if window := self.view.window():
                     panel_log_error(window, error)
 
-            smart.client.textDocument_rename(params, callback, on_error)
+            smart.client.textDocument_rename(params, on_result, on_error)
 
         if window := self.view.window():
             window.show_input_panel("New Name:", current_name, on_done, None, None)
@@ -2720,7 +2720,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         position_encoding = smart.position_encoding()
 
-        def callback(result: Optional[List[Dict[str, Any]]]):
+        def on_result(result: Optional[List[Dict[str, Any]]]):
             if not result:
                 self.erase_highlights()
                 return
@@ -2768,7 +2768,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             if window := self.view.window():
                 panel_log_error(window, error)
 
-        smart.client.textDocument_documentHighlight(params, callback, on_error)
+        smart.client.textDocument_documentHighlight(params, on_result, on_error)
 
     def on_modified(self):
         # Erase highlights immediately.
@@ -2845,7 +2845,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if not smart:
             return None
 
-        def callback(result: Optional[Union[List[LSPCompletionItem], Dict[str, Any]]]):
+        def on_result(result: Optional[Union[List[LSPCompletionItem], Dict[str, Any]]]):
             # result: CompletionItem[] | CompletionList | null
             #  If a CompletionItem[] is provided it is interpreted to be complete. So it is the same as { isIncomplete: false, items }
             if result is None:
@@ -2866,7 +2866,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         params = view_textDocumentPositionParams(self.view, locations[0])
 
-        smart.client.textDocument_completion(params, callback, on_error)
+        smart.client.textDocument_completion(params, on_result, on_error)
 
         # Return empty list immediately; completions will be shown when response arrives.
         return []
