@@ -50,19 +50,15 @@ from .lib.smarts_client import (
 
 # -- Logging
 
-logging_formatter = logging.Formatter(fmt="[{name}] {levelname} {message}", style="{")
+logging_formatter = logging.Formatter(fmt="[{name}] [{threadName}] {levelname} {message}", style="{")
 
 # Handler to log on the Console.
 console_logging_handler = logging.StreamHandler()
 console_logging_handler.setFormatter(logging_formatter)
 
-# Logger used to log 'everything-plugin' - except LSP stuff. (See logger below)
+# Logger used to log 'everything-plugin'.
 plugin_logger = logging.getLogger(__package__)
 plugin_logger.propagate = False
-
-# Logger used by the LSP client.
-client_logger = logging.getLogger(f"{__package__}.Client")
-client_logger.propagate = False
 
 # ---------------------------------------------------------------------------------------
 
@@ -1883,7 +1879,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             handle_notification(smart_uuid, message)
 
         client = LanguageServerClient(
-            logger=client_logger,
+            logger=plugin_logger,
             name=server_config["name"],
             server_args=server_config["start"],
             on_logTrace=_on_receive_notification,
@@ -2885,10 +2881,6 @@ class PgSmartsListener(sublime_plugin.EventListener):
 def plugin_loaded():
     plugin_logger.addHandler(console_logging_handler)
     plugin_logger.setLevel(settings().get("logger.plugin.level", "INFO"))
-
-    client_logger.addHandler(console_logging_handler)
-    client_logger.setLevel(settings().get("logger.client.level", "INFO"))
-
     plugin_logger.debug("Plugin loaded")
 
     initialize_project_smarts(sublime.active_window())
@@ -2900,4 +2892,3 @@ def plugin_unloaded():
     shutdown_smarts(sublime.active_window())
 
     plugin_logger.removeHandler(console_logging_handler)
-    client_logger.removeHandler(console_logging_handler)
