@@ -9,17 +9,7 @@ import threading
 import uuid
 from itertools import groupby
 from pathlib import Path
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Set,
-    TypedDict,
-    Union,
-    cast,
-)
+from typing import Any, Callable, Dict, List, Optional, Set, TypedDict, Union, cast
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
@@ -34,6 +24,7 @@ from .lib.smarts_client import (
     LSPDidChangeTextDocumentParams,
     LSPDidOpenTextDocumentParams,
     LSPDocumentFormattingParams,
+    LSPDocumentSymbolResult,
     LSPLocation,
     LSPNotificationMessage,
     LSPPosition,
@@ -2133,7 +2124,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
 
         position_encoding = smart.position_encoding()
 
-        def on_result(result: Optional[List[Dict[str, Any]]]):
+        def on_result(result: LSPDocumentSymbolResult):
             # Document Symbols Request
             # DocumentSymbol[] | SymbolInformation[] | null
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol

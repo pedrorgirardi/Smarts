@@ -316,6 +316,119 @@ class LSPWorkspaceSymbolParams(TypedDict):
     query: str
 
 
+# A symbol kind.
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#symbolKind
+LSPSymbolKind = Literal[
+    1,   # File
+    2,   # Module
+    3,   # Namespace
+    4,   # Package
+    5,   # Class
+    6,   # Method
+    7,   # Property
+    8,   # Field
+    9,   # Constructor
+    10,  # Enum
+    11,  # Interface
+    12,  # Function
+    13,  # Variable
+    14,  # Constant
+    15,  # String
+    16,  # Number
+    17,  # Boolean
+    18,  # Array
+    19,  # Object
+    20,  # Key
+    21,  # Null
+    22,  # EnumMember
+    23,  # Struct
+    24,  # Event
+    25,  # Operator
+    26,  # TypeParameter
+]
+
+
+# Symbol tags are extra annotations that tweak the rendering of a symbol.
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#symbolTag
+LSPSymbolTag = Literal[
+    1,  # Deprecated - Render a symbol as obsolete, usually using a strike-out.
+]
+
+
+class LSPDocumentSymbol(TypedDict, total=False):
+    """
+    Represents programming constructs like variables, classes, interfaces etc.
+    that appear in a document. Document symbols can be hierarchical and they
+    have two ranges: one that encloses its definition and one that points to
+    its most interesting range, e.g. the range of an identifier.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#documentSymbol
+    """
+
+    # The name of this symbol. Will be displayed in the user interface and
+    # therefore must not be an empty string or a string only consisting of white spaces.
+    name: str
+
+    # More detail for this symbol, e.g the signature of a function.
+    detail: str
+
+    # The kind of this symbol.
+    kind: LSPSymbolKind
+
+    # Tags for this document symbol.
+    # @since 3.16.0
+    tags: List[LSPSymbolTag]
+
+    # Indicates if this symbol is deprecated.
+    # @deprecated Use tags instead
+    deprecated: bool
+
+    # The range enclosing this symbol not including leading/trailing whitespace
+    # but everything else like comments. This information is typically used to
+    # determine if the clients cursor is inside the symbol to reveal in the symbol in the UI.
+    range: LSPRange
+
+    # The range that should be selected and revealed when this symbol is being picked,
+    # e.g the name of a function. Must be contained by the `range`.
+    selectionRange: LSPRange
+
+    # Children of this symbol, e.g. properties of a class.
+    children: List["LSPDocumentSymbol"]
+
+
+class LSPSymbolInformation(TypedDict, total=False):
+    """
+    Represents information about programming constructs like variables, classes,
+    interfaces etc.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#symbolInformation
+    """
+
+    # The name of this symbol.
+    name: str
+
+    # The kind of this symbol.
+    kind: LSPSymbolKind
+
+    # Tags for this symbol.
+    # @since 3.16.0
+    tags: List[LSPSymbolTag]
+
+    # The name of the symbol containing this symbol. This information is for
+    # user interface purposes (e.g. to render a qualifier in the user interface
+    # if necessary). It can't be used to re-infer a hierarchy for the document symbols.
+    containerName: str
+
+    # Indicates if this symbol is deprecated.
+    # @deprecated Use tags instead
+    deprecated: bool
+
+    # The location of this symbol. The location's range is used by a tool
+    # to reveal the location in the editor. If the symbol is selected in the
+    # tool the range's start information is used to position the cursor.
+    location: LSPLocation
+
+
 class LSPPublishDiagnosticsParams(TypedDict):
     """
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#publishDiagnosticsParams
@@ -581,14 +694,25 @@ LSPReferencesResult = Union[
     None,
 ]
 
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
+LSPDocumentSymbolResult = Union[
+    List[LSPDocumentSymbol],
+    List[LSPSymbolInformation],
+    None,
+]
+
 LSPDocumentHighlightResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
-LSPDocumentSymbolResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
+
 LSPFormattingResultCallback = Callable[[Optional[List[LSPTextEdit]]], None]
+
 LSPCompletionResultCallback = Callable[
     [Optional[Union[List[LSPCompletionItem], Dict[str, Any]]]], None
 ]
+
 LSPSignatureHelpResultCallback = Callable[[Optional[LSPSignatureHelp]], None]
+
 LSPWorkspaceSymbolResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
+
 LSPRenameResultCallback = Callable[[Optional[LSPWorkspaceEdit]], None]
 
 
@@ -1601,7 +1725,7 @@ class LanguageServerClient:
     def textDocument_documentSymbol(
         self,
         params,
-        on_result: LSPDocumentSymbolResultCallback,
+        on_result: Callable[[LSPDocumentSymbolResult], None],
         on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
