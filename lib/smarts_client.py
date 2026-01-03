@@ -734,6 +734,14 @@ LSPFormattingResult = Union[
 ]
 
 
+# WorkspaceEdit | null describing the modification to the workspace.
+# null should be treated the same was as WorkspaceEdit with no changes (no change was required).
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_rename
+LSPRenameResult = Union[
+    LSPWorkspaceEdit,
+    None,
+]
+
 LSPCompletionResultCallback = Callable[
     [Optional[Union[List[LSPCompletionItem], Dict[str, Any]]]], None
 ]
@@ -741,8 +749,6 @@ LSPCompletionResultCallback = Callable[
 LSPSignatureHelpResultCallback = Callable[[Optional[LSPSignatureHelp]], None]
 
 LSPWorkspaceSymbolResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
-
-LSPRenameResultCallback = Callable[[Optional[LSPWorkspaceEdit]], None]
 
 
 # --------------------------------------------------------------------------------
@@ -1909,7 +1915,7 @@ class LanguageServerClient:
     def textDocument_rename(
         self,
         params: LSPRenameParams,
-        callback: LSPRenameResultCallback,
+        on_result: Callable[[LSPRenameResult], None],
         on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
@@ -1922,5 +1928,5 @@ class LanguageServerClient:
 
         self._put(
             request("textDocument/rename", params),
-            self._make_callback(callback, on_error),
+            self._make_callback(on_result, on_error),
         )

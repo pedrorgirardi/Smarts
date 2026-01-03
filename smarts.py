@@ -37,6 +37,7 @@ from .lib.smarts_client import (
     LSPRange,
     LSPReferencesResult,
     LSPRenameParams,
+    LSPRenameResult,
     LSPResponseError,
     LSPResponseMessage,
     LSPSignatureHelp,
@@ -2543,12 +2544,12 @@ class PgSmartsRenameCommand(sublime_plugin.TextCommand):
                 },
             )
 
-            def on_result(workspace_edit: Optional[LSPWorkspaceEdit]):
-                if workspace_edit and (window := self.view.window()):
+            def on_result(result: LSPRenameResult):
+                if result and (window := self.view.window()):
                     apply_workspace_edit(
                         window,
                         position_encoding,
-                        workspace_edit,
+                        result,
                     )
 
             def on_error(error: LSPResponseError):
