@@ -1789,7 +1789,7 @@ class LanguageServerClient:
     def textDocument_documentHighlight(
         self,
         params: LSPTextDocumentPositionParams,
-        callback: Callable[[LSPDocumentHighlightResult], None],
+        on_result: Callable[[LSPDocumentHighlightResult], None],
         on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
@@ -1805,7 +1805,7 @@ class LanguageServerClient:
 
         self._put(
             request("textDocument/documentHighlight", params),
-            self._make_callback(callback, on_error),
+            self._make_callback(on_result, on_error),
         )
 
     def textDocument_documentSymbol(
@@ -1866,7 +1866,7 @@ class LanguageServerClient:
     def textDocument_completion(
         self,
         params: LSPTextDocumentPositionParams,
-        callback: LSPCompletionResultCallback,
+        on_result: LSPCompletionResultCallback,
         on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
@@ -1878,7 +1878,7 @@ class LanguageServerClient:
         """
         self._put(
             request("textDocument/completion", params),
-            self._make_callback(callback, on_error),
+            self._make_callback(on_result, on_error),
         )
 
     def textDocument_signatureHelp(
@@ -1902,7 +1902,7 @@ class LanguageServerClient:
     def workspace_symbol(
         self,
         params: LSPWorkspaceSymbolParams,
-        callback: LSPWorkspaceSymbolResultCallback,
+        on_result: LSPWorkspaceSymbolResultCallback,
         on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
@@ -1915,7 +1915,7 @@ class LanguageServerClient:
 
         self._put(
             request("workspace/symbol", params),
-            self._make_callback(callback, on_error),
+            self._make_callback(on_result, on_error),
         )
 
     def textDocument_rename(
