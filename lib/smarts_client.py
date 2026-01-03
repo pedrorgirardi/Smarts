@@ -727,7 +727,12 @@ LSPDocumentHighlightResult = Union[
     None,
 ]
 
-LSPFormattingResultCallback = Callable[[Optional[List[LSPTextEdit]]], None]
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_formatting
+LSPFormattingResult = Union[
+    List[LSPTextEdit],
+    None,
+]
+
 
 LSPCompletionResultCallback = Callable[
     [Optional[Union[List[LSPCompletionItem], Dict[str, Any]]]], None
@@ -1813,7 +1818,7 @@ class LanguageServerClient:
     def textDocument_formatting(
         self,
         params: LSPDocumentFormattingParams,
-        callback: LSPFormattingResultCallback,
+        on_result: Callable[[LSPFormattingResult], None],
         on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
@@ -1825,13 +1830,13 @@ class LanguageServerClient:
         """
         self._put(
             request("textDocument/formatting", params),
-            self._make_callback(callback, on_error),
+            self._make_callback(on_result, on_error),
         )
 
     def textDocument_rangeFormatting(
         self,
         params,
-        callback: LSPFormattingResultCallback,
+        on_result: Callable[[LSPFormattingResult], None],
         on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
@@ -1843,7 +1848,7 @@ class LanguageServerClient:
         """
         self._put(
             request("textDocument/rangeFormatting", params),
-            self._make_callback(callback, on_error),
+            self._make_callback(on_result, on_error),
         )
 
     def textDocument_completion(

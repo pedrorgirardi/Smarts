@@ -27,6 +27,7 @@ from .lib.smarts_client import (
     LSPDocumentHighlight,
     LSPDocumentHighlightResult,
     LSPDocumentSymbolResult,
+    LSPFormattingResult,
     LSPHoverResult,
     LSPLocation,
     LSPNotificationMessage,
@@ -2438,13 +2439,13 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
             },
         }
 
-        def on_result(textEdits: Optional[List[LSPTextEdit]]):
-            if textEdits:
+        def on_result(result: LSPFormattingResult):
+            if result:
                 self.view.run_command(
                     "pg_smarts_apply_edits",
                     {
                         "position_encoding": position_encoding,
-                        "edits": textEdits,
+                        "edits": result,
                     },
                 )
 
@@ -2489,13 +2490,13 @@ class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
             },
         }
 
-        def on_result(edits: Optional[List[LSPTextEdit]]):
-            if edits:
+        def on_result(result: LSPFormattingResult):
+            if result:
                 self.view.run_command(
                     "pg_smarts_apply_edits",
                     {
                         "position_encoding": position_encoding,
-                        "edits": edits,
+                        "edits": result,
                     },
                 )
 
