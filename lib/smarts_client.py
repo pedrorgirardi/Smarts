@@ -1396,7 +1396,7 @@ class LanguageServerClient:
             self._server_status = LanguageServerStatus.INITIALIZING
             self._server_process = server_process
 
-        self._logger.debug(f"Initializing {self._name} ({self._server_process.pid}) ⏳")
+        self._logger.info(f"Initializing {self._name} ({self._server_process.pid}) ⏳")
 
         # Thread responsible for handling received messages.
         self._handler = threading.Thread(
