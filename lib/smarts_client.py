@@ -473,6 +473,40 @@ class LSPSymbolInformation(TypedDict, total=False):
     location: LSPLocation
 
 
+class LSPWorkspaceSymbol(TypedDict, total=False):
+    """
+    A special workspace symbol that supports locations without a range.
+
+    Since 3.17.0
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspaceSymbol
+    """
+
+    # The name of this symbol.
+    name: str
+
+    # The kind of this symbol.
+    kind: LSPSymbolKind
+
+    # Tags for this symbol.
+    # @since 3.16.0
+    tags: List[LSPSymbolTag]
+
+    # The name of the symbol containing this symbol. This information is for
+    # user interface purposes (e.g. to render a qualifier in the user interface
+    # if necessary). It can't be used to re-infer a hierarchy for the document symbols.
+    containerName: str
+
+    # The location of this symbol. The location's range is used by a tool
+    # to reveal the location in the editor. If the symbol is selected in the
+    # tool the range's start information is used to position the cursor.
+    location: Union[LSPLocation, Dict[str, str]]
+
+    # A data entry field that is preserved on a workspace symbol between a
+    # workspace symbol request and a workspace symbol resolve request.
+    data: Any
+
+
 class LSPPublishDiagnosticsParams(TypedDict):
     """
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#publishDiagnosticsParams
