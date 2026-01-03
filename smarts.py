@@ -50,7 +50,9 @@ from .lib.smarts_client import (
 
 # -- Logging
 
-logging_formatter = logging.Formatter(fmt="[{name}] [{threadName}] {levelname} {message}", style="{")
+logging_formatter = logging.Formatter(
+    fmt="[{name}] [{threadName}] {levelname} {message}", style="{"
+)
 
 # Handler to log on the Console.
 console_logging_handler = logging.StreamHandler()

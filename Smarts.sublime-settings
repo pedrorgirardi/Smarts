@@ -1,6 +1,5 @@
 {
     "logger.plugin.level": "INFO",
-    "logger.client.level": "INFO",
 
     "editor.auto_complete": true,
     "editor.highlight_references": true,
