@@ -742,11 +742,17 @@ LSPRenameResult = Union[
     None,
 ]
 
+# Signature help represents the signature of something callable.
+# There can be multiple signature but only one active and only one active parameter.
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#signatureHelp
+LSPSignatureHelpResult = Union[
+    LSPSignatureHelp,
+    None,
+]
+
 LSPCompletionResultCallback = Callable[
     [Optional[Union[List[LSPCompletionItem], Dict[str, Any]]]], None
 ]
-
-LSPSignatureHelpResultCallback = Callable[[Optional[LSPSignatureHelp]], None]
 
 LSPWorkspaceSymbolResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
 
@@ -1878,7 +1884,7 @@ class LanguageServerClient:
     def textDocument_signatureHelp(
         self,
         params: LSPSignatureHelpParams,
-        callback: LSPSignatureHelpResultCallback,
+        on_result: Callable[[LSPSignatureHelpResult], None],
         on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
@@ -1890,7 +1896,7 @@ class LanguageServerClient:
         """
         self._put(
             request("textDocument/signatureHelp", params),
-            self._make_callback(callback, on_error),
+            self._make_callback(on_result, on_error),
         )
 
     def workspace_symbol(

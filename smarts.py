@@ -42,6 +42,7 @@ from .lib.smarts_client import (
     LSPResponseMessage,
     LSPSignatureHelp,
     LSPSignatureHelpParams,
+    LSPSignatureHelpResult,
     LSPTextDocumentContentChangeEvent,
     LSPTextDocumentIdentifier,
     LSPTextDocumentItem,
@@ -2409,7 +2410,7 @@ class PgSmartsShowSignatureHelpCommand(sublime_plugin.TextCommand):
             },
         )
 
-        def on_result(result: Optional[LSPSignatureHelp]):
+        def on_result(result: LSPSignatureHelpResult):
             if result:
                 show_signature_help_popup(self.view, smart, result)
 
