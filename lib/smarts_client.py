@@ -22,14 +22,6 @@ LSPPositionEncoding = Literal[
 ]
 
 
-class LSPMarkupContent(TypedDict):
-    # The type of the Markup
-    kind: Literal["plaintext", "markdown"]
-
-    # The content itself
-    value: str
-
-
 class LSPServerCapabilities(TypedDict, total=False):
     positionEncoding: Optional[LSPPositionEncoding]
 
@@ -209,6 +201,25 @@ class LSPMarkedString_(TypedDict):
 #
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#markedString
 LSPMarkedString = Union[str, LSPMarkedString_]
+
+
+class LSPMarkupContent(TypedDict):
+    """
+    A `MarkupContent` literal represents a string value which content is
+    interpreted base on its kind flag. Currently the protocol supports
+    `plaintext` and `markdown` as markup kinds.
+
+    Please Note* that clients might sanitize the return markdown.
+    A client could decide to remove HTML from the markdown to avoid script execution.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#markupContentInnerDefinition
+    """
+
+    # The type of the Markup
+    kind: Literal["plaintext", "markdown"]
+
+    # The content itself
+    value: str
 
 
 class LSPHover(TypedDict, total=False):
