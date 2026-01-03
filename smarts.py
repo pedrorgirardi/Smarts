@@ -19,6 +19,7 @@ import sublime_plugin
 from .lib.smarts_client import (
     LanguageServerClient,
     LSPCompletionItem,
+    LSPCompletionResult,
     LSPDefinitionResult,
     LSPDiagnostic,
     LSPDidChangeTextDocumentParams,
@@ -2840,7 +2841,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if not smart:
             return None
 
-        def on_result(result: Optional[Union[List[LSPCompletionItem], Dict[str, Any]]]):
+        def on_result(result: LSPCompletionResult):
             # result: CompletionItem[] | CompletionList | null
             #  If a CompletionItem[] is provided it is interpreted to be complete. So it is the same as { isIncomplete: false, items }
             if result is None:

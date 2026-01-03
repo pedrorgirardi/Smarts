@@ -750,9 +750,14 @@ LSPSignatureHelpResult = Union[
     None,
 ]
 
-LSPCompletionResultCallback = Callable[
-    [Optional[Union[List[LSPCompletionItem], Dict[str, Any]]]], None
+# If a CompletionItem[] is provided it is interpreted to be complete. So it is the same as { isIncomplete: false, items }
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_completion
+LSPCompletionResult = Union[
+    LSPCompletionList,
+    List[LSPCompletionItem],
+    None,
 ]
+
 
 LSPWorkspaceSymbolResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
 
@@ -1866,7 +1871,7 @@ class LanguageServerClient:
     def textDocument_completion(
         self,
         params: LSPTextDocumentPositionParams,
-        on_result: LSPCompletionResultCallback,
+        on_result: Callable[[LSPCompletionResult], None],
         on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
