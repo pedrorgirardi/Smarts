@@ -25,6 +25,7 @@ from .lib.smarts_client import (
     LSPDidOpenTextDocumentParams,
     LSPDocumentFormattingParams,
     LSPDocumentSymbolResult,
+    LSPHoverResult,
     LSPLocation,
     LSPNotificationMessage,
     LSPPosition,
@@ -2369,7 +2370,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
 
         params = view_textDocumentPositionParams(self.view, position_encoding, position)
 
-        def on_result(result: Optional[Dict[str, Any]]):
+        def on_result(result: LSPHoverResult):
             if result:
                 show_hover_popup(self.view, smart, result)
 

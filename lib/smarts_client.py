@@ -196,6 +196,25 @@ class LSPLocation(TypedDict):
     range: LSPRange
 
 
+class LSPHover(TypedDict, total=False):
+    """
+    The result of a hover request.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#hover
+    """
+
+    # The hover's content
+    contents: Union[
+        str,
+        LSPMarkupContent,
+        List[Union[LSPMarkupContent, str]],
+    ]
+
+    # An optional range is a range inside a text document
+    # that is used to visualize a hover, e.g. by changing the background color.
+    range: LSPRange
+
+
 class LSPCodeDescription(TypedDict):
     """
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#codeDescription
@@ -319,15 +338,15 @@ class LSPWorkspaceSymbolParams(TypedDict):
 # A symbol kind.
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#symbolKind
 LSPSymbolKind = Literal[
-    1,   # File
-    2,   # Module
-    3,   # Namespace
-    4,   # Package
-    5,   # Class
-    6,   # Method
-    7,   # Property
-    8,   # Field
-    9,   # Constructor
+    1,  # File
+    2,  # Module
+    3,  # Namespace
+    4,  # Package
+    5,  # Class
+    6,  # Method
+    7,  # Property
+    8,  # Field
+    9,  # Constructor
     10,  # Enum
     11,  # Interface
     12,  # Function
@@ -675,11 +694,11 @@ def textDocumentSyncOptions(
 # Type alias for notification handlers
 LSPNotificationHandler = Callable[[LSPNotificationMessage], None]
 
-# Type aliases for typed LSP result callbacks
-# These callbacks receive the extracted, typed result instead of the raw LSPResponseMessage.
-# If the request fails (error response or null result), callback receives None.
-LSPHoverResultCallback = Callable[[Optional[Dict[str, Any]]], None]
-
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_hover
+LSPHoverResult = Union[
+    LSPHover,
+    None,
+]
 
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_definition
 LSPDefinitionResult = Union[
@@ -1643,7 +1662,7 @@ class LanguageServerClient:
     def textDocument_hover(
         self,
         params: LSPTextDocumentPositionParams,
-        on_result: LSPHoverResultCallback,
+        on_result: Callable[[LSPHoverResult], None],
         on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """
