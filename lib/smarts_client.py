@@ -659,6 +659,27 @@ class LSPWorkspaceEdit(TypedDict, total=False):
     documentChanges: List[LSPTextDocumentEdit]
 
 
+class _LSPDocumentHighlightOptional(TypedDict, total=False):
+    # The highlight kind, default is DocumentHighlightKind.Text.
+    # 1: A textual occurrence.
+    # 2: Read-access of a symbol, like reading a variable.
+    # 3: Write-access of a symbol, like writing to a variable.
+    kind: Literal[1, 2, 3]
+
+
+class LSPDocumentHighlight(_LSPDocumentHighlightOptional):
+    """
+    A document highlight is a range inside a text document which deserves
+    special attention. Usually a document highlight is visualized by changing
+    the background color of its range.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#documentHighlight
+    """
+
+    # The range this highlight applies to.
+    range: LSPRange
+
+
 class LSPRenameParams(LSPTextDocumentPositionParams):
     """
     Parameters for a rename request.
@@ -669,6 +690,54 @@ class LSPRenameParams(LSPTextDocumentPositionParams):
     # The new name of the symbol. If the given name is not valid the
     # request must return a ResponseError with an appropriate message set.
     newName: str
+
+
+# Type alias for notification handlers
+LSPNotificationHandler = Callable[[LSPNotificationMessage], None]
+
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_hover
+LSPHoverResult = Union[
+    LSPHover,
+    None,
+]
+
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_definition
+LSPDefinitionResult = Union[
+    LSPLocation,
+    List[LSPLocation],
+    None,
+]
+
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_references
+LSPReferencesResult = Union[
+    List[LSPLocation],
+    None,
+]
+
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
+LSPDocumentSymbolResult = Union[
+    List[LSPDocumentSymbol],
+    List[LSPSymbolInformation],
+    None,
+]
+
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentHighlight
+LSPDocumentHighlightResult = Union[
+    List[LSPDocumentHighlight],
+    None,
+]
+
+LSPFormattingResultCallback = Callable[[Optional[List[LSPTextEdit]]], None]
+
+LSPCompletionResultCallback = Callable[
+    [Optional[Union[List[LSPCompletionItem], Dict[str, Any]]]], None
+]
+
+LSPSignatureHelpResultCallback = Callable[[Optional[LSPSignatureHelp]], None]
+
+LSPWorkspaceSymbolResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
+
+LSPRenameResultCallback = Callable[[Optional[LSPWorkspaceEdit]], None]
 
 
 # --------------------------------------------------------------------------------
@@ -714,50 +783,6 @@ def textDocumentSyncOptions(
 
     else:
         return textDocumentSync
-
-
-# Type alias for notification handlers
-LSPNotificationHandler = Callable[[LSPNotificationMessage], None]
-
-# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_hover
-LSPHoverResult = Union[
-    LSPHover,
-    None,
-]
-
-# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_definition
-LSPDefinitionResult = Union[
-    LSPLocation,
-    List[LSPLocation],
-    None,
-]
-
-# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_references
-LSPReferencesResult = Union[
-    List[LSPLocation],
-    None,
-]
-
-# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
-LSPDocumentSymbolResult = Union[
-    List[LSPDocumentSymbol],
-    List[LSPSymbolInformation],
-    None,
-]
-
-LSPDocumentHighlightResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
-
-LSPFormattingResultCallback = Callable[[Optional[List[LSPTextEdit]]], None]
-
-LSPCompletionResultCallback = Callable[
-    [Optional[Union[List[LSPCompletionItem], Dict[str, Any]]]], None
-]
-
-LSPSignatureHelpResultCallback = Callable[[Optional[LSPSignatureHelp]], None]
-
-LSPWorkspaceSymbolResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
-
-LSPRenameResultCallback = Callable[[Optional[LSPWorkspaceEdit]], None]
 
 
 class LanguageServerStatus(Enum):
@@ -1747,7 +1772,7 @@ class LanguageServerClient:
     def textDocument_documentHighlight(
         self,
         params: LSPTextDocumentPositionParams,
-        callback: LSPDocumentHighlightResultCallback,
+        callback: Callable[[LSPDocumentHighlightResult], None],
         on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """

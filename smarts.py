@@ -24,6 +24,8 @@ from .lib.smarts_client import (
     LSPDidChangeTextDocumentParams,
     LSPDidOpenTextDocumentParams,
     LSPDocumentFormattingParams,
+    LSPDocumentHighlight,
+    LSPDocumentHighlightResult,
     LSPDocumentSymbolResult,
     LSPHoverResult,
     LSPLocation,
@@ -2710,14 +2712,14 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         position_encoding = smart.position_encoding()
 
-        def on_result(result: Optional[List[Dict[str, Any]]]):
+        def on_result(result: LSPDocumentHighlightResult):
             if not result:
                 self.erase_highlights()
                 return
 
             regions = [
-                range_region(self.view, position_encoding, location["range"])
-                for location in result
+                range_region(self.view, position_encoding, highlight["range"])
+                for highlight in result
             ]
 
             # Do nothing if result regions are the same as view regions.
