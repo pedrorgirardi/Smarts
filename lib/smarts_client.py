@@ -196,6 +196,21 @@ class LSPLocation(TypedDict):
     range: LSPRange
 
 
+class LSPMarkedString_(TypedDict):
+    language: str
+    value: str
+
+
+# The pair of a language and a value is an equivalent to markdown:
+# ```${language}
+# ${value}
+# ```
+# @deprecated use MarkupContent instead.
+#
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#markedString
+LSPMarkedString = Union[str, LSPMarkedString_]
+
+
 class LSPHover(TypedDict, total=False):
     """
     The result of a hover request.
@@ -203,11 +218,10 @@ class LSPHover(TypedDict, total=False):
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#hover
     """
 
-    # The hover's content
     contents: Union[
-        str,
+        LSPMarkedString,
+        List[LSPMarkedString],
         LSPMarkupContent,
-        List[Union[LSPMarkupContent, str]],
     ]
 
     # An optional range is a range inside a text document
