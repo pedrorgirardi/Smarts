@@ -188,7 +188,7 @@ class LSPLocation(TypedDict):
     range: LSPRange
 
 
-class LSPMarkedString_(TypedDict):
+class _LSPMarkedString(TypedDict):
     language: str
     value: str
 
@@ -200,7 +200,7 @@ class LSPMarkedString_(TypedDict):
 # @deprecated use MarkupContent instead.
 #
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#markedString
-LSPMarkedString = Union[str, LSPMarkedString_]
+LSPMarkedString = Union[str, _LSPMarkedString]
 
 
 class LSPMarkupContent(TypedDict):
