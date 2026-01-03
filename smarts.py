@@ -2713,7 +2713,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         position_encoding = smart.position_encoding()
 
         def on_result(result: LSPDocumentHighlightResult):
-            if not result:
+            if result is None:
                 self.erase_highlights()
                 return
 
