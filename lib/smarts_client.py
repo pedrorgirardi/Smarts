@@ -793,7 +793,14 @@ LSPCompletionResult = Union[
 ]
 
 
-LSPWorkspaceSymbolResultCallback = Callable[[Optional[List[Dict[str, Any]]]], None]
+# The workspace symbol request is sent from the client to the server to list project-wide symbols matching the query string.
+# It is recommended that you use the new WorkspaceSymbol.
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspace_symbol
+LSPWorkspaceSymbolResult = Union[
+    List[LSPSymbolInformation],
+    List[LSPWorkspaceSymbol],
+    None,
+]
 
 
 # --------------------------------------------------------------------------------
@@ -1941,7 +1948,7 @@ class LanguageServerClient:
     def workspace_symbol(
         self,
         params: LSPWorkspaceSymbolParams,
-        on_result: LSPWorkspaceSymbolResultCallback,
+        on_result: Callable[[LSPWorkspaceSymbolResult], None],
         on_error: Optional[Callable[[LSPResponseError], None]] = None,
     ):
         """

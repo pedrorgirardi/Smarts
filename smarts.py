@@ -52,6 +52,7 @@ from .lib.smarts_client import (
     LSPVersionedTextDocumentIdentifier,
     LSPWorkspaceEdit,
     LSPWorkspaceSymbolParams,
+    LSPWorkspaceSymbolResult,
     textDocumentSyncOptions,
 )
 
@@ -2226,7 +2227,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
 # WIP
 class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
     def run(self):
-        def on_result(result: Optional[List[Dict[str, Any]]]):
+        def on_result(result: LSPWorkspaceSymbolResult):
             # Workspace Symbols Request
             # SymbolInformation[] | WorkspaceSymbol[] | null
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspace_symbol
