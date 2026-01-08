@@ -9,7 +9,7 @@ import threading
 import uuid
 from itertools import groupby
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, TypedDict, Union, cast
+from typing import Any, Callable, List, Optional, Set, TypedDict, cast
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
@@ -25,7 +25,6 @@ from .lib.smarts_client import (
     LSPDidChangeTextDocumentParams,
     LSPDidOpenTextDocumentParams,
     LSPDocumentFormattingParams,
-    LSPDocumentHighlight,
     LSPDocumentHighlightResult,
     LSPDocumentSymbolResult,
     LSPFormattingResult,
@@ -48,7 +47,6 @@ from .lib.smarts_client import (
     LSPTextDocumentIdentifier,
     LSPTextDocumentItem,
     LSPTextDocumentPositionParams,
-    LSPTextEdit,
     LSPVersionedTextDocumentIdentifier,
     LSPWorkspaceEdit,
     LSPWorkspaceSymbolParams,
