@@ -445,18 +445,18 @@ def text_to_html(s: str) -> str:
 def output_panel(window: sublime.Window) -> sublime.View:
     if panel_view := window.find_output_panel(kOUTPUT_PANEL_NAME):
         return panel_view
-    else:
-        panel_view = window.create_output_panel(kOUTPUT_PANEL_NAME)
-        panel_view.settings().set("gutter", False)
-        panel_view.settings().set("auto_indent", False)
-        panel_view.settings().set("translate_tabs_to_spaces", False)
-        panel_view.settings().set("smart_indent", False)
-        panel_view.settings().set("indent_to_bracket", False)
-        panel_view.settings().set("highlight_line", False)
-        panel_view.settings().set("line_numbers", False)
-        panel_view.settings().set("scroll_past_end", False)
 
-        return panel_view
+    panel_view = window.create_output_panel(kOUTPUT_PANEL_NAME)
+    panel_view.settings().set("gutter", False)
+    panel_view.settings().set("auto_indent", False)
+    panel_view.settings().set("translate_tabs_to_spaces", False)
+    panel_view.settings().set("smart_indent", False)
+    panel_view.settings().set("indent_to_bracket", False)
+    panel_view.settings().set("highlight_line", False)
+    panel_view.settings().set("line_numbers", False)
+    panel_view.settings().set("scroll_past_end", False)
+
+    return panel_view
 
 
 def show_output_panel(window: sublime.Window):
