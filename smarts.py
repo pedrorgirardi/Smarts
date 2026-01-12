@@ -428,8 +428,6 @@ def applicable_smart(view: sublime.View, method: str) -> Optional[PgSmart]:
     if applicable := applicable_smarts(view, method):
         return applicable[0]
 
-    plugin_logger.debug(f"No applicable Smart for '{method}'")
-
     return None
 
 
@@ -1733,7 +1731,7 @@ def handle_notification(
 ):
     smart = find_smart(smart_uuid)
 
-    if not smart:
+    if smart is None:
         return
 
     window = find_window(smart.window)
@@ -2012,7 +2010,7 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
     def run(self, _):
         smart = applicable_smart(self.view, method="textDocument/definition")
 
-        if not smart:
+        if smart is None:
             return
 
         position_encoding = smart.position_encoding()
@@ -2050,7 +2048,7 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
     def run(self, _):
         smart = applicable_smart(self.view, method="textDocument/references")
 
-        if not smart:
+        if smart is None:
             return
 
         position_encoding = smart.position_encoding()
@@ -2123,7 +2121,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
     def run(self, _):
         smart = applicable_smart(self.view, method="textDocument/documentSymbol")
 
-        if not smart:
+        if smart is None:
             return
 
         position_encoding = smart.position_encoding()
@@ -2366,7 +2364,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
     def run(self, _, position=None):
         smart = applicable_smart(self.view, method="textDocument/hover")
 
-        if not smart:
+        if smart is None:
             return
 
         position_encoding = smart.position_encoding()
@@ -2390,7 +2388,7 @@ class PgSmartsShowSignatureHelpCommand(sublime_plugin.TextCommand):
     def run(self, _, position=None):
         smart = applicable_smart(self.view, method="textDocument/signatureHelp")
 
-        if not smart:
+        if smart is None:
             return
 
         position = position or self.view.sel()[0].begin()
@@ -2425,7 +2423,7 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
     def run(self, _):
         smart = applicable_smart(self.view, method="textDocument/formatting")
 
-        if not smart:
+        if smart is None:
             return
 
         position_encoding = smart.position_encoding()
@@ -2462,7 +2460,7 @@ class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
     def run(self, _, region=None):
         smart = applicable_smart(self.view, method="textDocument/rangeFormatting")
 
-        if not smart:
+        if smart is None:
             return
 
         if region is None:
@@ -2522,7 +2520,7 @@ class PgSmartsRenameCommand(sublime_plugin.TextCommand):
     def run(self, _):
         smart = applicable_smart(self.view, method="textDocument/rename")
 
-        if not smart:
+        if smart is None:
             return
 
         position_encoding = smart.position_encoding()
@@ -2710,7 +2708,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         smart = applicable_smart(self.view, method="textDocument/documentHighlight")
 
-        if not smart:
+        if smart is None:
             return
 
         position_encoding = smart.position_encoding()
@@ -2837,7 +2835,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         smart = applicable_smart(self.view, method="textDocument/completion")
 
-        if not smart:
+        if smart is None:
             return None
 
         def on_result(result: LSPCompletionResult):
