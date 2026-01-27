@@ -1062,7 +1062,7 @@ class LanguageServerClient:
         - Expected shutdown (status is already SHUTDOWN): No action needed
         - Unexpected crash (status is INITIALIZING/INITIALIZED): Transition to FAILED
         """
-        self._logger.debug(f"[{self._name}] Monitor started 🟢")
+        self._logger.debug(f"[{self._name}] Monitor started")
 
         try:
             # Block until process exits
@@ -1092,10 +1092,10 @@ class LanguageServerClient:
             self._logger.error(f"[{self._name}] Monitor thread error: {e}")
 
         finally:
-            self._logger.debug(f"[{self._name}] Monitor stopped 🔴")
+            self._logger.debug(f"[{self._name}] Monitor stopped")
 
     def _start_reader(self):
-        self._logger.debug(f"[{self._name}] Reader started 🟢")
+        self._logger.debug(f"[{self._name}] Reader started")
 
         # The reader performs I/O operations (readline, read) that can raise exceptions
         # if the server subprocess crashes, closes stdout unexpectedly, or the pipe breaks.
@@ -1180,10 +1180,10 @@ class LanguageServerClient:
             self._receive_queue.put(None)
 
         finally:
-            self._logger.debug(f"[{self._name}] Reader stopped 🔴")
+            self._logger.debug(f"[{self._name}] Reader stopped")
 
     def _start_writer(self):
-        self._logger.debug(f"[{self._name}] Writer started 🟢")
+        self._logger.debug(f"[{self._name}] Writer started")
 
         while (message := self._send_queue.get()) is not None:
             task_done_called = False
@@ -1233,10 +1233,10 @@ class LanguageServerClient:
         # 'None Task' is complete.
         self._send_queue.task_done()
 
-        self._logger.debug(f"[{self._name}] Writer stopped 🔴")
+        self._logger.debug(f"[{self._name}] Writer stopped")
 
     def _start_handler(self):
-        self._logger.debug(f"[{self._name}] Handler started 🟢")
+        self._logger.debug(f"[{self._name}] Handler started")
 
         while (message := self._receive_queue.get()) is not None:
             message = cast(Union[LSPNotificationMessage, LSPResponseMessage], message)
@@ -1288,7 +1288,7 @@ class LanguageServerClient:
         # 'None Task' is complete.
         self._receive_queue.task_done()
 
-        self._logger.debug(f"[{self._name}] Handler stopped 🔴")
+        self._logger.debug(f"[{self._name}] Handler stopped")
 
     def _put(
         self,
@@ -1537,13 +1537,13 @@ class LanguageServerClient:
 
                     self._logger.error(
                         f"[{self._name}] Initialization failed: "
-                        f"code={error.get('code')}, message={error.get('message')} 🔴"
+                        f"code={error.get('code')}, message={error.get('message')}"
                     )
                 else:
                     self._server_status = LanguageServerStatus.INITIALIZED
 
                     self._logger.info(
-                        f"{self._name} ({self._server_process.pid}) initialized 🚀"
+                        f"{self._name} ({self._server_process.pid}) initialized"
                     )
 
                     if result := cast(LSPInitializeResult, response.get("result")):
