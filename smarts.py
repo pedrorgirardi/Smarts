@@ -1949,61 +1949,54 @@ class PgSmartsClearOutputPanelCommand(sublime_plugin.WindowCommand):
 
 class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
     def run(self):
-        minihtml = ""
+        smarts = window_smarts(self.window)
 
-        for smart in window_smarts(self.window):
-            client = smart.client
-
-            minihtml += f"<span class='text-foreground font-bold'>{html.escape(client._name)}<br /><br /></span>"
-
-            # -- UUID
-            minihtml += f"<span class='text-foreground-07 text-sm'>UUID: {smart.uuid}</span><br />"
-
-            # -- Status
-            minihtml += f"<span class='text-foreground-07 text-sm'>Status: {client.server_status().name}</span><br />"
-
-            # -- PID
-            minihtml += f"<span class='text-foreground-07 text-sm'>PID: {client._server_process.pid if client._server_process else None}</span><br /><br />"
-
-            # -- Info
-            minihtml += "<span class='text-sm font-bold'>Info:</span><br /><br />"
-
-            if server_info := client._server_info:
-                minihtml += f"<code class='text-sm' style='display: block; white-space: pre;'>{html.escape(json.dumps(server_info, indent=2))}</code>"
-            else:
-                minihtml += "-"
-
-            minihtml += "<br /><br />"
-
-            # -- Capabilities
-            minihtml += (
-                "<span class='text-sm font-bold'>Capabilities:</span><br /><br />"
-            )
-
-            if server_capabilities := client._server_capabilities:
-                minihtml += f"<code class='text-sm' style='display: block; white-space: pre;'>{html.escape(json.dumps(server_capabilities, indent=2))}</code>"
-            else:
-                minihtml += "-"
-
-            minihtml += "<br />---<br /><br />"
-
-        if not minihtml:
+        if not smarts:
             return
 
-        sheet = self.window.new_html_sheet(
-            "Smarts Status",
-            f"""
-            <style>
-                {kMINIHTML_STYLES}
-            </style>
-            <body>
-                {minihtml}
-            </body>
-            """,
-            sublime.SEMI_TRANSIENT | sublime.ADD_TO_SELECTION,
-        )
+        lines: List[str] = []
 
-        self.window.focus_sheet(sheet)
+        for smart in smarts:
+            client = smart.client
+
+            lines.append(f"# {client._name}")
+            lines.append("")
+            lines.append(f"- **UUID:** {smart.uuid}")
+            lines.append(f"- **Status:** {client.server_status().name}")
+            lines.append(
+                f"- **PID:** {client._server_process.pid if client._server_process else None}"
+            )
+            lines.append("")
+
+            lines.append("## Info")
+            lines.append("")
+            if server_info := client._server_info:
+                lines.append("```json")
+                lines.append(json.dumps(server_info, indent=2))
+                lines.append("```")
+            else:
+                lines.append("-")
+            lines.append("")
+
+            lines.append("## Capabilities")
+            lines.append("")
+            if server_capabilities := client._server_capabilities:
+                lines.append("```json")
+                lines.append(json.dumps(server_capabilities, indent=2))
+                lines.append("```")
+            else:
+                lines.append("-")
+            lines.append("")
+            lines.append("---")
+            lines.append("")
+
+        content = "\n".join(lines)
+
+        view = self.window.new_file(sublime.SEMI_TRANSIENT | sublime.ADD_TO_SELECTION)
+        view.set_name("Smarts Status")
+        view.set_scratch(True)
+        view.assign_syntax("Packages/Markdown/Markdown.sublime-syntax")
+        view.run_command("append", {"characters": content})
 
 
 class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
