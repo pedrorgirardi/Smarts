@@ -133,12 +133,15 @@ class TestLists(unittest.TestCase):
         self.assertIn("<ul>", html)
         self.assertIn("<li>item 1</li>", html)
         self.assertIn("<li>item 2</li>", html)
+        self.assertIn("</ul>", html)
 
     def test_unordered_list_plus(self):
         md = "+ item 1\n+ item 2"
         html = markdown_to_html(md)
         self.assertIn("<ul>", html)
         self.assertIn("<li>item 1</li>", html)
+        self.assertIn("<li>item 2</li>", html)
+        self.assertIn("</ul>", html)
 
     def test_list_with_inline_code(self):
         md = "- `code` item"

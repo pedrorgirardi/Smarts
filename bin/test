@@ -3,4 +3,4 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-PYTHONPATH=lib uv run python -m unittest discover -s tests "$@"
+PYTHONPATH=lib uv run python -m unittest discover -v -s tests "$@"
