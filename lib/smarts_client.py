@@ -1036,9 +1036,7 @@ class LanguageServerClient:
         n = len(self._request_callback)
 
         if n > 0:
-            self._logger.warning(
-                f"[{self._name}] Clearing {n} pending request callback(s)"
-            )
+            self._logger.warning(f"Clearing {n} pending request callback(s)")
             self._request_callback.clear()
 
     def _read(self, out, n):
@@ -1073,7 +1071,7 @@ class LanguageServerClient:
         - Expected shutdown (status is already SHUTDOWN): No action needed
         - Unexpected crash (status is INITIALIZING/INITIALIZED): Transition to FAILED
         """
-        self._logger.debug(f"[{self._name}] Monitor started")
+        self._logger.debug("Monitor started")
 
         try:
             # Block until process exits
@@ -1086,7 +1084,7 @@ class LanguageServerClient:
                     LanguageServerStatus.FAILED,
                 ):
                     self._logger.error(
-                        f"[{self._name}] Server crashed unexpectedly with exit code {returncode}"
+                        f"Server crashed unexpectedly with exit code {returncode}"
                     )
                     self._server_status = LanguageServerStatus.FAILED
                     self._clear_callbacks()
@@ -1095,18 +1093,16 @@ class LanguageServerClient:
                     self._send_queue.put(None)
                     self._receive_queue.put(None)
                 else:
-                    self._logger.debug(
-                        f"[{self._name}] Server exited with code {returncode}"
-                    )
+                    self._logger.debug(f"Server exited with code {returncode}")
 
         except Exception as e:
-            self._logger.error(f"[{self._name}] Monitor thread error: {e}")
+            self._logger.error(f"Monitor thread error: {e}")
 
         finally:
-            self._logger.debug(f"[{self._name}] Monitor stopped")
+            self._logger.debug("Monitor stopped")
 
     def _start_reader(self):
-        self._logger.debug(f"[{self._name}] Reader started")
+        self._logger.debug("Reader started")
 
         # The reader performs I/O operations (readline, read) that can raise exceptions
         # if the server subprocess crashes, closes stdout unexpectedly, or the pipe breaks.
@@ -1149,9 +1145,7 @@ class LanguageServerClient:
                 # If we got no headers at all, stdout is closed (EOF).
                 # Break the outer loop so the reader can exit cleanly.
                 if not headers:
-                    self._logger.debug(
-                        f"[{self._name}] Reader detected EOF (stdout closed)"
-                    )
+                    self._logger.debug("Reader detected EOF (stdout closed)")
                     break
 
                 # -- CONTENT
@@ -1174,7 +1168,7 @@ class LanguageServerClient:
 
         except Exception as e:
             # Server crashed or I/O error occurred
-            self._logger.error(f"[{self._name}] Reader thread crashed: {e}")
+            self._logger.error(f"Reader thread crashed: {e}")
 
             with self._lock:
                 # Only transition to FAILED if we're not already shutting down
@@ -1191,10 +1185,10 @@ class LanguageServerClient:
             self._receive_queue.put(None)
 
         finally:
-            self._logger.debug(f"[{self._name}] Reader stopped")
+            self._logger.debug("Reader stopped")
 
     def _start_writer(self):
-        self._logger.debug(f"[{self._name}] Writer started")
+        self._logger.debug("Writer started")
 
         while (message := self._send_queue.get()) is not None:
             task_done_called = False
@@ -1215,9 +1209,7 @@ class LanguageServerClient:
                 #
                 # By transitioning to FAILED and breaking, we stop the writer cleanly and
                 # signal to other parts of the client that the server is no longer functional.
-                self._logger.error(
-                    f"[{self._name}] Can't write to server's stdin (broken pipe): {e}"
-                )
+                self._logger.error(f"Can't write to server's stdin (broken pipe): {e}")
 
                 with self._lock:
                     # Only transition to FAILED if we're not already shutting down
@@ -1244,10 +1236,10 @@ class LanguageServerClient:
         # 'None Task' is complete.
         self._send_queue.task_done()
 
-        self._logger.debug(f"[{self._name}] Writer stopped")
+        self._logger.debug("Writer stopped")
 
     def _start_handler(self):
-        self._logger.debug(f"[{self._name}] Handler started")
+        self._logger.debug("Handler started")
 
         while (message := self._receive_queue.get()) is not None:
             message = cast(Union[LSPNotificationMessage, LSPResponseMessage], message)
@@ -1267,7 +1259,7 @@ class LanguageServerClient:
                     try:
                         callback(cast(LSPResponseMessage, message))
                     except Exception:
-                        self._logger.exception(f"{self._name} - Request callback error")
+                        self._logger.exception("Request callback error")
 
             else:
                 notification = cast(LSPNotificationMessage, message)
@@ -1292,14 +1284,14 @@ class LanguageServerClient:
                             f(notification)
 
                 except Exception:
-                    self._logger.exception(f"{self._name} - Error handling '{method}'")
+                    self._logger.exception(f"Error handling '{method}'")
 
             self._receive_queue.task_done()
 
         # 'None Task' is complete.
         self._receive_queue.task_done()
 
-        self._logger.debug(f"[{self._name}] Handler stopped")
+        self._logger.debug("Handler stopped")
 
     def _put(
         self,
@@ -1322,9 +1314,7 @@ class LanguageServerClient:
                 self._server_status != LanguageServerStatus.INITIALIZED
                 and method not in lifecycle_methods
             ):
-                self._logger.debug(
-                    f"Server {self._name} is not initialized; Will drop {method}"
-                )
+                self._logger.debug(f"Server is not initialized; Will drop {method}")
                 return
 
             # WHY: Drop messages to SHUTDOWN servers to prevent queue buildup.
@@ -1334,9 +1324,7 @@ class LanguageServerClient:
                 self._server_status == LanguageServerStatus.SHUTDOWN
                 and method != "exit"
             ):
-                self._logger.warn(
-                    f"Server {self._name} was shutdown; Will drop {method}"
-                )
+                self._logger.warning(f"Server was shutdown; Will drop {method}")
                 return
 
             self._send_queue.put(message)
@@ -1375,7 +1363,7 @@ class LanguageServerClient:
         def callback(response: LSPResponseMessage) -> None:
             if error := response.get("error"):
                 self._logger.error(
-                    f"[{self._name}] Error: code={error.get('code')}, message={error.get('message')}, data={error.get('data')}"
+                    f"Error: code={error.get('code')}, message={error.get('message')}, data={error.get('data')}"
                 )
 
                 if on_error:
@@ -1413,11 +1401,11 @@ class LanguageServerClient:
             LanguageServerStatus.FAILED,
         ):
             self._logger.warning(
-                f"[{self._name}] Cannot initialize - already in state {current_status.name}"
+                f"Cannot initialize - already in state {current_status.name}"
             )
             return
 
-        self._logger.debug(f"Initialize {self._name} `{shlex.join(self._server_args)}`")
+        self._logger.debug(f"Initialize `{shlex.join(self._server_args)}`")
 
         try:
             server_process = subprocess.Popen(
@@ -1430,7 +1418,7 @@ class LanguageServerClient:
             # If we can't start the subprocess, we need to handle it gracefully.
             # Common failures: command not found, permission denied, no memory.
             # Without this try-except, we'd crash and leave client in inconsistent state.
-            self._logger.error(f"[{self._name}] Failed to start server process: {e}")
+            self._logger.error(f"Failed to start server process: {e}")
 
             with self._lock:
                 self._server_status = LanguageServerStatus.FAILED
@@ -1453,11 +1441,14 @@ class LanguageServerClient:
             self._server_status = LanguageServerStatus.INITIALIZING
             self._server_process = server_process
 
-        self._logger.info(f"Initializing {self._name} ({self._server_process.pid})...")
+        pid = self._server_process.pid
+        thread_prefix = f"{self._name} {pid}"
+
+        self._logger.info(f"Initializing {self._name}...")
 
         # Thread responsible for handling received messages.
         self._handler = threading.Thread(
-            name="Handler",
+            name=f"Handler - {thread_prefix}",
             target=self._start_handler,
             daemon=True,
         )
@@ -1465,7 +1456,7 @@ class LanguageServerClient:
 
         # Thread responsible for sending/writing messages.
         self._writer = threading.Thread(
-            name="Writer",
+            name=f"Writer - {thread_prefix}",
             target=self._start_writer,
             daemon=True,
         )
@@ -1473,7 +1464,7 @@ class LanguageServerClient:
 
         # Thread responsible for reading messages.
         self._reader = threading.Thread(
-            name="Reader",
+            name=f"Reader - {thread_prefix}",
             target=self._start_reader,
             daemon=True,
         )
@@ -1481,7 +1472,7 @@ class LanguageServerClient:
 
         # Thread responsible for monitoring the server process.
         self._monitor = threading.Thread(
-            name="Monitor",
+            name=f"Monitor - {thread_prefix}",
             target=self._start_monitor,
             daemon=True,
         )
@@ -1499,9 +1490,7 @@ class LanguageServerClient:
                 if self._server_status != LanguageServerStatus.INITIALIZING:
                     return
 
-                self._logger.error(
-                    f"[{self._name}] Initialization timed out after {timeout}s"
-                )
+                self._logger.error(f"Server initialization timed out after {timeout}s")
 
                 self._server_status = LanguageServerStatus.FAILED
 
@@ -1513,7 +1502,7 @@ class LanguageServerClient:
                 "result": None,
                 "error": {
                     "code": -2,
-                    "message": f"Initialization timed out after {timeout}s",
+                    "message": f"Server initialization timed out after {timeout}s",
                     "data": None,
                 },
             }
@@ -1547,15 +1536,13 @@ class LanguageServerClient:
                     self._clear_callbacks()
 
                     self._logger.error(
-                        f"[{self._name}] Initialization failed: "
+                        f"Server initialization failed: "
                         f"code={error.get('code')}, message={error.get('message')}"
                     )
                 else:
                     self._server_status = LanguageServerStatus.INITIALIZED
 
-                    self._logger.info(
-                        f"{self._name} ({self._server_process.pid}) initialized"
-                    )
+                    self._logger.info("Server initialized")
 
                     if result := cast(LSPInitializeResult, response.get("result")):
                         self._server_capabilities = result.get("capabilities")
@@ -1593,18 +1580,18 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#shutdown
         """
 
-        self._logger.info(f"Shutdown {self._name}")
+        self._logger.info(f"Shutdown server {self._name}")
 
         current_status = self.server_status()
 
         # If already SHUTDOWN, don't send another shutdown request
         if current_status == LanguageServerStatus.SHUTDOWN:
-            self._logger.debug(f"[{self._name}] Already shutdown")
+            self._logger.debug("Already shutdown")
             return
 
         # If NOT_STARTED, there's nothing to shutdown
         if current_status == LanguageServerStatus.NOT_STARTED:
-            self._logger.debug(f"[{self._name}] Server was never started")
+            self._logger.debug("Server was never started")
             return
 
         # Use threading.Timer for timeout instead of blocking on Event.wait().
@@ -1615,7 +1602,7 @@ class LanguageServerClient:
             # Only force exit if not already shutdown
             if self.server_status() != LanguageServerStatus.SHUTDOWN:
                 self._logger.warning(
-                    f"[{self._name}] Shutdown request timed out after {timeout}s, forcing exit"
+                    f"Shutdown request timed out after {timeout}s, forcing exit"
                 )
                 self._exit()
 
@@ -1642,7 +1629,7 @@ class LanguageServerClient:
             if response.get("error"):
                 error = response["error"]
                 self._logger.error(
-                    f"[{self._name}] Shutdown request returned error: "
+                    f"Shutdown request returned error: "
                     f"code={error.get('code')}, message={error.get('message')}"
                 )
 
@@ -1673,7 +1660,7 @@ class LanguageServerClient:
             if self._server_status == LanguageServerStatus.SHUTDOWN:
                 return
 
-            self._logger.info(f"Exit {self._name}")
+            self._logger.info("Exit server")
 
             self._server_status = LanguageServerStatus.SHUTDOWN
 
@@ -1690,22 +1677,18 @@ class LanguageServerClient:
         returncode = None
 
         try:
-            self._logger.info(f"Waiting for server {self._name} to terminate...")
+            self._logger.info("Waiting for server to terminate...")
 
             returncode = self._server_process.wait(30)
         except subprocess.TimeoutExpired:
-            self._logger.info(
-                f"Terminate timeout expired; Will explicitly kill server {self._name}"
-            )
+            self._logger.info("Terminate timeout expired; Will explicitly kill server")
 
             # Explicitly kill the process if it did not terminate.
             self._server_process.kill()
 
             returncode = self._server_process.wait()
 
-        self._logger.info(
-            f"{self._name} server terminated with returncode {returncode}"
-        )
+        self._logger.info(f"Server terminated with returncode {returncode}")
 
     def textDocument_didOpen(
         self,
