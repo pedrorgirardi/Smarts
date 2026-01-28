@@ -2354,27 +2354,80 @@ class PgSmartsJumpCommand(sublime_plugin.TextCommand):
 
 
 class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
-    def run(self, _, position=None):
+    def run(self, _, position=None, show="popup"):
         smart = applicable_smart(self.view, method="textDocument/hover")
 
         if smart is None:
             return
 
         position_encoding = smart.position_encoding()
-
-        position = position or self.view.sel()[0].begin()
-
-        params = view_textDocumentPositionParams(self.view, position_encoding, position)
+        position_point = position or self.view.sel()[0].begin()
 
         def on_result(result: LSPHoverResult):
             if result:
-                show_hover_popup(self.view, smart, result)
+                if show == "transient":
+                    word_region = self.view.word(position_point)
+                    word_str = self.view.substr(word_region)
+                    self._show_transient(word_str, result)
+                else:
+                    show_hover_popup(self.view, smart, result)
 
         def on_error(error: LSPResponseError):
             if window := self.view.window():
                 panel_log_error(window, error)
 
+        params = view_textDocumentPositionParams(
+            self.view,
+            position_encoding,
+            position_point,
+        )
+
         smart.client.textDocument_hover(params, on_result, on_error)
+
+    def _show_transient(self, name: str, result: LSPHoverResult):
+        window = self.view.window()
+
+        if not window:
+            return
+
+        if not result:
+            return
+
+        contents = result.get("contents", "")
+        markdown = self._contents_to_markdown(contents)
+
+        view = window.new_file(sublime.SEMI_TRANSIENT | sublime.ADD_TO_SELECTION)
+        view.set_name(name)
+        view.set_scratch(True)
+        view.assign_syntax("Packages/Markdown/Markdown.sublime-syntax")
+        view.run_command("append", {"characters": markdown})
+
+    def _contents_to_markdown(self, contents) -> str:
+        """Extract markdown content from LSP hover contents."""
+        if isinstance(contents, str):
+            return contents
+
+        elif isinstance(contents, dict):
+            # MarkupContent { kind: 'markdown' | 'plaintext', value: string }
+            return contents.get("value", "")
+
+        elif isinstance(contents, list):
+            # Array of MarkedString | MarkupContent
+            sections = []
+            for item in contents:
+                if isinstance(item, str):
+                    sections.append(item)
+                elif isinstance(item, dict):
+                    if "language" in item:
+                        # MarkedString with language: { language: string, value: string }
+                        lang = item.get("language", "")
+                        value = item.get("value", "")
+                        sections.append(f"```{lang}\n{value}\n```")
+                    else:
+                        sections.append(item.get("value", ""))
+            return "\n\n".join(sections)
+
+        return ""
 
 
 class PgSmartsShowSignatureHelpCommand(sublime_plugin.TextCommand):
