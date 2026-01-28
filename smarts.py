@@ -16,7 +16,6 @@ from zipfile import ZipFile
 import sublime
 import sublime_plugin
 
-from .lib.smarts_markdown import markdown_to_html
 from .lib.smarts_client import (
     LanguageServerClient,
     LSPCompletionItem,
@@ -29,6 +28,7 @@ from .lib.smarts_client import (
     LSPDocumentHighlightResult,
     LSPDocumentSymbolResult,
     LSPFormattingResult,
+    LSPHover,
     LSPHoverResult,
     LSPLocation,
     LSPNotificationMessage,
@@ -54,6 +54,8 @@ from .lib.smarts_client import (
     LSPWorkspaceSymbolResult,
     textDocumentSyncOptions,
 )
+
+from .lib.smarts_markdown import markdown_to_html
 
 # -- Logging
 
@@ -2220,7 +2222,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
                 if show == "transient":
                     word_region = self.view.word(position_point)
                     word_str = self.view.substr(word_region)
-                    self._show_transient(word_str, result)
+                    self._show_transient(smart, word_str, result)
                 else:
                     self._show_popup(smart, result)
 
@@ -2236,17 +2238,14 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
 
         smart.client.textDocument_hover(params, on_result, on_error)
 
-    def _show_transient(self, name: str, result: LSPHoverResult):
+    def _show_transient(self, smart: PgSmart, name: str, hover: LSPHover):
         window = self.view.window()
 
         if not window:
             return
 
-        if not result:
-            return
-
-        contents = result.get("contents", "")
-        markdown = self._contents_to_markdown(contents)
+        markdown = self._hover_markdown(hover)
+        markdown += f"\n\n---\n\n*{smart.client._name}*"
 
         view = window.new_file(sublime.SEMI_TRANSIENT | sublime.ADD_TO_SELECTION)
         view.set_name(name)
@@ -2254,9 +2253,8 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
         view.assign_syntax("Packages/Markdown/Markdown.sublime-syntax")
         view.run_command("append", {"characters": markdown})
 
-    def _show_popup(self, smart: PgSmart, result: LSPHoverResult):
-        contents = result.get("contents", "")
-        markdown = self._contents_to_markdown(contents)
+    def _show_popup(self, smart: PgSmart, hover: LSPHover):
+        markdown = self._hover_markdown(hover)
         content_html = markdown_to_html(markdown)
 
         styles = """
@@ -2302,17 +2300,23 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
         """
 
         location = -1
-        if result_range := result.get("range"):
+
+        if result_range := hover.get("range"):
             location = self.view.text_point(
                 result_range["start"]["line"],
                 result_range["start"]["character"],
             )
 
         self.view.show_popup(
-            minihtml, location=location, max_width=1000, max_height=600
+            minihtml,
+            location=location,
+            max_width=1000,
+            max_height=600,
         )
 
-    def _contents_to_markdown(self, contents) -> str:
+    def _hover_markdown(self, hover: LSPHover) -> str:
+        contents = hover["contents"]
+
         """Extract markdown content from LSP hover contents."""
         if isinstance(contents, str):
             return contents

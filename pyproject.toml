@@ -3,7 +3,7 @@ name = "Smarts"
 version = "0.1.0"
 description = "Language Server Client for Sublime Text"
 readme = "README.md"
-requires-python = "~=3.8"
+requires-python = "~=3.13"
 dependencies = []
 
 [dependency-groups]
@@ -14,5 +14,5 @@ dev = [
 
 [tool.ty.environment]
 extra-paths = ["./typings"]
-python-version = "3.8"
+python-version = "3.13"
 root = [".."]

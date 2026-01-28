@@ -6,7 +6,18 @@ import threading
 import uuid
 from enum import Enum, auto
 from queue import Queue
-from typing import Any, Callable, Dict, List, Literal, Optional, TypedDict, Union, cast
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    TypedDict,
+    NotRequired,
+    Union,
+    cast,
+)
 
 LSPPositionEncoding = Literal[
     # Character offsets count UTF-8 code units (e.g bytes).
@@ -222,7 +233,7 @@ class LSPMarkupContent(TypedDict):
     value: str
 
 
-class LSPHover(TypedDict, total=False):
+class LSPHover(TypedDict):
     """
     The result of a hover request.
 
@@ -237,7 +248,7 @@ class LSPHover(TypedDict, total=False):
 
     # An optional range is a range inside a text document
     # that is used to visualize a hover, e.g. by changing the background color.
-    range: LSPRange
+    range: NotRequired[LSPRange]
 
 
 class LSPCodeDescription(TypedDict):
