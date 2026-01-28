@@ -33,9 +33,9 @@ def markdown_to_html(text: str) -> str:
             i += 1
             continue
 
-        # Empty line - add line break
+        # Empty line - add line break (wrapped in div for block-level spacing)
         if not line.strip():
-            result.append("<br />")
+            result.append("<div><br /></div>")
             i += 1
             continue
 

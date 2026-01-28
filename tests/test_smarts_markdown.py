@@ -177,12 +177,12 @@ class TestEmptyLines:
     def test_empty_line_creates_br(self):
         md = "Para 1\n\nPara 2"
         html = markdown_to_html(md)
-        assert "<br />" in html
+        assert "<div><br /></div>" in html
 
     def test_multiple_empty_lines(self):
         md = "Para 1\n\n\nPara 2"
         html = markdown_to_html(md)
-        assert html.count("<br />") == 2
+        assert html.count("<div><br /></div>") == 2
 
 
 class TestComplexDocuments:
@@ -190,7 +190,7 @@ class TestComplexDocuments:
         md = "```\ncode\n```\n\nParagraph after code"
         html = markdown_to_html(md)
         assert "<pre>code</pre>" in html
-        assert "<br />" in html
+        assert "<div><br /></div>" in html
         assert "<p>Paragraph after code</p>" in html
 
     def test_list_followed_by_hr(self):

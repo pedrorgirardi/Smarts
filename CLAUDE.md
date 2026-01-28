@@ -103,6 +103,13 @@ Callbacks invoked (e.g., update diagnostics UI)
 - Custom type stubs in `typings/` directory for Sublime Text API (sublime.pyi, sublime_plugin.pyi)
 - Run: `pyright` (if installed)
 
+### Testing
+
+- Tests are in `tests/` directory using pytest
+- Run tests: `bin/test`
+- Run with verbose output: `bin/test -v`
+- Run specific tests: `bin/test -k <pattern>`
+
 ### Logging
 
 Two separate loggers with configurable levels (in Smarts.sublime-settings):
@@ -155,6 +162,5 @@ client.textDocument_definition(params, callback=on_response)
 ## Project-Specific Notes
 
 - This is a work-in-progress plugin (see README warning)
-- No test suite currently exists
 - The plugin automatically initializes servers on `plugin_loaded` if defined in project
 - Output panel (`Smarts`) shows server messages and errors
