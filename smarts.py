@@ -16,6 +16,7 @@ from zipfile import ZipFile
 import sublime
 import sublime_plugin
 
+from .lib.smarts_markdown import markdown_to_html
 from .lib.smarts_client import (
     LanguageServerClient,
     LSPCompletionItem,
@@ -2370,7 +2371,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
                     word_str = self.view.substr(word_region)
                     self._show_transient(word_str, result)
                 else:
-                    show_hover_popup(self.view, smart, result)
+                    self._show_popup(smart, result)
 
         def on_error(error: LSPResponseError):
             if window := self.view.window():
@@ -2401,6 +2402,64 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
         view.set_scratch(True)
         view.assign_syntax("Packages/Markdown/Markdown.sublime-syntax")
         view.run_command("append", {"characters": markdown})
+
+    def _show_popup(self, smart: PgSmart, result: LSPHoverResult):
+        contents = result.get("contents", "")
+        markdown = self._contents_to_markdown(contents)
+        content_html = markdown_to_html(markdown)
+
+        styles = """
+        .container {
+            color: var(--foreground);
+            font-size: 0.875rem;
+            line-height: 1.3;
+        }
+
+        .container h1,
+        .container h2,
+        .container h3,
+        .container h4,
+        .container h5,
+        .container h6 {
+            color: color(var(--foreground) blend(var(--bluish) 60%));
+            margin: 0.3rem 0 0.15rem 0;
+            font-weight: bold;
+        }
+
+        .container h1 { font-size: 1.25rem; color: var(--bluish); }
+        .container h2 { font-size: 1.125rem; color: var(--bluish); }
+        .container h3 { font-size: 1rem; }
+        .container p { margin: 0.1rem 0; }
+        .container pre { margin: 0.3rem 0; }
+        .container code { background-color: color(var(--background) blend(#000 85%)); }
+        .container a { color: var(--bluish); text-decoration: none; }
+        .container strong { font-weight: bold; }
+        .container em { font-style: italic; }
+        .container .hr { border-top: 1px solid color(var(--foreground) alpha(0.2)); margin: 0.5rem 0; }
+        """
+
+        minihtml = f"""
+        <style>
+            {kMINIHTML_STYLES}
+            {styles}
+        </style>
+        <body class='container'>
+            {content_html}
+            <br />
+            <span class='text-pinkish font-bold'>{html.escape(smart.client._name)}</span>
+        </body>
+        """
+
+        location = -1
+        if result_range := result.get("range"):
+            location = self.view.text_point(
+                result_range["start"]["line"],
+                result_range["start"]["character"],
+            )
+
+        self.view.show_popup(
+            minihtml, location=location, max_width=1000, max_height=600
+        )
 
     def _contents_to_markdown(self, contents) -> str:
         """Extract markdown content from LSP hover contents."""
