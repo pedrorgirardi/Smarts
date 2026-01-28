@@ -39,7 +39,10 @@ def markdown_to_html(text: str) -> str:
             i += 1
             continue
 
-        # Header
+        # Header: ^(#{1,6})\s+(.+)$
+        #   (#{1,6})  - 1 to 6 hash characters (capture: heading level)
+        #   \s+       - one or more spaces
+        #   (.+)$     - rest of line (capture: heading content)
         header_match = re.match(r"^(#{1,6})\s+(.+)$", line)
         if header_match:
             level = len(header_match.group(1))
@@ -48,13 +51,19 @@ def markdown_to_html(text: str) -> str:
             i += 1
             continue
 
-        # Horizontal rule
+        # Horizontal rule: ^(-{3,}|\*{3,}|_{3,})$
+        #   -{3,}  - three or more dashes, OR
+        #   \*{3,} - three or more asterisks, OR
+        #   _{3,}  - three or more underscores
         if re.match(r"^(-{3,}|\*{3,}|_{3,})$", line.strip()):
             result.append("<div class='hr'></div>")
             i += 1
             continue
 
-        # Unordered list
+        # Unordered list: ^[-*+]\s+(.+)$
+        #   [-*+]  - dash, asterisk, or plus (list marker)
+        #   \s+    - one or more spaces
+        #   (.+)$  - rest of line (capture: item content)
         list_match = re.match(r"^[-*+]\s+(.+)$", line)
         if list_match:
             list_items = []
@@ -119,17 +128,29 @@ def _process_inline(text: str) -> str:
     # Escape HTML first
     text = html.escape(text)
 
-    # Inline code (must be before other patterns to avoid conflicts)
+    # Inline code: `([^`]+)`
+    #   `        - opening backtick
+    #   ([^`]+)  - one or more non-backtick characters (capture: code)
+    #   `        - closing backtick
+    # Must be before other patterns to avoid conflicts.
     text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
 
-    # Links [text](url)
+    # Links: \[([^\]]+)\]\(([^)]+)\)
+    #   \[([^\]]+)\]  - [text] (capture: link text)
+    #   \(([^)]+)\)   - (url) (capture: link url)
     text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
 
-    # Bold **text** or __text__
+    # Bold: \*\*([^*]+)\*\*  or  __([^_]+)__
+    #   \*\*([^*]+)\*\*  - **text** (capture: bold text)
+    #   __([^_]+)__      - __text__ (capture: bold text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
     text = re.sub(r"__([^_]+)__", r"<strong>\1</strong>", text)
 
-    # Italic *text* or _text_ (but not inside words)
+    # Italic: (?<!\w)\*([^*]+)\*(?!\w)  or  (?<!\w)_([^_]+)_(?!\w)
+    #   (?<!\w)    - not preceded by a word character (avoid mid-word matches)
+    #   \*([^*]+)\* - *text* (capture: italic text)
+    #   _([^_]+)_   - _text_ (capture: italic text)
+    #   (?!\w)     - not followed by a word character
     text = re.sub(r"(?<!\w)\*([^*]+)\*(?!\w)", r"<em>\1</em>", text)
     text = re.sub(r"(?<!\w)_([^_]+)_(?!\w)", r"<em>\1</em>", text)
 
