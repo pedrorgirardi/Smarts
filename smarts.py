@@ -2245,7 +2245,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
             return
 
         markdown = self._hover_markdown(hover)
-        markdown += f"\n\n---\n\n*{smart.client._name}*"
+        markdown += f"\n\n---\n*{smart.client._name}*"
 
         view = window.new_file(sublime.SEMI_TRANSIENT | sublime.ADD_TO_SELECTION)
         view.set_name(name)
@@ -2295,6 +2295,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
         <body class='container'>
             {content_html}
             <br />
+            <div class='hr'></div>
             <span class='text-pinkish font-bold'>{html.escape(smart.client._name)}</span>
         </body>
         """

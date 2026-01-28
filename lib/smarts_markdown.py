@@ -26,15 +26,16 @@ def markdown_to_html(text: str) -> str:
             code_lines = []
             i += 1
             while i < len(lines) and not lines[i].startswith("```"):
-                code_lines.append(lines[i])
+                code_lines.append(html.escape(lines[i]))
                 i += 1
-            code_content = html.escape("\n".join(code_lines))
+            code_content = "<br>".join(code_lines)
             result.append(f"<pre>{code_content}</pre>")
             i += 1
             continue
 
-        # Empty line
+        # Empty line - add line break
         if not line.strip():
+            result.append("<br />")
             i += 1
             continue
 
@@ -124,10 +125,12 @@ def _process_inline(text: str) -> str:
     # Links [text](url)
     text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
 
-    # Bold **text**
+    # Bold **text** or __text__
     text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
+    text = re.sub(r"__([^_]+)__", r"<strong>\1</strong>", text)
 
-    # Italic *text* (but not inside words)
+    # Italic *text* or _text_ (but not inside words)
     text = re.sub(r"(?<!\w)\*([^*]+)\*(?!\w)", r"<em>\1</em>", text)
+    text = re.sub(r"(?<!\w)_([^_]+)_(?!\w)", r"<em>\1</em>", text)
 
     return text
