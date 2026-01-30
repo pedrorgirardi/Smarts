@@ -23,7 +23,7 @@ from .lib import smarts_client, smarts_markdown
 importlib.reload(smarts_client)
 importlib.reload(smarts_markdown)
 
-from .lib.smarts_client import (
+from .lib.smarts_client import (  # noqa: E402
     LanguageServerClient,
     LSPCompletionItem,
     LSPCompletionResult,
@@ -62,7 +62,7 @@ from .lib.smarts_client import (
     textDocumentSyncOptions,
 )
 
-from .lib.smarts_markdown import markdown_to_html
+from .lib.smarts_markdown import markdown_to_html  # noqa: E402
 
 # -- Logging
 
