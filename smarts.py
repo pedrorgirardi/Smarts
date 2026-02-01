@@ -942,6 +942,18 @@ def range_region(
     range: LSPRange,
     inverted=False,
 ) -> sublime.Region:
+    """
+    Convert an LSP Range to a Sublime Region.
+
+    Args:
+        view: The view to convert positions for.
+        position_encoding: LSP position encoding ("utf-8" or "utf-16").
+        range: LSP Range with start and end positions.
+        inverted: If True, swap start/end so cursor is at the beginning of selection.
+
+    Returns:
+        Sublime Region corresponding to the LSP range.
+    """
     start_line = range["start"]["line"]
     start_character = range["start"]["character"]
 
