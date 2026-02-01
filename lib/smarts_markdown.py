@@ -117,8 +117,20 @@ def markdown_to_html(text: str) -> str:
             i += 1
 
         if para_lines:
-            para_text = " ".join(para_lines)
-            result.append(f"<p>{_process_inline(para_text)}</p>")
+            # Preserve line breaks for indented lines (e.g., docstring Args/Returns).
+            processed_lines = []
+            for line in para_lines:
+                is_indented = line.startswith((" ", "\t", "&nbsp;", "\u00a0"))
+                if is_indented:
+                    # Indented line: add line break before it.
+                    processed_lines.append(f"<br>{_process_inline(line)}")
+                else:
+                    # Non-indented line: join with space.
+                    if processed_lines and not processed_lines[-1].startswith("<br>"):
+                        processed_lines.append(f" {_process_inline(line)}")
+                    else:
+                        processed_lines.append(_process_inline(line))
+            result.append(f"<p>{''.join(processed_lines)}</p>")
 
     return "\n".join(result)
 
@@ -127,6 +139,9 @@ def _process_inline(text: str) -> str:
     """Process inline markdown elements."""
     # Escape HTML first
     text = html.escape(text)
+
+    # Restore common HTML entities that were double-escaped.
+    text = text.replace("&amp;nbsp;", "&nbsp;")
 
     # Inline code: `([^`]+)`
     #   `        - opening backtick
@@ -153,5 +168,9 @@ def _process_inline(text: str) -> str:
     #   (?!\w)     - not followed by a word character
     text = re.sub(r"(?<!\w)\*([^*]+)\*(?!\w)", r"<em>\1</em>", text)
     text = re.sub(r"(?<!\w)_([^_]+)_(?!\w)", r"<em>\1</em>", text)
+
+    # Handle markdown escape sequences.
+    text = text.replace(r"\_", "_")
+    text = text.replace(r"\*", "*")
 
     return text
