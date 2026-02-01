@@ -2033,20 +2033,17 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                         else:
                             selected_range = data["selectionRange"]
 
-                        selected_region = range_region(
-                            self.view,
-                            position_encoding,
-                            selected_range,
-                        )
+                        # Use ENCODED_POSITION to trigger proper selection events.
+                        start = selected_range["start"]
+                        line = start["line"] + 1  # LSP is 0-based, Sublime is 1-based
+                        col = start["character"] + 1
+                        file_path = self.view.file_name()
 
-                        show_at_center_region = sublime.Region(
-                            selected_region.begin(),
-                            selected_region.begin(),
-                        )
-
-                        self.view.sel().clear()
-                        self.view.sel().add(show_at_center_region)
-                        self.view.show_at_center(show_at_center_region)
+                        if file_path and (window := self.view.window()):
+                            window.open_file(
+                                f"{file_path}:{line}:{col}",
+                                sublime.ENCODED_POSITION,
+                            )
 
                 quick_panel_items = [
                     document_symbol_quick_panel_item(data) for data in result
