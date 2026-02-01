@@ -1130,6 +1130,18 @@ def open_location(
     empty_region: Optional[bool] = False,
     flags=0,
 ):
+    """
+    Open a file at an LSP location and set the selection.
+
+    Used by goto commands (definition, reference, diagnostic) to navigate to locations.
+
+    Args:
+        window: The Sublime window to open the file in.
+        position_encoding: LSP position encoding for interpreting character offsets.
+        location: LSP Location with URI and range.
+        empty_region: If True, place cursor at range start. If False, select the range.
+        flags: Sublime flags (e.g., sublime.TRANSIENT for preview during quick panel).
+    """
     file_path = uri_to_path(location["uri"])
 
     if ".jar:" in file_path:
@@ -1139,6 +1151,12 @@ def open_location(
             location,
             flags,
         )
+    elif empty_region:
+        # Use ENCODED_POSITION to trigger proper selection events (e.g., word highlight).
+        start = location["range"]["start"]
+        line = start["line"] + 1  # LSP is 0-based, Sublime is 1-based
+        col = start["character"] + 1
+        window.open_file(f"{file_path}:{line}:{col}", flags | sublime.ENCODED_POSITION)
     else:
         view = window.open_file(file_path, flags)
 
@@ -1148,17 +1166,7 @@ def open_location(
             else:
                 region = range_region(view, position_encoding, location["range"])
 
-                show_at_center_region = (
-                    sublime.Region(
-                        region.end(),
-                        region.end(),
-                    )
-                    if empty_region
-                    else sublime.Region(
-                        region.end(),
-                        region.begin(),
-                    )
-                )
+                show_at_center_region = sublime.Region(region.end(), region.begin())
 
                 view.sel().clear()
                 view.sel().add(show_at_center_region)
