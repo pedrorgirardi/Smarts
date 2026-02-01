@@ -940,6 +940,7 @@ def range_region(
     view: sublime.View,
     position_encoding: LSPPositionEncoding,
     range: LSPRange,
+    inverted=False,
 ) -> sublime.Region:
     start_line = range["start"]["line"]
     start_character = range["start"]["character"]
@@ -958,6 +959,9 @@ def range_region(
         if position_encoding == "utf-8"
         else view.text_point_utf16(end_line, end_character, clamp_column=True)
     )
+
+    if inverted:
+        return sublime.Region(b, a)
 
     return sublime.Region(a, b)
 
@@ -1164,9 +1168,12 @@ def open_location(
             if view.is_loading():
                 sublime.set_timeout(select_range, 10)
             else:
-                region = range_region(view, position_encoding, location["range"])
-
-                show_at_center_region = sublime.Region(region.end(), region.begin())
+                show_at_center_region = range_region(
+                    view,
+                    position_encoding,
+                    location["range"],
+                    inverted=True,
+                )
 
                 view.sel().clear()
                 view.sel().add(show_at_center_region)
