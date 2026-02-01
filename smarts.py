@@ -256,6 +256,10 @@ class PgSmart:
 _SMARTS: List[PgSmart] = []
 _SMARTS_LOCK = threading.Lock()
 
+# Tracks view ID when document symbol quick panel is open.
+# Used to close the quick panel if the user closes the view (e.g., cmd+w).
+_DOCUMENT_SYMBOL_VIEW_ID: Optional[int] = None
+
 
 # ---------------------------------------------------------------------------------------
 
@@ -2020,6 +2024,9 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                     self.view.show_at_center(show_at_center_region)
 
                 def on_select(index):
+                    global _DOCUMENT_SYMBOL_VIEW_ID
+                    _DOCUMENT_SYMBOL_VIEW_ID = None
+
                     if index == -1:
                         restore_viewport_position()
 
@@ -2053,6 +2060,9 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
 
                 if not window:
                     return
+
+                global _DOCUMENT_SYMBOL_VIEW_ID
+                _DOCUMENT_SYMBOL_VIEW_ID = self.view.id()
 
                 window.show_quick_panel(
                     quick_panel_items,
@@ -2655,6 +2665,13 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             self.view.run_command("pg_smarts_format_document")
 
     def on_pre_close(self):
+        # Close document symbol quick panel if its view is being closed.
+        global _DOCUMENT_SYMBOL_VIEW_ID
+        if _DOCUMENT_SYMBOL_VIEW_ID == self.view.id():
+            _DOCUMENT_SYMBOL_VIEW_ID = None
+            if window := self.view.window():
+                window.run_command("hide_overlay")
+
         for smart in applicable_smarts(self.view, method="textDocument/didClose"):
             smart.client.textDocument_didClose({
                 "textDocument": view_textDocumentIdentifier(self.view),
