@@ -1700,7 +1700,7 @@ def handle_textDocument_publishDiagnostics(
         # distracting visual changes (squiggly lines and annotations moving around).
         # We wait until the user stops typing before showing updated diagnostics.
         last_modified = view.settings().get(kSMARTS_LAST_MODIFIED_TIME, 0)
-        cool_down = 0.5
+        cool_down = 1.0
         since_modified = time.time() - last_modified
 
         if since_modified < cool_down:
