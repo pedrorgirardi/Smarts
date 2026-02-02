@@ -1577,7 +1577,7 @@ def handle_window_showMessage(
     panel_log(window, f"{message_message}\n", show=True)
 
 
-def render_diagnostics(
+def present_diagnostics(
     view: sublime.View,
     position_encoding: LSPPositionEncoding,
     diagnostics: List[PgSmartsDiagnostic],
@@ -1689,12 +1689,12 @@ def handle_textDocument_publishDiagnostics(
             _DIAGNOSTICS_TIMERS[view_id].cancel()
             del _DIAGNOSTICS_TIMERS[view_id]
 
-        def _render_diagnostics():
+        def _present_diagnostics():
             # Remove timer reference when it fires.
             _DIAGNOSTICS_TIMERS.pop(view_id, None)
-            render_diagnostics(view, position_encoding, diagnostics)
+            present_diagnostics(view, position_encoding, diagnostics)
 
-        # Cool-down period: Suppress diagnostics rendering while actively editing.
+        # Cool-down period: Suppress presenting diagnostics while actively editing.
         #
         # Without this, diagnostics constantly update while typing, causing
         # distracting visual changes (squiggly lines and annotations moving around).
@@ -1705,11 +1705,11 @@ def handle_textDocument_publishDiagnostics(
 
         if since_modified < cool_down:
             delay = cool_down - since_modified
-            _DIAGNOSTICS_TIMERS[view_id] = threading.Timer(delay, _render_diagnostics)
+            _DIAGNOSTICS_TIMERS[view_id] = threading.Timer(delay, _present_diagnostics)
             _DIAGNOSTICS_TIMERS[view_id].start()
             return
 
-        render_diagnostics(view, position_encoding, diagnostics)
+        present_diagnostics(view, position_encoding, diagnostics)
 
 
 def handle_notification(
