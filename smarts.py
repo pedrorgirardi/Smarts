@@ -6,6 +6,7 @@ import pprint
 import re
 import tempfile
 import threading
+import time
 import uuid
 from itertools import groupby
 from pathlib import Path
@@ -2844,8 +2845,9 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         smart.client.textDocument_documentHighlight(params, on_result, on_error)
 
     def on_modified(self):
-        # Erase highlights immediately.
+        # Erase highlights immediately and record modification time.
         self.erase_highlights()
+        self._last_modified_time = time.time()
 
     def on_selection_modified_async(self):
         window = self.view.window()
@@ -2855,9 +2857,33 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         highlighter = getattr(self, "pg_smarts_highlighter", None)
 
+        # Cool-down period: Suppress highlights while actively editing.
+        #
+        # We wait for cool_down seconds after the last modification before
+        # highlighting again. A timer is scheduled so highlights appear
+        # automatically once the user stops typing, without requiring an
+        # additional cursor movement.
+        last_modified = getattr(self, "_last_modified_time", 0)
+        cool_down = 0.5
+        since_modified = time.time() - last_modified
+
+        if since_modified < cool_down:
+            if highlighter and highlighter.is_alive():
+                highlighter.cancel()
+
+            delay = cool_down - since_modified
+
+            self.pg_smarts_highlighter = threading.Timer(delay, self.highlight)
+            self.pg_smarts_highlighter.start()
+            return
+
+        # Debounce rapid cursor movements (e.g., holding arrow key, dragging).
+        #
+        # The timer acts as a flag: if alive, we're in "rapid movement" mode and
+        # should delay the request. When cursor stops and timer fires, it highlights.
+        # This avoids wasting LSP requests while "sliding" the caret.
         if highlighter and highlighter.is_alive():
             highlighter.cancel()
-
             self.pg_smarts_highlighter = threading.Timer(0.1, self.highlight)
             self.pg_smarts_highlighter.start()
         else:
