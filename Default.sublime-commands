@@ -20,6 +20,14 @@
         "command": "pg_smarts_clear_output_panel"
     },
     {
+        "caption": "Smarts: Toggle Messages Panel",
+        "command": "pg_smarts_toggle_messages_panel"
+    },
+    {
+        "caption": "Smarts: Clear Messages Panel",
+        "command": "pg_smarts_clear_messages_panel"
+    },
+    {
         "caption": "Smarts: Initialize",
         "command": "pg_smarts_initialize"
     },

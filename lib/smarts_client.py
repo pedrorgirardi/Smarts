@@ -877,6 +877,10 @@ class LanguageServerStatus(Enum):
     SHUTDOWN = auto()  # Server has been shutdown gracefully
 
 
+def _default_before_write(message: LSPMessage) -> LSPMessage:
+    return message
+
+
 class LanguageServerClient:
     """LSP client that manages communication with a language server subprocess.
 
@@ -917,6 +921,7 @@ class LanguageServerClient:
         logger: logging.Logger,
         name: str,
         server_args: List[str],
+        before_write: Optional[Callable[[LSPMessage], LSPMessage]],
         on_logTrace: Optional[LSPNotificationHandler] = None,
         on_window_logMessage: Optional[LSPNotificationHandler] = None,
         on_window_showMessage: Optional[LSPNotificationHandler] = None,
@@ -940,6 +945,9 @@ class LanguageServerClient:
             Union[int, str], Callable[[LSPResponseMessage], None]
         ] = {}
         self._open_documents = set()
+        self._before_write: Callable[[LSPMessage], LSPMessage] = (
+            before_write or _default_before_write
+        )
         self._on_logTrace = on_logTrace
         self._on_window_logMessage = on_window_logMessage
         self._on_window_showMessage = on_window_showMessage
@@ -1194,6 +1202,8 @@ class LanguageServerClient:
             task_done_called = False
 
             try:
+                message = self._before_write(message)
+
                 content = json.dumps(message)
 
                 header = f"Content-Length: {len(content)}\r\n\r\n"
