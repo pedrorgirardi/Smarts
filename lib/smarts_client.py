@@ -12,12 +12,14 @@ from typing import (
     Dict,
     List,
     Literal,
+    NotRequired,
     Optional,
     TypedDict,
-    NotRequired,
     Union,
     cast,
 )
+
+import sublime
 
 LSPPositionEncoding = Literal[
     # Character offsets count UTF-8 code units (e.g bytes).
@@ -1553,6 +1555,13 @@ class LanguageServerClient:
                     self._server_status = LanguageServerStatus.INITIALIZED
 
                     self._logger.info("Server initialized")
+
+                    if sublime.platform() == "osx":
+                        subprocess.run([
+                            "osascript",
+                            "-e",
+                            f'display notification "Server {self._name} initialized" with title "Smarts"',
+                        ])
 
                     if result := cast(LSPInitializeResult, response.get("result")):
                         self._server_capabilities = result.get("capabilities")
