@@ -96,6 +96,7 @@ kDIAGNOSTICS = "PG_SMARTS_DIAGNOSTICS"
 kSMARTS_HIGHLIGHTS = "PG_SMARTS_HIGHLIGHTS"
 kSMARTS_HIGHLIGHTS_POSITION_ENCODING = "PG_SMARTS_HIGHLIGHTS_POSITION_ENCODING"
 kSMARTS_COMPLETIONS = "PG_SMARTS_COMPLETIONS"
+kSMARTS_LAST_MODIFIED_TIME = "PG_SMARTS_LAST_MODIFIED_TIME"
 
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnosticSeverity
 kDIAGNOSTIC_SEVERITY_ERROR = 1
@@ -263,6 +264,10 @@ _SMARTS_LOCK = threading.Lock()
 # Tracks view ID when document symbol quick panel is open.
 # Used to close the quick panel if the user closes the view (e.g., cmd+w).
 _DOCUMENT_SYMBOL_VIEW_ID: Optional[int] = None
+
+# Pending diagnostics timers per view, keyed by view ID.
+# Used to defer diagnostics rendering while actively editing.
+_DIAGNOSTICS_TIMERS: dict = {}
 
 
 # ---------------------------------------------------------------------------------------
@@ -1572,6 +1577,64 @@ def handle_window_showMessage(
     panel_log(window, f"{message_message}\n", show=True)
 
 
+def render_diagnostics(
+    view: sublime.View,
+    position_encoding: LSPPositionEncoding,
+    diagnostics: List[PgSmartsDiagnostic],
+):
+    """
+    Render diagnostics in the view (regions, annotations, status bar).
+    """
+    diagnostics_status = []
+
+    # Clear annotations for all severity levels.
+    for s in [
+        kDIAGNOSTIC_SEVERITY_ERROR,
+        kDIAGNOSTIC_SEVERITY_WARNING,
+        kDIAGNOSTIC_SEVERITY_INFORMATION,
+        kDIAGNOSTIC_SEVERITY_HINT,
+    ]:
+        view.erase_regions(f"{kDIAGNOSTICS}_SEVERITY_{s}")
+
+    def severity_key(diagnostic):
+        # The diagnostic's severity.
+        # To avoid interpretation mismatches when a server is used with different clients it is highly recommended
+        # that servers always provide a severity value.
+        # If omitted, it's recommended for the client to interpret it as an Error severity.
+        return diagnostic.get("severity", 1)
+
+    for k, g in groupby(sorted(diagnostics, key=severity_key), key=severity_key):
+        severity_regions = []
+        severity_annotations = []
+        severity_diagnostics = list(g)
+
+        diagnostics_status.append(f"{severity_name(k)}: {len(severity_diagnostics)}")
+
+        for d in severity_diagnostics:
+            # Regions by Severity
+            severity_regions.append(
+                range_region(view, position_encoding, d["range"]),
+            )
+
+            # Annotations (minihtml) by Severity
+            severity_annotations.append(
+                f'<span style="font-size:0.8em">{html.escape(d["message"])}</span>',
+            )
+
+        view.add_regions(
+            f"{kDIAGNOSTICS}_SEVERITY_{k}",
+            severity_regions,
+            scope=severity_scope(k),
+            annotations=severity_annotations,
+            annotation_color=severity_annotation_color(view, k),
+            flags=sublime.DRAW_SQUIGGLY_UNDERLINE
+            | sublime.DRAW_NO_FILL
+            | sublime.DRAW_NO_OUTLINE,
+        )
+
+    view.set_status(kDIAGNOSTICS, ", ".join(diagnostics_status))
+
+
 def handle_textDocument_publishDiagnostics(
     window: sublime.Window,
     smart: PgSmart,
@@ -1580,9 +1643,9 @@ def handle_textDocument_publishDiagnostics(
     """
     Diagnostics notifications are sent from the server to the client to signal results of validation runs.
 
-    Diagnostics are “owned” by the server so it is the server’s responsibility to clear them if necessary.
+    Diagnostics are "owned" by the server so it is the server's responsibility to clear them if necessary.
 
-    When a file changes it is the server’s responsibility to re-compute diagnostics and push them to the client.
+    When a file changes it is the server's responsibility to re-compute diagnostics and push them to the client.
     If the computed set is empty it has to push the empty array to clear former diagnostics.
     Newly pushed diagnostics always replace previously pushed diagnostics.
     There is no merging that happens on the client side.
@@ -1619,56 +1682,34 @@ def handle_textDocument_publishDiagnostics(
         # Persists document diagnostics.
         view.settings().set(kDIAGNOSTICS, diagnostics)
 
-        diagnostics_status = []
+        view_id = view.id()
 
-        # Clear annotations for all severity levels.
-        for s in [
-            kDIAGNOSTIC_SEVERITY_ERROR,
-            kDIAGNOSTIC_SEVERITY_WARNING,
-            kDIAGNOSTIC_SEVERITY_INFORMATION,
-            kDIAGNOSTIC_SEVERITY_HINT,
-        ]:
-            view.erase_regions(f"{kDIAGNOSTICS}_SEVERITY_{s}")
+        # Cancel any pending diagnostics timer for this view.
+        if view_id in _DIAGNOSTICS_TIMERS:
+            _DIAGNOSTICS_TIMERS[view_id].cancel()
+            del _DIAGNOSTICS_TIMERS[view_id]
 
-        def severity_key(diagnostic):
-            # The diagnostic's severity.
-            # To avoid interpretation mismatches when a server is used with different clients it is highly recommended
-            # that servers always provide a severity value.
-            # If omitted, it’s recommended for the client to interpret it as an Error severity.
-            return diagnostic.get("severity", 1)
+        def _render_diagnostics():
+            # Remove timer reference when it fires.
+            _DIAGNOSTICS_TIMERS.pop(view_id, None)
+            render_diagnostics(view, position_encoding, diagnostics)
 
-        for k, g in groupby(sorted(diagnostics, key=severity_key), key=severity_key):
-            severity_regions = []
-            severity_annotations = []
-            severity_diagnostics = list(g)
+        # Cool-down period: Suppress diagnostics rendering while actively editing.
+        #
+        # Without this, diagnostics constantly update while typing, causing
+        # distracting visual changes (squiggly lines and annotations moving around).
+        # We wait until the user stops typing before showing updated diagnostics.
+        last_modified = view.settings().get(kSMARTS_LAST_MODIFIED_TIME, 0)
+        cool_down = 0.5
+        since_modified = time.time() - last_modified
 
-            diagnostics_status.append(
-                f"{severity_name(k)}: {len(severity_diagnostics)}"
-            )
+        if since_modified < cool_down:
+            delay = cool_down - since_modified
+            _DIAGNOSTICS_TIMERS[view_id] = threading.Timer(delay, _render_diagnostics)
+            _DIAGNOSTICS_TIMERS[view_id].start()
+            return
 
-            for d in severity_diagnostics:
-                # Regions by Severity
-                severity_regions.append(
-                    range_region(view, position_encoding, d["range"]),
-                )
-
-                # Annotations (minihtml) by Severity
-                severity_annotations.append(
-                    f'<span style="font-size:0.8em">{html.escape(d["message"])}</span>',
-                )
-
-            view.add_regions(
-                f"{kDIAGNOSTICS}_SEVERITY_{k}",
-                severity_regions,
-                scope=severity_scope(k),
-                annotations=severity_annotations,
-                annotation_color=severity_annotation_color(view, k),
-                flags=sublime.DRAW_SQUIGGLY_UNDERLINE
-                | sublime.DRAW_NO_FILL
-                | sublime.DRAW_NO_OUTLINE,
-            )
-
-        view.set_status(kDIAGNOSTICS, ", ".join(diagnostics_status))
+        render_diagnostics(view, position_encoding, diagnostics)
 
 
 def handle_notification(
@@ -2847,7 +2888,10 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
     def on_modified(self):
         # Erase highlights immediately and record modification time.
         self.erase_highlights()
-        self._last_modified_time = time.time()
+
+        # Store in view.settings() so it's accessible from other functions
+        # (e.g., handle_textDocument_publishDiagnostics for diagnostics cool-down).
+        self.view.settings().set(kSMARTS_LAST_MODIFIED_TIME, time.time())
 
     def on_selection_modified_async(self):
         window = self.view.window()
@@ -2863,7 +2907,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         # highlighting again. A timer is scheduled so highlights appear
         # automatically once the user stops typing, without requiring an
         # additional cursor movement.
-        last_modified = getattr(self, "_last_modified_time", 0)
+        last_modified = self.view.settings().get(kSMARTS_LAST_MODIFIED_TIME, 0)
         cool_down = 0.5
         since_modified = time.time() - last_modified
 
