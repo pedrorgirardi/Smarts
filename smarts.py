@@ -1367,6 +1367,7 @@ def goto_location(
     position_encoding: LSPPositionEncoding,
     locations: List[LSPLocation],
     item_builder: Callable[[sublime.Window, LSPLocation], sublime.QuickPanelItem],
+    flags: int = 0,
     on_cancel: Optional[Callable[[], None]] = None,
 ):
     if len(locations) == 1:
@@ -1375,6 +1376,7 @@ def goto_location(
             position_encoding=position_encoding,
             location=locations[0],
             empty_region=True,
+            flags=flags,
         )
     else:
         locations = sorted(
@@ -1404,6 +1406,7 @@ def goto_location(
                     position_encoding=position_encoding,
                     location=locations[index],
                     empty_region=True,
+                    flags=flags,
                 )
 
         items = [item_builder(window, location) for location in locations]
@@ -2016,13 +2019,17 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
 
 
 class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
-    def run(self, _):
+    def run(self, _, side_by_side=False):
         smart = applicable_smart(self.view, method="textDocument/definition")
 
         if smart is None:
             return
 
         position_encoding = smart.position_encoding()
+
+        open_file_flags = (
+            sublime.SEMI_TRANSIENT | sublime.ADD_TO_SELECTION if side_by_side else 0
+        )
 
         params = view_textDocumentPositionParams(self.view, position_encoding)
 
@@ -2043,6 +2050,7 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
                     position_encoding=position_encoding,
                     locations=locations,
                     item_builder=location_quick_panel_item,
+                    flags=open_file_flags,
                     on_cancel=restore_view,
                 )
 
