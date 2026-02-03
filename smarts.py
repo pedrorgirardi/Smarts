@@ -268,6 +268,7 @@ _DOCUMENT_SYMBOL_VIEW_ID: Optional[int] = None
 # Pending diagnostics timers per view, keyed by view ID.
 # Used to defer diagnostics rendering while actively editing.
 _DIAGNOSTICS_TIMERS: dict = {}
+_DIAGNOSTICS_TIMERS_LOCK = threading.Lock()
 
 
 # ---------------------------------------------------------------------------------------
@@ -1685,13 +1686,15 @@ def handle_textDocument_publishDiagnostics(
         view_id = view.id()
 
         # Cancel any pending diagnostics timer for this view.
-        if view_id in _DIAGNOSTICS_TIMERS:
-            _DIAGNOSTICS_TIMERS[view_id].cancel()
-            del _DIAGNOSTICS_TIMERS[view_id]
+        with _DIAGNOSTICS_TIMERS_LOCK:
+            if view_id in _DIAGNOSTICS_TIMERS:
+                _DIAGNOSTICS_TIMERS[view_id].cancel()
+                del _DIAGNOSTICS_TIMERS[view_id]
 
         def _present_diagnostics():
             # Remove timer reference when it fires.
-            _DIAGNOSTICS_TIMERS.pop(view_id, None)
+            with _DIAGNOSTICS_TIMERS_LOCK:
+                _DIAGNOSTICS_TIMERS.pop(view_id, None)
             present_diagnostics(view, position_encoding, diagnostics)
 
         # Cool-down period: Suppress presenting diagnostics while actively editing.
@@ -1705,8 +1708,10 @@ def handle_textDocument_publishDiagnostics(
 
         if since_modified < cool_down:
             delay = cool_down - since_modified
-            _DIAGNOSTICS_TIMERS[view_id] = threading.Timer(delay, _present_diagnostics)
-            _DIAGNOSTICS_TIMERS[view_id].start()
+            timer = threading.Timer(delay, _present_diagnostics)
+            with _DIAGNOSTICS_TIMERS_LOCK:
+                _DIAGNOSTICS_TIMERS[view_id] = timer
+            timer.start()
             return
 
         present_diagnostics(view, position_encoding, diagnostics)
