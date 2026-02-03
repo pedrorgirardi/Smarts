@@ -1691,11 +1691,14 @@ def handle_textDocument_publishDiagnostics(
                 _DIAGNOSTICS_TIMERS[view_id].cancel()
                 del _DIAGNOSTICS_TIMERS[view_id]
 
-        def _present_diagnostics():
+        def _present():
+            present_diagnostics(view, position_encoding, diagnostics)
+
+        def _present_timely():
             # Remove timer reference when it fires.
             with _DIAGNOSTICS_TIMERS_LOCK:
                 _DIAGNOSTICS_TIMERS.pop(view_id, None)
-            present_diagnostics(view, position_encoding, diagnostics)
+            sublime.set_timeout(_present, 0)
 
         # Cool-down period: Suppress presenting diagnostics while actively editing.
         #
@@ -1708,13 +1711,13 @@ def handle_textDocument_publishDiagnostics(
 
         if since_modified < cool_down:
             delay = cool_down - since_modified
-            timer = threading.Timer(delay, _present_diagnostics)
+            timer = threading.Timer(delay, _present_timely)
             with _DIAGNOSTICS_TIMERS_LOCK:
                 _DIAGNOSTICS_TIMERS[view_id] = timer
             timer.start()
             return
 
-        present_diagnostics(view, position_encoding, diagnostics)
+        sublime.set_timeout(_present, 0)
 
 
 def handle_notification(
