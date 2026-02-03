@@ -576,7 +576,7 @@ def toggle_messages_panel(window: sublime.Window):
 def messages_panel_insert(window: sublime.Window, text: str):
     if window.active_panel() == kOUTPUT_PANEL_MESSAGES_NAME_PREFIXED:
         panel_view = messages_panel(window)
-        panel_view.run_command("insert", {"characters": text + "\n"})
+        panel_view.run_command("append", {"characters": text + "\n"})
 
 
 def markdown_to_minihtml(view: sublime.View, markdown: str) -> str:
@@ -1885,8 +1885,10 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
         def _on_receive_notification(message):
             handle_notification(smart_uuid, message)
 
-        def _before_wirte(message):
-            messages_panel_insert(self.window, json.dumps(message, indent=2))
+        def _before_write(message):
+            messages_panel_insert(
+                self.window, "// Send:\n" + json.dumps(message, indent=2)
+            )
 
             return message
 
@@ -1894,7 +1896,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             logger=plugin_logger,
             name=server_config["name"],
             server_args=server_config["start"],
-            before_write=_before_wirte,
+            before_write=_before_write,
             on_logTrace=_on_receive_notification,
             on_window_logMessage=_on_receive_notification,
             on_window_showMessage=_on_receive_notification,

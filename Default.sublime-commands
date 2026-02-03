@@ -12,19 +12,19 @@
         "command": "pg_smarts_status"
     },
     {
-        "caption": "Smarts: Toggle Output Panel",
+        "caption": "Smarts: Toggle Output",
         "command": "pg_smarts_toggle_output_panel"
     },
     {
-        "caption": "Smarts: Clear Output Panel",
+        "caption": "Smarts: Clear Output",
         "command": "pg_smarts_clear_output_panel"
     },
     {
-        "caption": "Smarts: Toggle Messages Panel",
+        "caption": "Smarts: Toggle Messages",
         "command": "pg_smarts_toggle_messages_panel"
     },
     {
-        "caption": "Smarts: Clear Messages Panel",
+        "caption": "Smarts: Clear Messages",
         "command": "pg_smarts_clear_messages_panel"
     },
     {
