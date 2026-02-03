@@ -1692,6 +1692,9 @@ def handle_textDocument_publishDiagnostics(
                 del _DIAGNOSTICS_TIMERS[view_id]
 
         def _present():
+            if not view.is_valid():
+                return
+
             present_diagnostics(view, position_encoding, diagnostics)
 
         def _present_timely():
