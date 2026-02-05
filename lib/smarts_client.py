@@ -1574,16 +1574,14 @@ class LanguageServerClient:
                                     "--message",
                                     f"Server {self._name} initialized",
                                     "--duration",
-                                    "2",
+                                    "3",
                                 ])
                             else:
                                 self._logger.debug(
                                     f"Companion binary not found at {companion_path}"
                                 )
                         except Exception as e:
-                            self._logger.debug(
-                                f"Failed to run companion toast: {e}"
-                            )
+                            self._logger.debug(f"Failed to run companion toast: {e}")
 
                     if result := cast(LSPInitializeResult, response.get("result")):
                         self._server_capabilities = result.get("capabilities")
