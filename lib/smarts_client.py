@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import shlex
 import subprocess
 import threading
@@ -1557,11 +1558,32 @@ class LanguageServerClient:
                     self._logger.info("Server initialized")
 
                     if sublime.platform() == "osx":
-                        subprocess.run([
-                            "osascript",
-                            "-e",
-                            f'display notification "Server {self._name} initialized" with title "Smarts"',
-                        ])
+                        companion_path = os.path.abspath(
+                            os.path.join(
+                                os.path.dirname(__file__),
+                                "..",
+                                "bin",
+                                "companion",
+                            )
+                        )
+                        try:
+                            if os.path.exists(companion_path):
+                                subprocess.Popen([
+                                    companion_path,
+                                    "toast",
+                                    "--message",
+                                    f"Server {self._name} initialized",
+                                    "--duration",
+                                    "2",
+                                ])
+                            else:
+                                self._logger.debug(
+                                    f"Companion binary not found at {companion_path}"
+                                )
+                        except Exception as e:
+                            self._logger.debug(
+                                f"Failed to run companion toast: {e}"
+                            )
 
                     if result := cast(LSPInitializeResult, response.get("result")):
                         self._server_capabilities = result.get("capabilities")

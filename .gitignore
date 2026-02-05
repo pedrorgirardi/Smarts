@@ -8,3 +8,7 @@ Smarts.sublime-workspace
 .ropeproject/
 __pycache__/
 .pytest_cache/
+companion/.build/
+companion/.swiftpm/
+companion/*.xcodeproj/
+bin/companion
