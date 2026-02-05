@@ -1589,16 +1589,9 @@ def present_diagnostics(
     """
     Render diagnostics in the view (regions, annotations, status bar).
     """
-    diagnostics_status = []
+    clear_diagnostics(view)
 
-    # Clear annotations for all severity levels.
-    for s in [
-        kDIAGNOSTIC_SEVERITY_ERROR,
-        kDIAGNOSTIC_SEVERITY_WARNING,
-        kDIAGNOSTIC_SEVERITY_INFORMATION,
-        kDIAGNOSTIC_SEVERITY_HINT,
-    ]:
-        view.erase_regions(f"{kDIAGNOSTICS}_SEVERITY_{s}")
+    diagnostics_status = []
 
     def severity_key(diagnostic):
         # The diagnostic's severity.
@@ -1637,6 +1630,19 @@ def present_diagnostics(
         )
 
     view.set_status(kDIAGNOSTICS, ", ".join(diagnostics_status))
+
+
+def clear_diagnostics(view: sublime.View):
+    # Clear annotations/regions for all severity levels and status.
+    for s in [
+        kDIAGNOSTIC_SEVERITY_ERROR,
+        kDIAGNOSTIC_SEVERITY_WARNING,
+        kDIAGNOSTIC_SEVERITY_INFORMATION,
+        kDIAGNOSTIC_SEVERITY_HINT,
+    ]:
+        view.erase_regions(f"{kDIAGNOSTICS}_SEVERITY_{s}")
+
+    view.erase_status(kDIAGNOSTICS)
 
 
 def handle_textDocument_publishDiagnostics(
@@ -2907,8 +2913,9 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         smart.client.textDocument_documentHighlight(params, on_result, on_error)
 
     def on_modified(self):
-        # Erase highlights immediately and record modification time.
+        # Erase highlights and diagnostics immediately.
         self.erase_highlights()
+        clear_diagnostics(self.view)
 
         # Store in view.settings() so it's accessible from other functions
         # (e.g., handle_textDocument_publishDiagnostics for diagnostics cool-down).
