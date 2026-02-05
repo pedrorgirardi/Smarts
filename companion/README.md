@@ -3,6 +3,13 @@
 A small SwiftUI helper for Smarts. Currently supports a `toast` command for
 showing a bottom-right snackbar-style notification.
 
+## Icon assets
+
+The official companion icon files are:
+
+- `assets/companion-icon-1024.png`
+- `assets/companion.icns`
+
 ## Build
 
 ```sh

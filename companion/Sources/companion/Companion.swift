@@ -289,6 +289,8 @@ private final class ToastManager {
 
 private struct ToastView: View {
     let message: String
+    private let iconImage = CompanionIconResolver.load()
+    private let iconSize: CGFloat = 20
 
     var body: some View {
         ZStack {
@@ -296,9 +298,19 @@ private struct ToastView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             HStack(spacing: 12) {
-                Circle()
-                    .fill(Color.accentColor)
-                    .frame(width: 10, height: 10)
+                Group {
+                    if let image = iconImage {
+                        Image(nsImage: image)
+                            .resizable()
+                            .interpolation(.high)
+                            .frame(width: iconSize, height: iconSize)
+                            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    } else {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 9, height: 9)
+                    }
+                }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Smarts")
@@ -315,6 +327,39 @@ private struct ToastView: View {
             .padding(.vertical, 12)
         }
         .frame(width: toastSize.width, height: toastSize.height)
+    }
+}
+
+private enum CompanionIconResolver {
+    static func load() -> NSImage? {
+        let executableURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        let executableDir = executableURL.deletingLastPathComponent()
+
+        let candidates: [URL] = [
+            // Expected installed layout: <repo>/bin/companion + <repo>/companion/assets/...
+            executableDir
+                .deletingLastPathComponent()
+                .appendingPathComponent("companion")
+                .appendingPathComponent("assets")
+                .appendingPathComponent("companion-icon-1024.png"),
+            // Running from Swift build folder inside companion/
+            executableDir
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("assets")
+                .appendingPathComponent("companion-icon-1024.png"),
+            // Relative to current working directory
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                .appendingPathComponent("companion")
+                .appendingPathComponent("assets")
+                .appendingPathComponent("companion-icon-1024.png")
+        ]
+
+        for candidate in candidates where FileManager.default.fileExists(atPath: candidate.path) {
+            return NSImage(contentsOf: candidate)
+        }
+        return nil
     }
 }
 
