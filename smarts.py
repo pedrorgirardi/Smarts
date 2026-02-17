@@ -2889,9 +2889,13 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             self.view.add_regions(
                 kSMARTS_HIGHLIGHTS,
                 regions,
-                scope="region.cyanish",
+                scope="region.yellowish",
                 icon="",
-                flags=sublime.DRAW_NO_FILL if highlight_references else sublime.HIDDEN,
+                flags=sublime.DRAW_NO_FILL
+                | sublime.DRAW_NO_OUTLINE
+                | sublime.DRAW_STIPPLED_UNDERLINE
+                if highlight_references
+                else sublime.HIDDEN,
             )
 
             self.view.settings().set(
