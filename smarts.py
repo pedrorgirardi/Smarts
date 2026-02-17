@@ -2867,17 +2867,9 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 self.erase_highlights()
                 return
 
-            result_regions = [
+            regions = [
                 range_region(self.view, position_encoding, highlight["range"])
                 for highlight in result
-            ]
-
-            caret_points = [region.begin() for region in self.view.sel()]
-
-            regions = [
-                region
-                for region in result_regions
-                if not any(region.contains(point) for point in caret_points)
             ]
 
             # Do nothing if result regions are the same as view regions.
@@ -2897,7 +2889,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             self.view.add_regions(
                 kSMARTS_HIGHLIGHTS,
                 regions,
-                scope="region.yellowish",
+                scope="region.cyanish",
                 icon="",
                 flags=sublime.DRAW_NO_FILL
                 | sublime.DRAW_NO_OUTLINE
