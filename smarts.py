@@ -2867,9 +2867,17 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 self.erase_highlights()
                 return
 
-            regions = [
+            result_regions = [
                 range_region(self.view, position_encoding, highlight["range"])
                 for highlight in result
+            ]
+
+            caret_points = [region.begin() for region in self.view.sel()]
+
+            regions = [
+                region
+                for region in result_regions
+                if not any(region.contains(point) for point in caret_points)
             ]
 
             # Do nothing if result regions are the same as view regions.
