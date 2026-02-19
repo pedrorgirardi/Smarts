@@ -2889,7 +2889,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             self.view.add_regions(
                 kSMARTS_HIGHLIGHTS,
                 regions,
-                scope="region.purplish",
+                scope="comment",
                 icon="",
                 flags=sublime.DRAW_NO_FILL if highlight_references else sublime.HIDDEN,
             )
