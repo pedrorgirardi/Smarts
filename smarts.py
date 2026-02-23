@@ -1548,7 +1548,7 @@ def handle_logTrace(
 def handle_window_logMessage(
     window: sublime.Window,
     message: LSPNotificationMessage,
-):
+) -> None:
     """
     The log message notification is sent from the server to the client
     to ask the client to log a particular message.
@@ -1556,17 +1556,19 @@ def handle_window_logMessage(
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_logMessage
     """
 
-    message_type = message["params"]["type"]
-    message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
-    message_message = message["params"]["message"]
+    if params := message["params"]:
+        message_type = params["type"]
+        message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
 
-    panel_log(window, f"{message_message}\n")
+        message_message = params["message"]
+
+        panel_log(window, f"{message_type} {message_message}\n")
 
 
 def handle_window_showMessage(
     window: sublime.Window,
     message: LSPNotificationMessage,
-):
+) -> None:
     """
     The show message notification is sent from a server to a client
     to ask the client to display a particular message in the user interface.
@@ -1574,11 +1576,13 @@ def handle_window_showMessage(
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_showMessage
     """
 
-    message_type = message["params"]["type"]
-    message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
-    message_message = message["params"]["message"]
+    if params := message["params"]:
+        message_type = params["type"]
+        message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
 
-    panel_log(window, f"{message_message}\n", show=True)
+        message_message = params["message"]
+
+        panel_log(window, f"{message_type} {message_message}\n", show=True)
 
 
 def present_diagnostics(
