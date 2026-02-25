@@ -67,9 +67,7 @@ from .lib.smarts_markdown import markdown_to_html  # noqa: E402
 
 # -- Logging
 
-logging_formatter = logging.Formatter(
-    fmt="[{name}] [{threadName}] {levelname} {message}", style="{"
-)
+logging_formatter = logging.Formatter(fmt="[{name} {threadName}] {message}", style="{")
 
 # Handler to log on the Console.
 console_logging_handler = logging.StreamHandler()
