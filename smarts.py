@@ -10,7 +10,7 @@ import time
 import uuid
 from itertools import groupby
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Set, TypedDict, cast
+from typing import Any, Callable, Optional, Set, TypedDict, cast
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
@@ -24,25 +24,7 @@ from .lib import smarts_client, smarts_markdown
 importlib.reload(smarts_client)
 importlib.reload(smarts_markdown)
 
-from .lib.smarts_client import (  # noqa: E402
-    LanguageServerClient,
-    LSPCompletionItem,
-    LSPCompletionResult,
-    LSPDefinitionResult,
-    LSPDiagnostic,
-    LSPDidChangeTextDocumentParams,
-    LSPDidOpenTextDocumentParams,
-    LSPDocumentFormattingParams,
-    LSPDocumentHighlightResult,
-    LSPDocumentSymbolResult,
-    LSPFormattingResult,
-    LSPHover,
-    LSPHoverResult,
-    LSPLocation,
-    LSPNotificationMessage,
-    LSPPosition,
-    LSPPositionEncoding,
-    LSPPublishDiagnosticsParams,
+from .lib.smarts_client import (
     LSPRange,
     LSPReferencesResult,
     LSPRenameParams,
@@ -62,8 +44,6 @@ from .lib.smarts_client import (  # noqa: E402
     LSPWorkspaceSymbolResult,
     textDocumentSyncOptions,
 )
-
-from .lib.smarts_markdown import markdown_to_html  # noqa: E402
 
 # -- Logging
 
@@ -208,7 +188,7 @@ kMINIHTML_STYLES = """
 # ---------------------------------------------------------------------------------------
 
 
-class PgSmartsDiagnostic(LSPDiagnostic):
+class PgSmartsDiagnostic(smarts_client.LSPDiagnostic):
     """
     LSPDiagnostic with URI.
 
@@ -221,8 +201,8 @@ class PgSmartsDiagnostic(LSPDiagnostic):
 
 class PgSmartsServerConfig(TypedDict):
     name: str
-    start: List[str]
-    applicable_to: List[str]
+    start: list[str]
+    applicable_to: list[str]
 
 
 class PgSmartsInitializeData(TypedDict, total=False):
@@ -231,7 +211,7 @@ class PgSmartsInitializeData(TypedDict, total=False):
 
 
 class PgSmartsProjectData(TypedDict):
-    initialize: List[PgSmartsInitializeData]
+    initialize: list[PgSmartsInitializeData]
 
 
 class PgSmart:
@@ -240,14 +220,14 @@ class PgSmart:
         uuid: str,
         window: int,
         config: PgSmartsServerConfig,
-        client: LanguageServerClient,
+        client: smarts_client.LanguageServerClient,
     ):
         self.uuid = uuid
         self.window = window
         self.config = config
         self.client = client
 
-    def position_encoding(self) -> LSPPositionEncoding:
+    def position_encoding(self) -> smarts_client.LSPPositionEncoding:
         return self.client.position_encoding() or "utf-16"
 
 
@@ -256,12 +236,12 @@ class PgSmart:
 
 # -- Global Variables
 
-_SMARTS: List[PgSmart] = []
+_SMARTS: list[PgSmart] = []
 _SMARTS_LOCK = threading.Lock()
 
 # Tracks view ID when document symbol quick panel is open.
 # Used to close the quick panel if the user closes the view (e.g., cmd+w).
-_DOCUMENT_SYMBOL_VIEW_ID: Optional[int] = None
+_DOCUMENT_SYMBOL_VIEW_ID: int | None = None
 
 # Pending diagnostics timers per view, keyed by view ID.
 # Used to defer diagnostics rendering while actively editing.
@@ -281,7 +261,7 @@ def settings() -> sublime.Settings:
 
 def smarts_project_data(
     window: sublime.Window,
-) -> Optional[PgSmartsProjectData]:
+) -> PgSmartsProjectData | None:
     if project_data_ := window.project_data():
         return project_data_.get("Smarts")
 
@@ -303,14 +283,14 @@ def setting(window: sublime.Window, k: str, not_found: Any):
     return settings().get(k, not_found)
 
 
-def window_project_path(window: sublime.Window) -> Optional[Path]:
+def window_project_path(window: sublime.Window) -> Path | None:
     if project_path := window.extract_variables().get("project_path"):
         return Path(project_path)
 
     return None
 
 
-def available_servers() -> List[PgSmartsServerConfig]:
+def available_servers() -> list[PgSmartsServerConfig]:
     return settings().get(kSETTING_SERVERS, [])
 
 
@@ -339,7 +319,7 @@ def find_window(id: int) -> Optional[sublime.Window]:
     return None
 
 
-def window_smarts(window: sublime.Window) -> List[PgSmart]:
+def window_smarts(window: sublime.Window) -> list[PgSmart]:
     """
     Returns Smarts associated with `window`.
     """
@@ -347,7 +327,7 @@ def window_smarts(window: sublime.Window) -> List[PgSmart]:
         return [smart for smart in _SMARTS if smart.window == window.id()]
 
 
-def window_running_smarts(window: sublime.Window) -> List[PgSmart]:
+def window_running_smarts(window: sublime.Window) -> list[PgSmart]:
     """
     Returns Smarts associated with `window` which are not shutdown.
     """
@@ -358,7 +338,7 @@ def window_running_smarts(window: sublime.Window) -> List[PgSmart]:
     ]
 
 
-def window_initialized_smarts(window: sublime.Window) -> List[PgSmart]:
+def window_initialized_smarts(window: sublime.Window) -> list[PgSmart]:
     """
     Returns Smarts associated with `window` which are initialized.
     """
@@ -426,7 +406,7 @@ def view_applicable(config: PgSmartsServerConfig, view: sublime.View) -> bool:
     return view.file_name() is not None and view_syntax(view) in applicable_to
 
 
-def applicable_smarts(view: sublime.View, method: str) -> List[PgSmart]:
+def applicable_smarts(view: sublime.View, method: str) -> list[PgSmart]:
     """
     Returns Smarts applicable to `view`.
     """
@@ -443,7 +423,7 @@ def applicable_smarts(view: sublime.View, method: str) -> List[PgSmart]:
     return smarts
 
 
-def applicable_smart(view: sublime.View, method: str) -> Optional[PgSmart]:
+def applicable_smart(view: sublime.View, method: str) -> PgSmart | None:
     """
     Returns the first Smart applicable to `view`, or None.
     """
@@ -957,9 +937,9 @@ def severity_kind(severity: int):
 
 def point_position(
     view: sublime.View,
-    position_encoding: LSPPositionEncoding,
+    position_encoding: smarts_client.LSPPositionEncoding,
     point: int,
-) -> LSPPosition:
+) -> smarts_client.LSPPosition:
     if position_encoding == "utf-8":
         row, col = view.rowcol_utf8(point)
 
@@ -977,7 +957,7 @@ def point_position(
 
 def region_range(
     view: sublime.View,
-    position_encoding: LSPPositionEncoding,
+    position_encoding: smarts_client.LSPPositionEncoding,
     region: sublime.Region,
 ) -> LSPRange:
     return {
@@ -996,7 +976,7 @@ def region_range(
 
 def range_region(
     view: sublime.View,
-    position_encoding: LSPPositionEncoding,
+    position_encoding: smarts_client.LSPPositionEncoding,
     range: LSPRange,
     inverted=False,
 ) -> sublime.Region:
@@ -1051,7 +1031,7 @@ def diagnostic_quick_panel_item(data) -> sublime.QuickPanelItem:
 
 def location_quick_panel_item(
     window: sublime.Window,
-    location: LSPLocation,
+    location: smarts_client.LSPLocation,
 ) -> sublime.QuickPanelItem:
     start_line = location["range"]["start"]["line"] + 1
     start_character = location["range"]["start"]["character"] + 1
@@ -1162,8 +1142,8 @@ def view_text_document_item(view: sublime.View) -> LSPTextDocumentItem:
 
 def open_location_jar(
     window: sublime.Window,
-    position_encoding: LSPPositionEncoding,
-    location: LSPLocation,
+    position_encoding: smarts_client.LSPPositionEncoding,
+    location: smarts_client.LSPLocation,
     flags,
 ):
     """
@@ -1173,34 +1153,33 @@ def open_location_jar(
 
     dep_jar, dep_filepath = fname.split("::")
 
-    with ZipFile(dep_jar) as jar:
-        with jar.open(dep_filepath) as jar_file:
-            tmp_path = os.path.join(tempfile.gettempdir(), dep_filepath)
+    with ZipFile(dep_jar) as jar, jar.open(dep_filepath) as jar_file:
+        tmp_path = os.path.join(tempfile.gettempdir(), dep_filepath)
 
-            # Create all parent directories of the temporary file:
-            os.makedirs(os.path.dirname(tmp_path), exist_ok=True)
+        # Create all parent directories of the temporary file:
+        os.makedirs(os.path.dirname(tmp_path), exist_ok=True)
 
-            with open(tmp_path, "w") as tmp_file:
-                tmp_file.write(jar_file.read().decode())
+        with open(tmp_path, "w") as tmp_file:
+            tmp_file.write(jar_file.read().decode())
 
-            new_location = {
-                "uri": path_to_uri(tmp_file.name),
-                "range": location["range"],
-            }
+        new_location = {
+            "uri": path_to_uri(tmp_file.name),
+            "range": location["range"],
+        }
 
-            open_location(
-                window,
-                position_encoding=position_encoding,
-                location=cast(LSPLocation, new_location),
-                empty_region=True,
-                flags=flags,
-            )
+        open_location(
+            window,
+            position_encoding=position_encoding,
+            location=cast(smarts_client.LSPLocation, new_location),
+            empty_region=True,
+            flags=flags,
+        )
 
 
 def open_location(
     window: sublime.Window,
-    position_encoding: LSPPositionEncoding,
-    location: LSPLocation,
+    position_encoding: smarts_client.LSPPositionEncoding,
+    location: smarts_client.LSPLocation,
     empty_region: Optional[bool] = False,
     flags=0,
 ):
@@ -1282,7 +1261,7 @@ def capture_viewport_position(view: sublime.View) -> Callable[[], None]:
 
 def apply_workspace_edit(
     window: sublime.Window,
-    position_encoding: LSPPositionEncoding,
+    position_encoding: smarts_client.LSPPositionEncoding,
     workspace_edit: LSPWorkspaceEdit,
 ):
     """
@@ -1362,9 +1341,11 @@ def apply_workspace_edit(
 
 def goto_location(
     window: sublime.Window,
-    position_encoding: LSPPositionEncoding,
-    locations: List[LSPLocation],
-    item_builder: Callable[[sublime.Window, LSPLocation], sublime.QuickPanelItem],
+    position_encoding: smarts_client.LSPPositionEncoding,
+    locations: list[smarts_client.LSPLocation],
+    item_builder: Callable[
+        [sublime.Window, smarts_client.LSPLocation], sublime.QuickPanelItem
+    ],
     flags: int = 0,
     on_cancel: Optional[Callable[[], None]] = None,
 ):
@@ -1418,7 +1399,7 @@ def goto_location(
 
 def goto_diagnostic(
     window: sublime.Window,
-    diagnostics: List[PgSmartsDiagnostic],
+    diagnostics: list[PgSmartsDiagnostic],
     on_cancel: Optional[Callable[[], None]] = None,
 ):
     if len(diagnostics) == 1:
@@ -1487,7 +1468,7 @@ def view_textDocumentIdentifier(
 
 def view_textDocumentPositionParams(
     view: sublime.View,
-    position_encoding: LSPPositionEncoding,
+    position_encoding: smarts_client.LSPPositionEncoding,
     point: Optional[int] = None,
 ) -> LSPTextDocumentPositionParams:
     """
@@ -1533,7 +1514,7 @@ def syntax_languageId(syntax: str):
 
 def handle_logTrace(
     window: sublime.Window,
-    message: LSPNotificationMessage,
+    message: smarts_client.LSPNotificationMessage,
 ):
     """
     A notification to log the trace of the server’s execution.
@@ -1545,7 +1526,7 @@ def handle_logTrace(
 
 def handle_window_logMessage(
     window: sublime.Window,
-    message: LSPNotificationMessage,
+    message: smarts_client.LSPNotificationMessage,
 ) -> None:
     """
     The log message notification is sent from the server to the client
@@ -1565,7 +1546,7 @@ def handle_window_logMessage(
 
 def handle_window_showMessage(
     window: sublime.Window,
-    message: LSPNotificationMessage,
+    message: smarts_client.LSPNotificationMessage,
 ) -> None:
     """
     The show message notification is sent from a server to a client
@@ -1585,8 +1566,8 @@ def handle_window_showMessage(
 
 def present_diagnostics(
     view: sublime.View,
-    position_encoding: LSPPositionEncoding,
-    diagnostics: List[PgSmartsDiagnostic],
+    position_encoding: smarts_client.LSPPositionEncoding,
+    diagnostics: list[PgSmartsDiagnostic],
 ):
     """
     Render diagnostics in the view (regions, annotations, status bar).
@@ -1650,7 +1631,7 @@ def clear_diagnostics(view: sublime.View):
 def handle_textDocument_publishDiagnostics(
     window: sublime.Window,
     smart: PgSmart,
-    message: LSPNotificationMessage,
+    message: smarts_client.LSPNotificationMessage,
 ):
     """
     Diagnostics notifications are sent from the server to the client to signal results of validation runs.
@@ -1666,7 +1647,7 @@ def handle_textDocument_publishDiagnostics(
     """
     position_encoding = smart.position_encoding()
 
-    params = cast(LSPPublishDiagnosticsParams, message["params"])
+    params = cast(smarts_client.LSPPublishDiagnosticsParams, message["params"])
 
     # Including URI to a Diagnostic make it equivalent to a Location - `uri` and `range`.
     # (Anything that works with a Location also works with this Diagnostic.)
@@ -1736,7 +1717,7 @@ def handle_textDocument_publishDiagnostics(
 
 def handle_notification(
     smart_uuid: str,
-    notification: LSPNotificationMessage,
+    notification: smarts_client.LSPNotificationMessage,
 ):
     smart = find_smart(smart_uuid)
 
@@ -1900,7 +1881,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
 
             return message
 
-        client = LanguageServerClient(
+        client = smarts_client.LanguageServerClient(
             logger=plugin_logger,
             name=server_config["name"],
             server_args=server_config["start"],
@@ -1911,7 +1892,6 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             on_textDocument_publishDiagnostics=_on_receive_notification,
         )
 
-        global _SMARTS
         with _SMARTS_LOCK:
             _SMARTS.append(
                 PgSmart(
@@ -1932,7 +1912,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             # (Check if a view's syntax is valid for the server.)
             for view in self.window.views():
                 if view_applicable(server_config, view):
-                    params: LSPDidOpenTextDocumentParams = {
+                    params: smarts_client.LSPDidOpenTextDocumentParams = {
                         "textDocument": view_text_document_item(view),
                     }
 
@@ -1983,7 +1963,7 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
         if not smarts:
             return
 
-        lines: List[str] = []
+        lines: list[str] = []
 
         for smart in smarts:
             client = smart.client
@@ -2045,12 +2025,12 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
 
         restore_view = capture_view(self.view)
 
-        def on_result(result: LSPDefinitionResult):
+        def on_result(result: smarts_client.LSPDefinitionResult):
             if not result:
                 return
 
             locations = cast(
-                List[LSPLocation],
+                list[smarts_client.LSPLocation],
                 [result] if isinstance(result, dict) else result,
             )
 
@@ -2153,7 +2133,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
 
         position_encoding = smart.position_encoding()
 
-        def on_result(result: LSPDocumentSymbolResult):
+        def on_result(result: smarts_client.LSPDocumentSymbolResult):
             # Document Symbols Request
             # DocumentSymbol[] | SymbolInformation[] | null
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
@@ -2400,7 +2380,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
         position_encoding = smart.position_encoding()
         position_point = position or self.view.sel()[0].begin()
 
-        def on_result(result: LSPHoverResult):
+        def on_result(result: smarts_client.LSPHoverResult):
             if result:
                 if show == "transient":
                     word_region = self.view.word(position_point)
@@ -2421,7 +2401,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
 
         smart.client.textDocument_hover(params, on_result, on_error)
 
-    def _show_transient(self, smart: PgSmart, name: str, hover: LSPHover):
+    def _show_transient(self, smart: PgSmart, name: str, hover: smarts_client.LSPHover):
         window = self.view.window()
 
         if not window:
@@ -2436,9 +2416,9 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
         view.assign_syntax("Packages/Markdown/Markdown.sublime-syntax")
         view.run_command("append", {"characters": markdown})
 
-    def _show_popup(self, smart: PgSmart, hover: LSPHover):
+    def _show_popup(self, smart: PgSmart, hover: smarts_client.LSPHover):
         markdown = self._hover_markdown(hover)
-        content_html = markdown_to_html(markdown)
+        content_html = smarts_markdown.markdown_to_html(markdown)
 
         styles = """
         .container {
@@ -2498,7 +2478,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
             max_height=600,
         )
 
-    def _hover_markdown(self, hover: LSPHover) -> str:
+    def _hover_markdown(self, hover: smarts_client.LSPHover) -> str:
         contents = hover["contents"]
 
         """Extract markdown content from LSP hover contents."""
@@ -2572,7 +2552,7 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
 
         position_encoding = smart.position_encoding()
 
-        params: LSPDocumentFormattingParams = {
+        params: smarts_client.LSPDocumentFormattingParams = {
             "textDocument": view_textDocumentIdentifier(self.view),
             "options": {
                 "tabSize": self.view.settings().get("tab_size"),
@@ -2583,7 +2563,7 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
             },
         }
 
-        def on_result(result: LSPFormattingResult):
+        def on_result(result: smarts_client.LSPFormattingResult):
             if result:
                 self.view.run_command(
                     "pg_smarts_apply_edits",
@@ -2634,7 +2614,7 @@ class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
             },
         }
 
-        def on_result(result: LSPFormattingResult):
+        def on_result(result: smarts_client.LSPFormattingResult):
             if result:
                 self.view.run_command(
                     "pg_smarts_apply_edits",
@@ -2752,7 +2732,7 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
             # If only a text is provided it is considered to be the full content of the document.
             #
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentContentChangeEvent
-            contentChanges: List[LSPTextDocumentContentChangeEvent] = []
+            contentChanges: list[LSPTextDocumentContentChangeEvent] = []
 
             # Full
             # Documents are synced by always sending the full content of the document.
@@ -2799,7 +2779,7 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
                         )
                     )
 
-            params: LSPDidChangeTextDocumentParams = {
+            params: smarts_client.LSPDidChangeTextDocumentParams = {
                 "textDocument": textDocument,
                 "contentChanges": contentChanges,
             }
@@ -2864,7 +2844,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         position_encoding = smart.position_encoding()
 
-        def on_result(result: LSPDocumentHighlightResult):
+        def on_result(result: smarts_client.LSPDocumentHighlightResult):
             if result is None:
                 self.erase_highlights()
                 return
@@ -2975,10 +2955,10 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if cached_completion_items is not None:
             self.view.settings().erase(kSMARTS_COMPLETIONS)
 
-            completions: List[sublime.CompletionItem] = []
+            completions: list[sublime.CompletionItem] = []
 
             for item in cached_completion_items:
-                item = cast(LSPCompletionItem, item)
+                item = cast(smarts_client.LSPCompletionItem, item)
 
                 # The label of this completion item.
                 # The label property is also by default the text that is inserted when selecting this completion.
@@ -3018,7 +2998,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if smart is None:
             return None
 
-        def on_result(result: LSPCompletionResult):
+        def on_result(result: smarts_client.LSPCompletionResult):
             # result: CompletionItem[] | CompletionList | null
             #  If a CompletionItem[] is provided it is interpreted to be complete. So it is the same as { isIncomplete: false, items }
             if result is None:

@@ -37,7 +37,7 @@ LSPPositionEncoding = Literal[
 
 
 class LSPServerCapabilities(TypedDict, total=False):
-    positionEncoding: Optional[LSPPositionEncoding]
+    positionEncoding: LSPPositionEncoding | None
 
 
 class LSPServerInfo(TypedDict):
@@ -45,7 +45,7 @@ class LSPServerInfo(TypedDict):
     name: str
 
     # The server's version as defined by the server.
-    version: Optional[str]
+    version: str | None
 
 
 class LSPInitializeResult(TypedDict):
@@ -53,7 +53,7 @@ class LSPInitializeResult(TypedDict):
     capabilities: LSPServerCapabilities
 
     # Information about the server.
-    serverInfo: Optional[LSPServerInfo]
+    serverInfo: LSPServerInfo | None
 
 
 class LSPMessage(TypedDict):
@@ -82,7 +82,7 @@ class LSPRequestMessage(LSPMessage):
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#requestMessage
     """
 
-    id: Union[int, str]
+    id: int | str
     method: str
     params: Optional[Any]
 
@@ -106,7 +106,7 @@ class LSPResponseMessage(TypedDict, total=False):
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#responseMessage
     """
 
-    id: Optional[Union[int, str]]
+    id: int | str | None
     result: Optional[Any]
     error: LSPResponseError
 
@@ -170,9 +170,9 @@ class LSPFormattingOptions(TypedDict):
 
     tabSize: int
     insertSpaces: bool
-    insertFinalNewline: Optional[bool]
-    trimTrailingWhitespace: Optional[bool]
-    trimFinalNewlines: Optional[bool]
+    insertFinalNewline: bool | None
+    trimTrailingWhitespace: bool | None
+    trimFinalNewlines: bool | None
 
 
 class LSPRange(TypedDict):
@@ -214,7 +214,7 @@ class _LSPMarkedString(TypedDict):
 # @deprecated use MarkupContent instead.
 #
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#markedString
-LSPMarkedString = Union[str, _LSPMarkedString]
+LSPMarkedString = str | _LSPMarkedString
 
 
 class LSPMarkupContent(TypedDict):
@@ -243,11 +243,7 @@ class LSPHover(TypedDict):
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#hover
     """
 
-    contents: Union[
-        LSPMarkedString,
-        List[LSPMarkedString],
-        LSPMarkupContent,
-    ]
+    contents: LSPMarkedString | list[LSPMarkedString] | LSPMarkupContent
 
     # An optional range is a range inside a text document
     # that is used to visualize a hover, e.g. by changing the background color.
@@ -277,17 +273,17 @@ class LSPDiagnostic(TypedDict):
     # server is used with different clients it is highly recommended that
     # servers always provide a severity value. If omitted, it’s recommended
     # for the client to interpret it as an Error severity.
-    severity: Optional[Literal[1, 2, 3, 4]]
+    severity: Literal[1, 2, 3, 4] | None
 
     # The diagnostic's code, which might appear in the user interface.
-    code: Optional[Union[int, str]]
+    code: int | str | None
 
     #  An optional property to describe the error code.
-    codeDescription: Optional[LSPCodeDescription]
+    codeDescription: LSPCodeDescription | None
 
     # A human-readable string describing the source of this
     # diagnostic, e.g. 'typescript' or 'super lint'.
-    source: Optional[str]
+    source: str | None
 
     # The diagnostic's message.
     message: str
@@ -307,14 +303,13 @@ class LSPTextDocumentContentChangeEventIncremental(TypedDict):
     """
 
     range: LSPRange
-    rangeLength: Optional[int]
+    rangeLength: int | None
     text: str
 
 
-LSPTextDocumentContentChangeEvent = Union[
-    LSPTextDocumentContentChangeEventFull,
-    LSPTextDocumentContentChangeEventIncremental,
-]
+LSPTextDocumentContentChangeEvent = (
+    LSPTextDocumentContentChangeEventFull | LSPTextDocumentContentChangeEventIncremental
+)
 
 
 class LSPDidChangeTextDocumentParams(TypedDict):
@@ -323,7 +318,7 @@ class LSPDidChangeTextDocumentParams(TypedDict):
     """
 
     textDocument: LSPVersionedTextDocumentIdentifier
-    contentChanges: List[LSPTextDocumentContentChangeEvent]
+    contentChanges: list[LSPTextDocumentContentChangeEvent]
 
 
 class LSPTextDocumentPositionParams(TypedDict):
@@ -435,7 +430,7 @@ class LSPDocumentSymbol(TypedDict, total=False):
 
     # Tags for this document symbol.
     # @since 3.16.0
-    tags: List[LSPSymbolTag]
+    tags: list[LSPSymbolTag]
 
     # Indicates if this symbol is deprecated.
     # @deprecated Use tags instead
@@ -451,7 +446,7 @@ class LSPDocumentSymbol(TypedDict, total=False):
     selectionRange: LSPRange
 
     # Children of this symbol, e.g. properties of a class.
-    children: List["LSPDocumentSymbol"]
+    children: list["LSPDocumentSymbol"]
 
 
 class LSPSymbolInformation(TypedDict, total=False):
@@ -470,7 +465,7 @@ class LSPSymbolInformation(TypedDict, total=False):
 
     # Tags for this symbol.
     # @since 3.16.0
-    tags: List[LSPSymbolTag]
+    tags: list[LSPSymbolTag]
 
     # The name of the symbol containing this symbol. This information is for
     # user interface purposes (e.g. to render a qualifier in the user interface
@@ -504,7 +499,7 @@ class LSPWorkspaceSymbol(TypedDict, total=False):
 
     # Tags for this symbol.
     # @since 3.16.0
-    tags: List[LSPSymbolTag]
+    tags: list[LSPSymbolTag]
 
     # The name of the symbol containing this symbol. This information is for
     # user interface purposes (e.g. to render a qualifier in the user interface
@@ -533,7 +528,7 @@ class LSPPublishDiagnosticsParams(TypedDict):
     version: Optional[int]
 
     # An array of diagnostic information items.
-    diagnostics: List[LSPDiagnostic]
+    diagnostics: list[LSPDiagnostic]
 
 
 class LSPCompletionItem(TypedDict):
@@ -572,7 +567,7 @@ class LSPCompletionList(TypedDict):
     isIncomplete: bool
 
     # The completion items.
-    items: List[LSPCompletionItem]
+    items: list[LSPCompletionItem]
 
 
 class LSPParameterInformation(TypedDict, total=False):
@@ -584,7 +579,7 @@ class LSPParameterInformation(TypedDict, total=False):
 
     # The label of this parameter information.
     # Either a string or an inclusive start and exclusive end offsets within its containing signature label.
-    label: Union[str, List[int]]
+    label: Union[str, list[int]]
 
     # The human-readable doc-comment of this parameter.
     documentation: Union[str, LSPMarkupContent]
@@ -604,7 +599,7 @@ class LSPSignatureInformation(TypedDict, total=False):
     documentation: Union[str, LSPMarkupContent]
 
     # The parameters of this signature.
-    parameters: List[LSPParameterInformation]
+    parameters: list[LSPParameterInformation]
 
     # The index of the active parameter.
     activeParameter: Optional[int]
@@ -650,7 +645,7 @@ class LSPSignatureHelp(TypedDict, total=False):
     """
 
     # One or more signatures.
-    signatures: List[LSPSignatureInformation]
+    signatures: list[LSPSignatureInformation]
 
     # The active signature.
     activeSignature: Optional[int]
@@ -687,7 +682,7 @@ class LSPTextDocumentEdit(TypedDict):
     textDocument: LSPVersionedTextDocumentIdentifier
 
     # The edits to be applied.
-    edits: List[LSPTextEdit]
+    edits: list[LSPTextEdit]
 
 
 class LSPWorkspaceEdit(TypedDict, total=False):
@@ -698,13 +693,13 @@ class LSPWorkspaceEdit(TypedDict, total=False):
     """
 
     # Holds changes to existing resources.
-    changes: Dict[str, List[LSPTextEdit]]
+    changes: Dict[str, list[LSPTextEdit]]
 
     # Depending on the client capability
     # `workspace.workspaceEdit.resourceOperations` document changes are either
     # an array of `TextDocumentEdit`s to express changes to n different text documents
     # where each text document edit addresses a specific version of a text document.
-    documentChanges: List[LSPTextDocumentEdit]
+    documentChanges: list[LSPTextDocumentEdit]
 
 
 class _LSPDocumentHighlightOptional(TypedDict, total=False):
@@ -752,32 +747,32 @@ LSPHoverResult = Union[
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_definition
 LSPDefinitionResult = Union[
     LSPLocation,
-    List[LSPLocation],
+    list[LSPLocation],
     None,
 ]
 
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_references
 LSPReferencesResult = Union[
-    List[LSPLocation],
+    list[LSPLocation],
     None,
 ]
 
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
 LSPDocumentSymbolResult = Union[
-    List[LSPDocumentSymbol],
-    List[LSPSymbolInformation],
+    list[LSPDocumentSymbol],
+    list[LSPSymbolInformation],
     None,
 ]
 
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentHighlight
 LSPDocumentHighlightResult = Union[
-    List[LSPDocumentHighlight],
+    list[LSPDocumentHighlight],
     None,
 ]
 
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_formatting
 LSPFormattingResult = Union[
-    List[LSPTextEdit],
+    list[LSPTextEdit],
     None,
 ]
 
@@ -802,7 +797,7 @@ LSPSignatureHelpResult = Union[
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_completion
 LSPCompletionResult = Union[
     LSPCompletionList,
-    List[LSPCompletionItem],
+    list[LSPCompletionItem],
     None,
 ]
 
@@ -811,8 +806,8 @@ LSPCompletionResult = Union[
 # It is recommended that you use the new WorkspaceSymbol.
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspace_symbol
 LSPWorkspaceSymbolResult = Union[
-    List[LSPSymbolInformation],
-    List[LSPWorkspaceSymbol],
+    list[LSPSymbolInformation],
+    list[LSPWorkspaceSymbol],
     None,
 ]
 
@@ -923,7 +918,7 @@ class LanguageServerClient:
         self,
         logger: logging.Logger,
         name: str,
-        server_args: List[str],
+        server_args: list[str],
         before_write: Optional[Callable[[LSPMessage], LSPMessage]],
         on_logTrace: Optional[LSPNotificationHandler] = None,
         on_window_logMessage: Optional[LSPNotificationHandler] = None,
@@ -1355,7 +1350,7 @@ class LanguageServerClient:
     def _make_callback(
         self,
         on_result: Callable[[Optional[Any]], None],
-        on_error: Optional[Callable[[LSPResponseError], None]] = None,
+        on_error: Callable[[LSPResponseError], None] | None = None,
     ) -> Callable[[LSPResponseMessage], None]:
         """
         Wraps a typed result callback to handle LSPResponseMessage extraction.
@@ -1809,7 +1804,7 @@ class LanguageServerClient:
         self,
         params: LSPTextDocumentPositionParams,
         on_result: Callable[[LSPHoverResult], None],
-        on_error: Optional[Callable[[LSPResponseError], None]] = None,
+        on_error: Callable[[LSPResponseError], None] | None = None,
     ):
         """
         The hover request is sent from the client to the server to request
@@ -1829,7 +1824,7 @@ class LanguageServerClient:
         self,
         params: LSPTextDocumentPositionParams,
         on_result: Callable[[LSPDefinitionResult], None],
-        on_error: Optional[Callable[[LSPResponseError], None]] = None,
+        on_error: Callable[[LSPResponseError], None] | None = None,
     ):
         """
         The go to definition request is sent from the client to the server
@@ -1849,7 +1844,7 @@ class LanguageServerClient:
         self,
         params,
         on_result: Callable[[LSPReferencesResult], None],
-        on_error: Optional[Callable[[LSPResponseError], None]] = None,
+        on_error: Callable[[LSPResponseError], None] | None = None,
     ):
         """
         The references request is sent from the client to the server
@@ -1869,7 +1864,7 @@ class LanguageServerClient:
         self,
         params: LSPTextDocumentPositionParams,
         on_result: Callable[[LSPDocumentHighlightResult], None],
-        on_error: Optional[Callable[[LSPResponseError], None]] = None,
+        on_error: Callable[[LSPResponseError], None] | None = None,
     ):
         """
         The document highlight request is sent from the client to
@@ -1891,7 +1886,7 @@ class LanguageServerClient:
         self,
         params,
         on_result: Callable[[LSPDocumentSymbolResult], None],
-        on_error: Optional[Callable[[LSPResponseError], None]] = None,
+        on_error: Callable[[LSPResponseError], None] | None = None,
     ):
         """
         The document symbol request is sent from the client to the server.
@@ -1910,7 +1905,7 @@ class LanguageServerClient:
         self,
         params: LSPDocumentFormattingParams,
         on_result: Callable[[LSPFormattingResult], None],
-        on_error: Optional[Callable[[LSPResponseError], None]] = None,
+        on_error: Callable[[LSPResponseError], None] | None = None,
     ):
         """
         The document formatting request is sent from the client to the server to format a whole document.
@@ -1928,7 +1923,7 @@ class LanguageServerClient:
         self,
         params,
         on_result: Callable[[LSPFormattingResult], None],
-        on_error: Optional[Callable[[LSPResponseError], None]] = None,
+        on_error: Callable[[LSPResponseError], None] | None = None,
     ):
         """
         The document range formatting request is sent from the client to the server to format a specific range in a document.
@@ -1946,7 +1941,7 @@ class LanguageServerClient:
         self,
         params: LSPTextDocumentPositionParams,
         on_result: Callable[[LSPCompletionResult], None],
-        on_error: Optional[Callable[[LSPResponseError], None]] = None,
+        on_error: Callable[[LSPResponseError], None] | None = None,
     ):
         """
         The completion request is sent from the client to the server to compute completion items at a given cursor position.
@@ -1964,7 +1959,7 @@ class LanguageServerClient:
         self,
         params: LSPSignatureHelpParams,
         on_result: Callable[[LSPSignatureHelpResult], None],
-        on_error: Optional[Callable[[LSPResponseError], None]] = None,
+        on_error: Callable[[LSPResponseError], None] | None = None,
     ):
         """
         The signature help request is sent from the client to the server to request signature information at a given cursor position.
@@ -1982,7 +1977,7 @@ class LanguageServerClient:
         self,
         params: LSPWorkspaceSymbolParams,
         on_result: Callable[[LSPWorkspaceSymbolResult], None],
-        on_error: Optional[Callable[[LSPResponseError], None]] = None,
+        on_error: Callable[[LSPResponseError], None] | None = None,
     ):
         """
         The workspace symbol request is sent from the client to the server to list project-wide symbols matching the query string.
@@ -2001,7 +1996,7 @@ class LanguageServerClient:
         self,
         params: LSPRenameParams,
         on_result: Callable[[LSPRenameResult], None],
-        on_error: Optional[Callable[[LSPResponseError], None]] = None,
+        on_error: Callable[[LSPResponseError], None] | None = None,
     ):
         """
         The rename request is sent from the client to the server to perform a workspace-wide rename of a symbol.
