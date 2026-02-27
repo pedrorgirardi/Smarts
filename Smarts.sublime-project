@@ -7,13 +7,13 @@
     "Smarts": {
         "initialize": [
             {
-                "name": "Ty"
+                "name": "Pyright"
             },
             {
                 "name": "Ruff"
             }
         ],
         "editor.show_hover": true,
-        "editor.format_on_save": true
+        "editor.format_on_save": false
     }
 }
