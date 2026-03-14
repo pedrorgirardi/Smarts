@@ -5,20 +5,10 @@ import shlex
 import subprocess
 import threading
 import uuid
+from collections.abc import Callable
 from enum import Enum, auto
 from queue import Queue
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Literal,
-    NotRequired,
-    Optional,
-    TypedDict,
-    Union,
-    cast,
-)
+from typing import Any, Literal, NotRequired, TypedDict, cast
 
 import sublime
 
@@ -70,7 +60,7 @@ class LSPNotificationMessage(LSPMessage):
     """
 
     method: str
-    params: Optional[Any]
+    params: Any | None
 
 
 class LSPRequestMessage(LSPMessage):
@@ -84,13 +74,13 @@ class LSPRequestMessage(LSPMessage):
 
     id: int | str
     method: str
-    params: Optional[Any]
+    params: Any | None
 
 
 class LSPResponseError(TypedDict):
     code: int
     message: str
-    data: Optional[Any]
+    data: Any | None
 
 
 class LSPResponseMessage(TypedDict, total=False):
@@ -107,7 +97,7 @@ class LSPResponseMessage(TypedDict, total=False):
     """
 
     id: int | str | None
-    result: Optional[Any]
+    result: Any | None
     error: LSPResponseError
 
 
@@ -509,7 +499,7 @@ class LSPWorkspaceSymbol(TypedDict, total=False):
     # The location of this symbol. The location's range is used by a tool
     # to reveal the location in the editor. If the symbol is selected in the
     # tool the range's start information is used to position the cursor.
-    location: Union[LSPLocation, Dict[str, str]]
+    location: LSPLocation | dict[str, str]
 
     # A data entry field that is preserved on a workspace symbol between a
     # workspace symbol request and a workspace symbol resolve request.
@@ -525,7 +515,7 @@ class LSPPublishDiagnosticsParams(TypedDict):
     uri: str
 
     # Optional the version number of the document the diagnostics are published for.
-    version: Optional[int]
+    version: int | None
 
     # An array of diagnostic information items.
     diagnostics: list[LSPDiagnostic]
@@ -544,17 +534,17 @@ class LSPCompletionItem(TypedDict):
 
     # The kind of this completion item.
     # Based of the kind an icon is chosen by the editor.
-    kind: Optional[int]
+    kind: int | None
 
     # A human-readable string with additional information about this item, like type or symbol information.
-    detail: Optional[str]
+    detail: str | None
 
     # A human-readable string that represents a doc-comment.
-    documentation: Optional[Union[str, LSPMarkupContent]]
+    documentation: str | LSPMarkupContent | None
 
     # A string that should be inserted into a document when selecting this completion.
     # When omitted the label is used as the insert text for this item.
-    insertText: Optional[str]
+    insertText: str | None
 
 
 class LSPCompletionList(TypedDict):
@@ -579,10 +569,10 @@ class LSPParameterInformation(TypedDict, total=False):
 
     # The label of this parameter information.
     # Either a string or an inclusive start and exclusive end offsets within its containing signature label.
-    label: Union[str, list[int]]
+    label: str | list[int]
 
     # The human-readable doc-comment of this parameter.
-    documentation: Union[str, LSPMarkupContent]
+    documentation: str | LSPMarkupContent
 
 
 class LSPSignatureInformation(TypedDict, total=False):
@@ -596,13 +586,30 @@ class LSPSignatureInformation(TypedDict, total=False):
     label: str
 
     # The human-readable doc-comment of this signature.
-    documentation: Union[str, LSPMarkupContent]
+    documentation: str | LSPMarkupContent
 
     # The parameters of this signature.
     parameters: list[LSPParameterInformation]
 
     # The index of the active parameter.
-    activeParameter: Optional[int]
+    activeParameter: int | None
+
+
+class LSPSignatureHelp(TypedDict, total=False):
+    """
+    Signature help represents the signature of something callable.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#signatureHelp
+    """
+
+    # One or more signatures.
+    signatures: list[LSPSignatureInformation]
+
+    # The active signature.
+    activeSignature: int | None
+
+    # The active parameter of the active signature.
+    activeParameter: int | None
 
 
 class LSPSignatureHelpContext(TypedDict, total=False):
@@ -617,13 +624,13 @@ class LSPSignatureHelpContext(TypedDict, total=False):
     triggerKind: Literal[1, 2, 3]
 
     # Character that caused signature help to be triggered.
-    triggerCharacter: Optional[str]
+    triggerCharacter: str | None
 
     # true if signature help was already showing when it was triggered.
     isRetrigger: bool
 
     # The currently active SignatureHelp.
-    activeSignatureHelp: Optional["LSPSignatureHelp"]
+    activeSignatureHelp: LSPSignatureHelp | None
 
 
 class LSPSignatureHelpParams(LSPTextDocumentPositionParams, total=False):
@@ -635,23 +642,6 @@ class LSPSignatureHelpParams(LSPTextDocumentPositionParams, total=False):
 
     # The signature help context.
     context: LSPSignatureHelpContext
-
-
-class LSPSignatureHelp(TypedDict, total=False):
-    """
-    Signature help represents the signature of something callable.
-
-    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#signatureHelp
-    """
-
-    # One or more signatures.
-    signatures: list[LSPSignatureInformation]
-
-    # The active signature.
-    activeSignature: Optional[int]
-
-    # The active parameter of the active signature.
-    activeParameter: Optional[int]
 
 
 class LSPTextEdit(TypedDict):
@@ -693,7 +683,7 @@ class LSPWorkspaceEdit(TypedDict, total=False):
     """
 
     # Holds changes to existing resources.
-    changes: Dict[str, list[LSPTextEdit]]
+    changes: dict[str, list[LSPTextEdit]]
 
     # Depending on the client capability
     # `workspace.workspaceEdit.resourceOperations` document changes are either
@@ -739,77 +729,43 @@ class LSPRenameParams(LSPTextDocumentPositionParams):
 LSPNotificationHandler = Callable[[LSPNotificationMessage], None]
 
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_hover
-LSPHoverResult = Union[
-    LSPHover,
-    None,
-]
+LSPHoverResult = LSPHover | None
 
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_definition
-LSPDefinitionResult = Union[
-    LSPLocation,
-    list[LSPLocation],
-    None,
-]
+LSPDefinitionResult = LSPLocation | list[LSPLocation] | None
 
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_references
-LSPReferencesResult = Union[
-    list[LSPLocation],
-    None,
-]
+LSPReferencesResult = list[LSPLocation] | None
 
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
-LSPDocumentSymbolResult = Union[
-    list[LSPDocumentSymbol],
-    list[LSPSymbolInformation],
-    None,
-]
+LSPDocumentSymbolResult = list[LSPDocumentSymbol] | list[LSPSymbolInformation] | None
 
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentHighlight
-LSPDocumentHighlightResult = Union[
-    list[LSPDocumentHighlight],
-    None,
-]
+LSPDocumentHighlightResult = list[LSPDocumentHighlight] | None
 
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_formatting
-LSPFormattingResult = Union[
-    list[LSPTextEdit],
-    None,
-]
+LSPFormattingResult = list[LSPTextEdit] | None
 
 
 # WorkspaceEdit | null describing the modification to the workspace.
 # null should be treated the same was as WorkspaceEdit with no changes (no change was required).
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_rename
-LSPRenameResult = Union[
-    LSPWorkspaceEdit,
-    None,
-]
+LSPRenameResult = LSPWorkspaceEdit | None
 
 # Signature help represents the signature of something callable.
 # There can be multiple signature but only one active and only one active parameter.
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#signatureHelp
-LSPSignatureHelpResult = Union[
-    LSPSignatureHelp,
-    None,
-]
+LSPSignatureHelpResult = LSPSignatureHelp | None
 
 # If a CompletionItem[] is provided it is interpreted to be complete. So it is the same as { isIncomplete: false, items }
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_completion
-LSPCompletionResult = Union[
-    LSPCompletionList,
-    list[LSPCompletionItem],
-    None,
-]
+LSPCompletionResult = LSPCompletionList | list[LSPCompletionItem] | None
 
 
 # The workspace symbol request is sent from the client to the server to list project-wide symbols matching the query string.
 # It is recommended that you use the new WorkspaceSymbol.
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspace_symbol
-LSPWorkspaceSymbolResult = Union[
-    list[LSPSymbolInformation],
-    list[LSPWorkspaceSymbol],
-    None,
-]
+LSPWorkspaceSymbolResult = list[LSPSymbolInformation] | list[LSPWorkspaceSymbol] | None
 
 
 # --------------------------------------------------------------------------------
@@ -817,7 +773,7 @@ LSPWorkspaceSymbolResult = Union[
 
 def request(
     method: str,
-    params: Optional[Any] = None,
+    params: Any | None = None,
 ) -> LSPRequestMessage:
     return {
         "jsonrpc": "2.0",
@@ -829,7 +785,7 @@ def request(
 
 def notification(
     method: str,
-    params: Optional[Any] = None,
+    params: Any | None = None,
 ) -> LSPNotificationMessage:
     return {
         "jsonrpc": "2.0",
@@ -839,8 +795,8 @@ def notification(
 
 
 def textDocumentSyncOptions(
-    textDocumentSync: Optional[Union[dict, int]],
-) -> Dict[str, Any]:
+    textDocumentSync: dict | int | None,
+) -> dict[str, Any]:
     if textDocumentSync is None:
         return {
             "openClose": False,
@@ -919,28 +875,27 @@ class LanguageServerClient:
         logger: logging.Logger,
         name: str,
         server_args: list[str],
-        before_write: Optional[Callable[[LSPMessage], LSPMessage]],
-        on_logTrace: Optional[LSPNotificationHandler] = None,
-        on_window_logMessage: Optional[LSPNotificationHandler] = None,
-        on_window_showMessage: Optional[LSPNotificationHandler] = None,
-        on_textDocument_publishDiagnostics: Optional[LSPNotificationHandler] = None,
+        before_write: Callable[[LSPMessage], LSPMessage] | None,
+        on_logTrace: LSPNotificationHandler | None = None,
+        on_window_logMessage: LSPNotificationHandler | None = None,
+        on_window_showMessage: LSPNotificationHandler | None = None,
+        on_textDocument_publishDiagnostics: LSPNotificationHandler | None = None,
     ):
         self._lock = threading.RLock()
         self._logger = logger
         self._name = name
         self._server_status = LanguageServerStatus.NOT_STARTED
         self._server_args = server_args
-        self._server_process: Optional[subprocess.Popen] = None
-        self._server_info: Optional[LSPServerInfo] = None
-        self._server_capabilities: Optional[LSPServerCapabilities] = None
+        self._server_process: subprocess.Popen | None = None
+        self._server_info: LSPServerInfo | None = None
+        self._server_capabilities: LSPServerCapabilities | None = None
         self._send_queue = Queue(maxsize=100)
         self._receive_queue = Queue(maxsize=100)
-        self._reader: Optional[threading.Thread] = None
-        self._writer: Optional[threading.Thread] = None
-        self._handler: Optional[threading.Thread] = None
-        self._monitor: Optional[threading.Thread] = None
-        self._request_callback: Dict[
-            Union[int, str], Callable[[LSPResponseMessage], None]
+        self._reader: threading.Thread | None = None
+        self._writer: threading.Thread | None = None
+        self._handler: threading.Thread | None = None
+        self._monitor: threading.Thread | None = None
+        self._request_callback: dict[ int | str, Callable[[LSPResponseMessage], None]
         ] = {}
         self._open_documents = set()
         self._before_write: Callable[[LSPMessage], LSPMessage] = (
@@ -983,11 +938,11 @@ class LanguageServerClient:
         with self._lock:
             return self._server_status == LanguageServerStatus.FAILED
 
-    def position_encoding(self) -> Optional[LSPPositionEncoding]:
+    def position_encoding(self) -> LSPPositionEncoding | None:
         if capabilities := self._server_capabilities:
             return capabilities.get("positionEncoding")
 
-    def support_method(self, method: str) -> Optional[bool]:
+    def support_method(self, method: str) -> bool | None:
         if not self._server_capabilities:
             return None
 
@@ -1250,7 +1205,7 @@ class LanguageServerClient:
         self._logger.debug("Handler started")
 
         while (message := self._receive_queue.get()) is not None:
-            message = cast(Union[LSPNotificationMessage, LSPResponseMessage], message)
+            message = cast(LSPNotificationMessage | LSPResponseMessage, message)
 
             # A Response Message sent as a result of a request.
             #
@@ -1303,8 +1258,8 @@ class LanguageServerClient:
 
     def _put(
         self,
-        message: Union[LSPNotificationMessage, LSPRequestMessage],
-        callback: Optional[Callable[[LSPResponseMessage], None]] = None,
+        message: LSPNotificationMessage | LSPRequestMessage,
+        callback: Callable[[LSPResponseMessage], None] | None = None,
     ):
         with self._lock:
             method = message["method"]
@@ -1349,7 +1304,7 @@ class LanguageServerClient:
 
     def _make_callback(
         self,
-        on_result: Callable[[Optional[Any]], None],
+        on_result: Callable[[Any | None], None],
         on_error: Callable[[LSPResponseError], None] | None = None,
     ) -> Callable[[LSPResponseMessage], None]:
         """

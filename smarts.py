@@ -294,7 +294,7 @@ def available_servers() -> list[PgSmartsServerConfig]:
     return settings().get(kSETTING_SERVERS, [])
 
 
-def remove_smarts(uuids: Set[str]):
+def remove_smarts(uuids: set[str]):
     plugin_logger.debug(f"Remove Smarts {uuids}")
 
     global _SMARTS
@@ -302,7 +302,7 @@ def remove_smarts(uuids: Set[str]):
         _SMARTS = [smart for smart in _SMARTS if smart.uuid not in uuids]
 
 
-def find_smart(uuid: str) -> Optional[PgSmart]:
+def find_smart(uuid: str) -> PgSmart | None:
     with _SMARTS_LOCK:
         for smart in _SMARTS:
             if smart.uuid == uuid:
@@ -311,7 +311,7 @@ def find_smart(uuid: str) -> Optional[PgSmart]:
     return None
 
 
-def find_window(id: int) -> Optional[sublime.Window]:
+def find_window(id: int) -> sublime.Window | None:
     for window in sublime.windows():
         if window.id() == id:
             return window
@@ -748,7 +748,7 @@ def _process_inline_markdown(text: str) -> str:
     return text
 
 
-def _get_syntax_for_language(lang: str) -> Optional[str]:
+def _get_syntax_for_language(lang: str) -> str | None:
     """Map language identifier to Sublime syntax file."""
     lang_map = {
         "python": "Packages/Python/Python.sublime-syntax",
@@ -1180,7 +1180,7 @@ def open_location(
     window: sublime.Window,
     position_encoding: smarts_client.LSPPositionEncoding,
     location: smarts_client.LSPLocation,
-    empty_region: Optional[bool] = False,
+    empty_region: bool | None = False,
     flags=0,
 ):
     """
@@ -1347,7 +1347,7 @@ def goto_location(
         [sublime.Window, smarts_client.LSPLocation], sublime.QuickPanelItem
     ],
     flags: int = 0,
-    on_cancel: Optional[Callable[[], None]] = None,
+    on_cancel: Callable[[], None] | None = None,
 ):
     if len(locations) == 1:
         open_location(
@@ -1400,7 +1400,7 @@ def goto_location(
 def goto_diagnostic(
     window: sublime.Window,
     diagnostics: list[PgSmartsDiagnostic],
-    on_cancel: Optional[Callable[[], None]] = None,
+    on_cancel: Callable[[], None] | None = None,
 ):
     if len(diagnostics) == 1:
         # FIXME
@@ -1469,7 +1469,7 @@ def view_textDocumentIdentifier(
 def view_textDocumentPositionParams(
     view: sublime.View,
     position_encoding: smarts_client.LSPPositionEncoding,
-    point: Optional[int] = None,
+    point: int | None = None,
 ) -> LSPTextDocumentPositionParams:
     """
     A parameter literal used in requests to pass a text document and a position inside that document.

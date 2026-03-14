@@ -16,3 +16,6 @@ dev = [
 extra-paths = ["./typings"]
 python-version = "3.13"
 root = [".."]
+
+[tool.ruff.lint]
+ignore = ["BLE001", "SIM102"]
