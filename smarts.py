@@ -2895,9 +2895,6 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         smart.client.textDocument_documentHighlight(params, on_result, on_error)
 
     def on_modified(self):
-        # Erase highlights immediately.
-        self.erase_highlights()
-
         # Store in view.settings() so it's accessible from other functions
         # (e.g., handle_textDocument_publishDiagnostics for diagnostics cool-down).
         self.view.settings().set(kSMARTS_LAST_MODIFIED_TIME, time.time())
