@@ -4,6 +4,15 @@
             "path": "."
         }
     ],
+    "build_systems": [
+        {
+            "name": "Tests",
+            "cmd": [
+                "${project_path}/bin/test"
+            ],
+            "working_dir": "${project_path}"
+        }
+    ],
     "Smarts": {
         "initialize": [
             {
