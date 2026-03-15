@@ -1,4 +1,7 @@
 import html
+
+# Force reload of lib/ modules when Sublime reloads this plugin.
+import importlib
 import json
 import logging
 import os
@@ -8,17 +11,16 @@ import tempfile
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from itertools import groupby
 from pathlib import Path
-from typing import Any, Callable, Optional, Set, TypedDict, cast
+from typing import Any, Optional, Set, TypedDict, cast
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
 import sublime
 import sublime_plugin
 
-# Force reload of lib/ modules when Sublime reloads this plugin.
-import importlib
 from .lib import smarts_client, smarts_markdown
 
 importlib.reload(smarts_client)
@@ -555,239 +557,6 @@ def messages_panel_insert(window: sublime.Window, text: str):
     if window.active_panel() == kOUTPUT_PANEL_MESSAGES_NAME_PREFIXED:
         panel_view = messages_panel(window)
         panel_view.run_command("append", {"characters": text + "\n"})
-
-
-def markdown_to_minihtml(view: sublime.View, markdown: str) -> str:
-    """
-    Convert markdown to Sublime minihtml format with syntax highlighting.
-
-    Supports:
-    - Code blocks with language-specific syntax highlighting
-    - Inline code
-    - Headers (h1-h6)
-    - Bold, italic, strikethrough
-    - Links
-    - Lists (ordered and unordered)
-    - Horizontal rules
-    """
-    lines = markdown.split("\n")
-    html_parts = []
-    i = 0
-    in_code_block = False
-    code_block_lines = []
-    code_lang = None
-
-    while i < len(lines):
-        line = lines[i]
-
-        # Code blocks (```lang)
-        if line.strip().startswith("```"):
-            if not in_code_block:
-                # Start code block
-                in_code_block = True
-                code_lang = line.strip()[3:].strip() or "text"
-                code_block_lines = []
-            else:
-                # End code block - render with syntax highlighting
-                in_code_block = False
-                code_content = "\n".join(code_block_lines)
-
-                # Apply basic syntax highlighting based on language
-                highlighted_code = _highlight_code(view, code_content, code_lang or "")
-                html_parts.append(
-                    f'<div class="code-block"><pre>{highlighted_code}</pre></div>'
-                )
-
-                code_block_lines = []
-                code_lang = None
-            i += 1
-            continue
-
-        if in_code_block:
-            code_block_lines.append(line)
-            i += 1
-            continue
-
-        # Headers
-        if line.startswith("#"):
-            level = len(line) - len(line.lstrip("#"))
-            if level <= 6 and level > 0:
-                text = _process_markdown_links(line.lstrip("#").strip())
-                html_parts.append(f"<h{level}>{text}</h{level}>")
-                i += 1
-                continue
-
-        # Horizontal rule
-        if line.strip() in ("---", "***", "___"):
-            html_parts.append("<hr />")
-            i += 1
-            continue
-
-        # Unordered lists
-        if line.strip().startswith(("- ", "* ", "+ ")):
-            list_items = []
-            while i < len(lines) and lines[i].strip().startswith(("- ", "* ", "+ ")):
-                item = _process_markdown_links(lines[i].strip()[2:])
-                list_items.append(f"<li>{item}</li>")
-                i += 1
-            html_parts.append(f"<ul>{''.join(list_items)}</ul>")
-            continue
-
-        # Ordered lists
-        if re.match(r"^\d+\.\s", line.strip()):
-            list_items = []
-            while i < len(lines) and re.match(r"^\d+\.\s", lines[i].strip()):
-                item = re.sub(r"^\d+\.\s+", "", lines[i].strip())
-                item = _process_markdown_links(item)
-                list_items.append(f"<li>{item}</li>")
-                i += 1
-            html_parts.append(f"<ol>{''.join(list_items)}</ol>")
-            continue
-
-        # Empty lines - add line break for spacing
-        if not line.strip():
-            html_parts.append("<br />")
-            i += 1
-            continue
-
-        # Regular paragraphs - process links, then escape
-        text = _process_markdown_links(line)
-        html_parts.append(f"<p>{text}</p>")
-        i += 1
-
-    return "".join(html_parts)
-
-
-def _process_markdown_links(text: str) -> str:
-    """Process markdown links [text](url) safely."""
-
-    # Find and replace all markdown links
-    def replace_link(match):
-        link_text = html.escape(match.group(1))
-        url = html.escape(match.group(2))
-        return f'<a href="{url}">{link_text}</a>'
-
-    # Process links first
-    result = re.sub(r"\[([^\]]+)\]\(([^\)]+)\)", replace_link, text)
-
-    # Escape everything else that wasn't part of a link
-    # We need to protect our already-created <a> tags
-    parts = re.split(r'(<a href="[^"]*">[^<]*</a>)', result)
-
-    escaped_parts = []
-    for i, part in enumerate(parts):
-        if i % 2 == 0:
-            # Even indices are non-link text, escape them
-            escaped_parts.append(html.escape(part))
-        else:
-            # Odd indices are our link HTML, keep as-is
-            escaped_parts.append(part)
-
-    return "".join(escaped_parts)
-
-
-def _process_inline_markdown(text: str) -> str:
-    """Process inline markdown elements (bold, italic, code, links)."""
-    # Use placeholders to avoid escaping issues
-    # Use format that won't be interpreted as markdown (no underscores!)
-    placeholders = {}
-    counter = 0
-
-    def create_placeholder(html_content):
-        nonlocal counter
-        placeholder = f"\x00INLINEMD{counter}\x00"  # Use null bytes - won't conflict with markdown
-        placeholders[placeholder] = html_content
-        counter += 1
-        return placeholder
-
-    # Inline code (backticks) - highest priority, escape content
-    def replace_code(match):
-        content = html.escape(match.group(1))
-        return create_placeholder(f'<code class="inline-code">{content}</code>')
-
-    text = re.sub(r"`([^`]+)`", replace_code, text)
-
-    # Links ([text](url)) - before bold/italic to avoid conflicts
-    def replace_link(match):
-        link_text = html.escape(match.group(1))
-        url = html.escape(match.group(2))
-        return create_placeholder(f'<a href="{url}">{link_text}</a>')
-
-    text = re.sub(r"\[([^\]]+)\]\(([^\)]+)\)", replace_link, text)
-
-    # Bold (**text** or __text__)
-    def replace_bold(match):
-        content = html.escape(match.group(1))
-        return create_placeholder(f"<b>{content}</b>")
-
-    text = re.sub(r"\*\*(.+?)\*\*", replace_bold, text)
-    text = re.sub(r"__(.+?)__", replace_bold, text)
-
-    # Italic (*text* or _text_) - after bold to avoid conflicts
-    def replace_italic(match):
-        content = html.escape(match.group(1))
-        return create_placeholder(f"<i>{content}</i>")
-
-    text = re.sub(r"\*(.+?)\*", replace_italic, text)
-    text = re.sub(r"_(.+?)_", replace_italic, text)
-
-    # Strikethrough (~~text~~)
-    def replace_strikethrough(match):
-        content = html.escape(match.group(1))
-        return create_placeholder(f"<s>{content}</s>")
-
-    text = re.sub(r"~~(.+?)~~", replace_strikethrough, text)
-
-    # Escape remaining text (non-placeholder parts)
-    text = html.escape(text)
-
-    # Replace placeholders with actual HTML
-    for placeholder, html_content in placeholders.items():
-        text = text.replace(placeholder, html_content)
-
-    return text
-
-
-def _get_syntax_for_language(lang: str) -> str | None:
-    """Map language identifier to Sublime syntax file."""
-    lang_map = {
-        "python": "Packages/Python/Python.sublime-syntax",
-        "py": "Packages/Python/Python.sublime-syntax",
-        "javascript": "Packages/JavaScript/JavaScript.sublime-syntax",
-        "js": "Packages/JavaScript/JavaScript.sublime-syntax",
-        "typescript": "Packages/TypeScript/TypeScript.sublime-syntax",
-        "ts": "Packages/TypeScript/TypeScript.sublime-syntax",
-        "go": "Packages/Go/Go.sublime-syntax",
-        "rust": "Packages/Rust/Rust.sublime-syntax",
-        "java": "Packages/Java/Java.sublime-syntax",
-        "c": "Packages/C++/C.sublime-syntax",
-        "cpp": "Packages/C++/C++.sublime-syntax",
-        "c++": "Packages/C++/C++.sublime-syntax",
-        "json": "Packages/JSON/JSON.sublime-syntax",
-        "html": "Packages/HTML/HTML.sublime-syntax",
-        "css": "Packages/CSS/CSS.sublime-syntax",
-        "sql": "Packages/SQL/SQL.sublime-syntax",
-        "bash": "Packages/ShellScript/Shell-Unix-Generic.sublime-syntax",
-        "sh": "Packages/ShellScript/Shell-Unix-Generic.sublime-syntax",
-        "yaml": "Packages/YAML/YAML.sublime-syntax",
-        "yml": "Packages/YAML/YAML.sublime-syntax",
-        "xml": "Packages/XML/XML.sublime-syntax",
-        "markdown": "Packages/Markdown/Markdown.sublime-syntax",
-        "md": "Packages/Markdown/Markdown.sublime-syntax",
-    }
-    return lang_map.get(lang.lower())
-
-
-def _highlight_code(view: sublime.View, code: str, lang: str) -> str:
-    """
-    Apply basic syntax highlighting to code using Sublime's color scheme.
-
-    Returns HTML with inline styles based on the view's color scheme.
-    Simplified to avoid HTML parsing issues - just escapes content for now.
-    """
-    # Just escape the code - no syntax highlighting for now to avoid issues
-    # This ensures valid HTML is always generated
-    return html.escape(code)
 
 
 def show_signature_help_popup(
