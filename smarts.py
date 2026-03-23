@@ -1630,11 +1630,19 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
 
             return message
 
+        def _after_read(message):
+            messages_panel_insert(
+                self.window, "// Receive:\n" + json.dumps(message, indent=2)
+            )
+
+            return message
+
         client = smarts_client.LanguageServerClient(
             logger=plugin_logger,
             name=server_config["name"],
             server_args=server_config["start"],
             before_write=_before_write,
+            after_read=_after_read,
             on_logTrace=_on_receive_notification,
             on_window_logMessage=_on_receive_notification,
             on_window_showMessage=_on_receive_notification,

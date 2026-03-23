@@ -835,6 +835,10 @@ def _default_before_write(message: LSPMessage) -> LSPMessage:
     return message
 
 
+def _default_after_read(message: LSPMessage) -> LSPMessage:
+    return message
+
+
 class LanguageServerClient:
     """LSP client that manages communication with a language server subprocess.
 
@@ -876,6 +880,7 @@ class LanguageServerClient:
         name: str,
         server_args: list[str],
         before_write: Callable[[LSPMessage], LSPMessage] | None,
+        after_read: Callable[[LSPMessage], LSPMessage] | None,
         on_logTrace: LSPNotificationHandler | None = None,
         on_window_logMessage: LSPNotificationHandler | None = None,
         on_window_showMessage: LSPNotificationHandler | None = None,
@@ -895,11 +900,15 @@ class LanguageServerClient:
         self._writer: threading.Thread | None = None
         self._handler: threading.Thread | None = None
         self._monitor: threading.Thread | None = None
-        self._request_callback: dict[ int | str, Callable[[LSPResponseMessage], None]
+        self._request_callback: dict[
+            int | str, Callable[[LSPResponseMessage], None]
         ] = {}
         self._open_documents = set()
         self._before_write: Callable[[LSPMessage], LSPMessage] = (
             before_write or _default_before_write
+        )
+        self._after_read: Callable[[LSPMessage], LSPMessage] = (
+            after_read or _default_after_read
         )
         self._on_logTrace = on_logTrace
         self._on_window_logMessage = on_window_logMessage
@@ -1118,6 +1127,8 @@ class LanguageServerClient:
 
                     try:
                         message = json.loads(content)
+
+                        self._after_read(message)
 
                         # Enqueue message; Blocks if queue is full.
                         self._receive_queue.put(message)
