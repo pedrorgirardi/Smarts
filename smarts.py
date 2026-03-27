@@ -889,6 +889,63 @@ def view_text_document_item(view: sublime.View) -> smarts_client.LSPTextDocument
     }
 
 
+def document_did_change_full(
+    view: sublime.View,
+    smart: PgSmart,
+):
+    """
+    Send a full document sync for the current view contents.
+    """
+    if file_name := view.file_name():
+        params: smarts_client.LSPDidChangeTextDocumentParams = {
+            "textDocument": {
+                "uri": path_to_uri(file_name),
+                "version": view.change_count(),
+            },
+            "contentChanges": [
+                cast(
+                    smarts_client.LSPTextDocumentContentChangeEvent,
+                    {
+                        "text": view.substr(sublime.Region(0, view.size())),
+                    },
+                )
+            ],
+        }
+
+        smart.client.textDocument_didChange(params)
+
+
+def document_resync(view: sublime.View):
+    """
+    Re-synchronize a view with all applicable servers after a reload/revert.
+
+    External file modifications do not produce the incremental edit stream used
+    while typing, so incremental-sync servers need an explicit reset.
+    """
+    for smart in applicable_smarts(view, method="textDocument/didChange"):
+        textDocumentSync = smarts_client.textDocumentSyncOptions(
+            smart.client._server_capabilities.get("textDocumentSync")
+            if smart.client._server_capabilities
+            else None
+        )
+
+        if textDocumentSync["change"] == 1:
+            document_did_change_full(view, smart)
+            continue
+
+        if textDocumentSync.get("openClose", False):
+            smart.client.textDocument_didClose({
+                "textDocument": view_textDocumentIdentifier(view),
+            })
+            smart.client.textDocument_didOpen({
+                "textDocument": view_text_document_item(view),
+            })
+            continue
+
+        # Best effort fallback for incremental sync without open/close support.
+        document_did_change_full(view, smart)
+
+
 def open_location_jar(
     window: sublime.Window,
     position_encoding: smarts_client.LSPPositionEncoding,
@@ -2531,6 +2588,14 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
             }
 
             language_client.textDocument_didChange(params)
+
+    def on_reload_async(self):
+        if self.buffer and (view := self.buffer.primary_view()):
+            document_resync(view)
+
+    def on_revert_async(self):
+        if self.buffer and (view := self.buffer.primary_view()):
+            document_resync(view)
 
 
 class PgSmartsViewListener(sublime_plugin.ViewEventListener):
