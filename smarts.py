@@ -1289,7 +1289,7 @@ def handle_window_showMessage(
 
         message_message = params["message"]
 
-        panel_log(window, f"{message_type} {message_message}\n", show=True)
+        panel_log(window, f"{message_type} {message_message}\n", show=False)
 
 
 def present_diagnostics(
