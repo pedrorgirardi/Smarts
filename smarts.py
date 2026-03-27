@@ -1035,22 +1035,11 @@ def apply_workspace_edit(
                 while view.is_loading():
                     pass
 
-            # Apply edits in reverse order to avoid offset issues
-            # Sort edits by position (descending) so we apply from end to start
-            sorted_edits = sorted(
-                edits,
-                key=lambda e: (
-                    e["range"]["start"]["line"],
-                    e["range"]["start"]["character"],
-                ),
-                reverse=True,
-            )
-
             view.run_command(
                 "pg_smarts_apply_edits",
                 {
                     "position_encoding": position_encoding,
-                    "edits": sorted_edits,
+                    "edits": edits,
                 },
             )
 
@@ -1069,21 +1058,11 @@ def apply_workspace_edit(
                 while view.is_loading():
                     pass
 
-            # Apply edits in reverse order to avoid offset issues
-            sorted_edits = sorted(
-                edits,
-                key=lambda e: (
-                    e["range"]["start"]["line"],
-                    e["range"]["start"]["character"],
-                ),
-                reverse=True,
-            )
-
             view.run_command(
                 "pg_smarts_apply_edits",
                 {
                     "position_encoding": position_encoding,
-                    "edits": sorted_edits,
+                    "edits": edits,
                 },
             )
 
@@ -2390,7 +2369,17 @@ class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
 
 class PgSmartsApplyEditsCommand(sublime_plugin.TextCommand):
     def run(self, edit, edits, position_encoding):
-        for e in edits:
+        # Sort edits by position (descending) so we apply from end to start to avoid offset issues.
+        sorted_edits = sorted(
+            edits,
+            key=lambda e: (
+                e["range"]["start"]["line"],
+                e["range"]["start"]["character"],
+            ),
+            reverse=True,
+        )
+
+        for e in sorted_edits:
             edit_region = range_region(self.view, position_encoding, e["range"])
             edit_new_text = e["newText"]
 
