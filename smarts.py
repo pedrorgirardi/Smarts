@@ -1698,6 +1698,8 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
                     "synchronization": {
                         # Whether text document synchronization supports dynamic registration.
                         "dynamicRegistration": False,
+                        # Open and close notifications are sent to the server.
+                        "openClose": True,
                         # Documents are synced by always sending the full content of the document.
                         "change": 1,
                     },
