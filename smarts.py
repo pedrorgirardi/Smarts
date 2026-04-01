@@ -55,8 +55,14 @@ kOUTPUT_PANEL_MESSAGES_NAME_PREFIXED = f"output.{kOUTPUT_PANEL_MESSAGES_NAME}"
 kDIAGNOSTICS = "PG_SMARTS_DIAGNOSTICS"
 kSMARTS_HIGHLIGHTS = "PG_SMARTS_HIGHLIGHTS"
 kSMARTS_HIGHLIGHTS_POSITION_ENCODING = "PG_SMARTS_HIGHLIGHTS_POSITION_ENCODING"
-kSMARTS_COMPLETIONS = "PG_SMARTS_COMPLETIONS"
 kSMARTS_LAST_MODIFIED_TIME = "PG_SMARTS_LAST_MODIFIED_TIME"
+
+kCOMPLETION_FLAGS = (
+    sublime.INHIBIT_WORD_COMPLETIONS
+    | sublime.INHIBIT_EXPLICIT_COMPLETIONS
+    | sublime.INHIBIT_REORDER
+    | sublime.DYNAMIC_COMPLETIONS
+)
 
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnosticSeverity
 kDIAGNOSTIC_SEVERITY_ERROR = 1
@@ -1267,6 +1273,75 @@ def view_textDocumentPositionParams(
         "textDocument": view_textDocumentIdentifier(view),
         "position": point_position(view, position_encoding, point or default_point),
     }
+
+
+def view_completionContext(
+    view: sublime.View,
+    smart: PgSmart,
+    point: int,
+) -> smarts_client.LSPCompletionContext:
+    trigger_kind = 1  # Invoked
+    context: smarts_client.LSPCompletionContext = {
+        "triggerKind": trigger_kind,
+    }
+
+    if point <= 0:
+        return context
+
+    if not smart.client._server_capabilities:
+        return context
+
+    completion_provider = smart.client._server_capabilities.get("completionProvider")
+
+    if not isinstance(completion_provider, dict):
+        return context
+
+    trigger_characters = completion_provider.get("triggerCharacters") or []
+    trigger_character = view.substr(sublime.Region(point - 1, point))
+
+    if trigger_character in trigger_characters:
+        context["triggerKind"] = 2  # TriggerCharacter
+        context["triggerCharacter"] = trigger_character
+
+    return context
+
+
+def completions(
+    items: list[smarts_client.LSPCompletionItem],
+) -> list[sublime.CompletionItem]:
+    completions: list[sublime.CompletionItem] = []
+
+    for item in items:
+        # The label of this completion item.
+        # The label property is also by default the text that is inserted when selecting this completion.
+        label = item.get("label") or ""
+
+        annotation = item.get("detail") or ""
+
+        # A string that should be inserted into a document when selecting this completion.
+        # When omitted the label is used as the insert text for this item.
+        insert_text = item.get("insertText") or label
+
+        completion_kind = item.get("kind") or 0
+
+        kind = kCOMPLETION_ITEM_KIND.get(completion_kind, sublime.KIND_ID_AMBIGUOUS)
+
+        details = item.get("documentation")
+
+        if isinstance(details, dict):
+            details = details.get("value")
+
+        completions.append(
+            sublime.CompletionItem(
+                trigger=label,
+                annotation=annotation,
+                completion=insert_text,
+                kind=(kind, "", annotation),
+                details=details or "",
+            )
+        )
+
+    return completions
 
 
 def syntax_languageId(syntax: str):
@@ -2771,57 +2846,22 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             if not setting(window, "editor.auto_complete", False):
                 return None
 
-        cached_completion_items = self.view.settings().get(kSMARTS_COMPLETIONS, None)
-
-        if cached_completion_items is not None:
-            self.view.settings().erase(kSMARTS_COMPLETIONS)
-
-            completions: list[sublime.CompletionItem] = []
-
-            for item in cached_completion_items:
-                item = cast(smarts_client.LSPCompletionItem, item)
-
-                # The label of this completion item.
-                # The label property is also by default the text that is inserted when selecting this completion.
-                label = item.get("label") or ""
-
-                annotation = item.get("detail") or ""
-
-                #  A string that should be inserted into a document when selecting this completion.
-                # When omitted the label is used as the insert text for this item.
-                insert_text = item.get("insertText") or label
-
-                completion_kind = item.get("kind") or 0
-
-                kind = kCOMPLETION_ITEM_KIND.get(
-                    completion_kind, sublime.KIND_ID_AMBIGUOUS
-                )
-
-                details = item.get("documentation")
-
-                if isinstance(details, dict):
-                    details = details.get("value")
-
-                completions.append(
-                    sublime.CompletionItem(
-                        trigger=label,
-                        annotation=annotation,
-                        completion=insert_text,
-                        kind=(kind, "", annotation),
-                        details=details or "",
-                    )
-                )
-
-            return completions
-
         smart = applicable_smart(self.view, method="textDocument/completion")
 
         if smart is None:
             return None
 
         position_encoding = smart.position_encoding()
+        point = locations[0]
+        completion_list = sublime.CompletionList(flags=kCOMPLETION_FLAGS)
+
+        request_serial = getattr(self, "pg_smarts_completion_request_serial", 0) + 1
+        self.pg_smarts_completion_request_serial = request_serial
 
         def on_result(result: smarts_client.LSPCompletionResult):
+            if request_serial != self.pg_smarts_completion_request_serial:
+                return
+
             # result: CompletionItem[] | CompletionList | null
             #  If a CompletionItem[] is provided it is interpreted to be complete. So it is the same as { isIncomplete: false, items }
             if result is None:
@@ -2831,25 +2871,32 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#completionItem
             items = result.get("items") if isinstance(result, dict) else result
 
-            # Store completions in view settings and trigger auto_complete.
-            self.view.settings().set(kSMARTS_COMPLETIONS, items)
-
-            sublime.set_timeout(lambda: self.view.run_command("auto_complete"), 0)
+            completion_list.set_completions(completions(items))
 
         def on_error(error: smarts_client.LSPResponseError):
+            if request_serial != self.pg_smarts_completion_request_serial:
+                return
+
             if window := self.view.window():
                 panel_log_error(window, error)
 
-        params = view_textDocumentPositionParams(
-            self.view,
-            position_encoding,
-            locations[0],
+            completion_list.set_completions([])
+
+        params = cast(
+            smarts_client.LSPCompletionParams,
+            {
+                **view_textDocumentPositionParams(
+                    self.view,
+                    position_encoding,
+                    point,
+                ),
+                "context": view_completionContext(self.view, smart, point),
+            },
         )
 
         smart.client.textDocument_completion(params, on_result, on_error)
 
-        # Return empty list immediately; completions will be shown when response arrives.
-        return []
+        return completion_list
 
 
 class PgSmartsListener(sublime_plugin.EventListener):

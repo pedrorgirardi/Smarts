@@ -28,6 +28,7 @@ LSPPositionEncoding = Literal[
 
 class LSPServerCapabilities(TypedDict, total=False):
     positionEncoding: LSPPositionEncoding | None
+    completionProvider: bool | dict[str, Any] | None
 
 
 class LSPServerInfo(TypedDict):
@@ -521,7 +522,7 @@ class LSPPublishDiagnosticsParams(TypedDict):
     diagnostics: list[LSPDiagnostic]
 
 
-class LSPCompletionItem(TypedDict):
+class LSPCompletionItem(TypedDict, total=False):
     """
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#completionItem
     """
@@ -558,6 +559,31 @@ class LSPCompletionList(TypedDict):
 
     # The completion items.
     items: list[LSPCompletionItem]
+
+
+class LSPCompletionContext(TypedDict, total=False):
+    """
+    Additional information about the context in which a completion request is triggered.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#completionContext
+    """
+
+    # How the completion was triggered.
+    # 1 = Invoked, 2 = TriggerCharacter, 3 = TriggerForIncompleteCompletions
+    triggerKind: Literal[1, 2, 3]
+
+    # The trigger character that has trigger code complete.
+    triggerCharacter: str
+
+
+class LSPCompletionParams(LSPTextDocumentPositionParams, total=False):
+    """
+    Parameters for a completion request.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#completionParams
+    """
+
+    context: LSPCompletionContext
 
 
 class LSPParameterInformation(TypedDict, total=False):
