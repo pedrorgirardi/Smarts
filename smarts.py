@@ -2842,14 +2842,18 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             self.pg_smarts_highlighter.start()
 
     def on_query_completions(self, prefix, locations):
-        if window := self.view.window():
-            if not setting(window, "editor.auto_complete", False):
-                return None
+        window = self.view.window()
+
+        if window is None:
+            return
+
+        if not setting(window, "editor.auto_complete", False):
+            return
 
         smart = applicable_smart(self.view, method="textDocument/completion")
 
         if smart is None:
-            return None
+            return
 
         position_encoding = smart.position_encoding()
         point = locations[0]
