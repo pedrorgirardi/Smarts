@@ -2808,6 +2808,8 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if smart is None:
             return None
 
+        position_encoding = smart.position_encoding()
+
         def on_result(result: smarts_client.LSPCompletionResult):
             # result: CompletionItem[] | CompletionList | null
             #  If a CompletionItem[] is provided it is interpreted to be complete. So it is the same as { isIncomplete: false, items }
@@ -2827,7 +2829,11 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             if window := self.view.window():
                 panel_log_error(window, error)
 
-        params = view_textDocumentPositionParams(self.view, locations[0])
+        params = view_textDocumentPositionParams(
+            self.view,
+            position_encoding,
+            locations[0],
+        )
 
         smart.client.textDocument_completion(params, on_result, on_error)
 
