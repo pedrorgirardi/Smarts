@@ -1626,6 +1626,17 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
                         # Documents are synced by always sending the full content of the document.
                         "change": 1,
                     },
+                    # Completion capabilities advertised to language servers.
+                    # Keep this aligned with what on_query_completions() actually supports.
+                    "completion": {
+                        "dynamicRegistration": False,
+                        "completionItem": {
+                            "documentationFormat": ["markdown", "plaintext"],
+                        },
+                        "completionItemKind": {
+                            "valueSet": list(kCOMPLETION_ITEM_KIND.keys()),
+                        },
+                    },
                     "hover": {
                         "contentFormat": ["markdown", "plaintext"],
                     },
