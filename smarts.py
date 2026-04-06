@@ -2324,7 +2324,6 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
         .container h3 { font-size: 1rem; }
         .container p { margin: 0.1rem 0; }
         .container pre { margin: 0.3rem 0; }
-        .container code { background-color: color(var(--background) blend(#000 85%)); }
         .container a { color: var(--bluish); text-decoration: none; }
         .container strong { font-weight: bold; }
         .container em { font-style: italic; }
