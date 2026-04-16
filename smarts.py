@@ -357,19 +357,21 @@ def initialize_project_smarts(window: sublime.Window):
         for initialize_data in project_data_.get("initialize", []):
             rootPath = initialize_data.get("rootPath")
 
-            if rootPath is not None:
-                rootPath = Path(rootPath)
+            if rootPath is None:
+                rootPath = window.folders()[0]
 
-                project_path = window_project_path(window)
+            rootPath = Path(rootPath)
 
-                if not rootPath.is_absolute() and project_path is not None:
-                    rootPath = (project_path / rootPath).resolve()
+            project_path = window_project_path(window)
+
+            if not rootPath.is_absolute() and project_path is not None:
+                rootPath = (project_path / rootPath).resolve()
 
             window.run_command(
                 "pg_smarts_initialize",
                 {
                     "server": initialize_data.get("name"),
-                    "rootPath": rootPath.as_posix() if rootPath is not None else None,
+                    "rootPath": rootPath.as_posix(),
                 },
             )
 
@@ -1609,21 +1611,6 @@ def handle_notification(
 
 # -- INPUT HANDLERS
 
-
-class ServerInputHandler(sublime_plugin.ListInputHandler):
-    def __init__(self, items):
-        self.items = items
-
-    def placeholder(self):
-        return "Server"
-
-    def name(self):
-        return "server"
-
-    def list_items(self):
-        return self.items
-
-
 class RootPathInputHandler(sublime_plugin.TextInputHandler):
     def __init__(self, initial_text: str):
         self._initial_text = initial_text
@@ -1639,6 +1626,31 @@ class RootPathInputHandler(sublime_plugin.TextInputHandler):
 
     def validate(self, arg: str):
         return bool(arg.strip())
+
+
+class ServerInputHandler(sublime_plugin.ListInputHandler):
+    def __init__(self, window: sublime.Window, items):
+        self.window = window
+        self.items = items
+
+    def placeholder(self):
+        return "Server"
+
+    def name(self):
+        return "server"
+
+    def list_items(self):
+        return self.items
+
+    def next_input(self, args) -> sublime_plugin.BackInputHandler | RootPathInputHandler:
+        folders = self.window.folders()
+
+        if not folders:
+            sublime.error_message("Can't initialize server without an open folder.")
+
+            return sublime_plugin.BackInputHandler()
+
+        return RootPathInputHandler(folders[0])
 
 
 class SmartsInputHandler(sublime_plugin.ListInputHandler):
@@ -1665,21 +1677,12 @@ class SmartsInputHandler(sublime_plugin.ListInputHandler):
 
 class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
     def input(self, args):
-        if "server" not in args:
-            return ServerInputHandler(
-                sorted(
-                    [server_config["name"] for server_config in available_servers()],
-                )
-            )
-
-        if "rootPath" not in args:
-            folders = self.window.folders()
-
-            if not folders:
-                sublime.error_message("Can't initialize server without an open folder")
-                return None
-
-            return RootPathInputHandler(folders[0])
+        return ServerInputHandler(
+            self.window,
+            sorted(
+                [server_config["name"] for server_config in available_servers()],
+            ),
+        )
 
     def run(self, server: str, rootPath: str):
         rootPath_path = Path(rootPath)
