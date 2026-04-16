@@ -1624,6 +1624,23 @@ class ServerInputHandler(sublime_plugin.ListInputHandler):
         return self.items
 
 
+class RootPathInputHandler(sublime_plugin.TextInputHandler):
+    def __init__(self, initial_text: str):
+        self._initial_text = initial_text
+
+    def placeholder(self):
+        return "Root Path"
+
+    def name(self):
+        return "rootPath"
+
+    def initial_text(self):
+        return self._initial_text
+
+    def validate(self, arg: str):
+        return bool(arg.strip())
+
+
 class SmartsInputHandler(sublime_plugin.ListInputHandler):
     def placeholder(self):
         return "Server"
@@ -1655,19 +1672,21 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
                 )
             )
 
-    def run(self, server: str, rootPath=None):
-        if rootPath is None:
-            rootPath = self.window.folders()[0] if self.window.folders() else None
+        if "rootPath" not in args:
+            folders = self.window.folders()
 
-            if rootPath is None:
-                plugin_logger.error("Can't initialize server without a rootPath")
-                return
+            if not folders:
+                sublime.error_message("Can't initialize server without an open folder")
+                return None
 
-        rootPath = Path(rootPath)
+            return RootPathInputHandler(folders[0])
 
-        rootUri = rootPath.as_uri()
+    def run(self, server: str, rootPath: str):
+        rootPath_path = Path(rootPath)
 
-        workspaceFolders = [{"name": rootPath.name, "uri": rootUri}]
+        rootUri = rootPath_path.as_uri()
+
+        workspaceFolders = [{"name": rootPath_path.name, "uri": rootUri}]
 
         params = {
             "processId": os.getpid(),
@@ -1677,7 +1696,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             },
             # The rootPath of the workspace. Is null if no folder is open.
             # Deprecated in favour of rootUri.
-            "rootPath": rootPath.as_posix(),
+            "rootPath": rootPath_path.as_posix(),
             # The rootUri of the workspace. Is null if no folder is open.
             # If both rootPath and rootUri are set rootUri wins.
             # Deprecated in favour of workspaceFolders.
