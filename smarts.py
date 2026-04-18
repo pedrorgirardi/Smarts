@@ -1611,6 +1611,7 @@ def handle_notification(
 
 # -- INPUT HANDLERS
 
+
 class RootPathInputHandler(sublime_plugin.TextInputHandler):
     def __init__(self, initial_text: str):
         self._initial_text = initial_text
@@ -1642,7 +1643,9 @@ class ServerInputHandler(sublime_plugin.ListInputHandler):
     def list_items(self):
         return self.items
 
-    def next_input(self, args) -> sublime_plugin.BackInputHandler | RootPathInputHandler:
+    def next_input(
+        self, args
+    ) -> sublime_plugin.BackInputHandler | RootPathInputHandler:
         folders = self.window.folders()
 
         if not folders:
@@ -2321,7 +2324,10 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
 
     def _show_popup(self, smart: PgSmart, hover: smarts_client.LSPHover):
         markdown = self._hover_markdown(hover)
-        content_html = smarts_markdown.markdown_to_html(markdown)
+        content_html = smarts_markdown.markdown_to_html(
+            markdown,
+            code_block_renderer=self._render_markdown_code_block,
+        )
 
         styles = """
         .container {
@@ -2379,6 +2385,40 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
             max_width=1000,
             max_height=600,
         )
+
+    def _render_markdown_code_block(self, code_block: str) -> str:
+        window = self.view.window()
+
+        if not window:
+            raise RuntimeError(
+                "Smarts hover popups require a window to render code fences."
+            )
+
+        panel_name = f"smarts-hover-code-fence-{uuid.uuid4().hex}"
+
+        temp_view = window.create_output_panel(panel_name, unlisted=True)
+        temp_view.assign_syntax("Packages/Markdown/Markdown.sublime-syntax")
+
+        try:
+            temp_view.run_command("append", {"characters": code_block})
+            region = self._markdown_code_block_body_region(code_block)
+            return temp_view.export_to_html(
+                region,
+                minihtml=True,
+            )
+        finally:
+            window.destroy_output_panel(panel_name)
+
+    def _markdown_code_block_body_region(self, code_block: str) -> sublime.Region:
+        lines = code_block.split("\n")
+        start = len(lines[0]) + 1 if len(lines) > 1 else 0
+
+        if len(lines) > 1 and lines[-1].startswith("```"):
+            end = len(code_block) - len(lines[-1]) - 1
+        else:
+            end = len(code_block)
+
+        return sublime.Region(start, max(start, end))
 
     def _hover_markdown(self, hover: smarts_client.LSPHover) -> str:
         contents = hover["contents"]

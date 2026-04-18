@@ -1,12 +1,17 @@
 import html
 import re
+from collections.abc import Callable
 
 
-def markdown_to_html(text: str) -> str:
+def markdown_to_html(
+    text: str,
+    *,
+    code_block_renderer: Callable[[str], str],
+) -> str:
     """Convert markdown string to HTML string.
 
     Handles:
-    - Fenced code blocks (```) → <pre>
+    - Fenced code blocks (```) → rendered by callback
     - Inline code (`) → <code>
     - Links [text](url) → <a href="url">text</a>
     - Bold **text** → <strong>
@@ -23,14 +28,14 @@ def markdown_to_html(text: str) -> str:
 
         # Fenced code block
         if line.startswith("```"):
-            code_lines = []
+            block_start = i
             i += 1
             while i < len(lines) and not lines[i].startswith("```"):
-                code_lines.append(html.escape(lines[i]))
                 i += 1
-            code_content = "<br>".join(code_lines)
-            result.append(f"<pre>{code_content}</pre>")
-            i += 1
+            if i < len(lines):
+                i += 1
+            code_block = "\n".join(lines[block_start:i])
+            result.append(code_block_renderer(code_block))
             continue
 
         # Empty line - add line break (wrapped in div for block-level spacing)
