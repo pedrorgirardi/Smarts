@@ -1625,6 +1625,10 @@ class RootPathInputHandler(sublime_plugin.TextInputHandler):
     def initial_text(self):
         return self._initial_text
 
+    def initial_selection(self):
+        end = len(self._initial_text)
+        return [(end, end)]
+
     def validate(self, arg: str):
         return bool(arg.strip())
 

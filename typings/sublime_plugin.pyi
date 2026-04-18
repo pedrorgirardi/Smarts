@@ -615,7 +615,7 @@ class CommandInputHandler(Generic[T_InputType]):
 
     def initial_selection(
         self,
-    ) -> List[Tuple[List[str | Tuple[str, T_InputType] | sublime.ListInputItem[T_InputType]], int]]:
+    ) -> List[Tuple[int, int]]:
         """A list of 2-element tuplues, defining the initially selected parts of the initial text."""
         ...
 
