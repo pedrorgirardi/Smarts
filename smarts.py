@@ -2330,7 +2330,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
         markdown = self._hover_markdown(hover)
         content_html = smarts_markdown.markdown_to_html(
             markdown,
-            code_block_renderer=self._render_markdown_code_block,
+            code_block_renderer=self._code_minihtml,
         )
 
         styles = """
@@ -2359,7 +2359,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
         .container a { color: var(--bluish); text-decoration: none; }
         .container strong { font-weight: bold; }
         .container em { font-style: italic; }
-        .container .hr { border-top: 1px solid color(var(--foreground) alpha(0.2)); margin: 0.5rem 0; }
+        .container .hr { border-top: 1px solid color(var(--foreground) alpha(0.1)); margin: 0.7rem 0; }
         """
 
         minihtml = f"""
@@ -2369,7 +2369,6 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
         </style>
         <body class='container'>
             {content_html}
-            <br />
             <div class='hr'></div>
             <span class='text-pinkish font-bold'>{html.escape(smart.client._name)}</span>
         </body>
@@ -2390,7 +2389,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
             max_height=600,
         )
 
-    def _render_markdown_code_block(self, code_block: str) -> str:
+    def _code_minihtml(self, code_block: str) -> str:
         window = self.view.window()
 
         if not window:
@@ -2398,31 +2397,39 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
                 "Smarts hover popups require a window to render code fences."
             )
 
-        panel_name = f"smarts-hover-code-fence-{uuid.uuid4().hex}"
+        language, body = self._split_language_body(code_block)
 
-        temp_view = window.create_output_panel(panel_name, unlisted=True)
-        temp_view.assign_syntax("Packages/Markdown/Markdown.sublime-syntax")
+        panel_name = f"Smarts-{uuid.uuid4().hex}"
+
+        output_view = window.create_output_panel(panel_name, unlisted=True)
+        output_view.assign_syntax(self._language_syntax(language))
 
         try:
-            temp_view.run_command("append", {"characters": code_block})
-            region = self._markdown_code_block_body_region(code_block)
-            return temp_view.export_to_html(
-                region,
-                minihtml=True,
-            )
+            output_view.run_command("append", {"characters": body})
+
+            return output_view.export_to_html(minihtml=True)
         finally:
             window.destroy_output_panel(panel_name)
 
-    def _markdown_code_block_body_region(self, code_block: str) -> sublime.Region:
-        lines = code_block.split("\n")
-        start = len(lines[0]) + 1 if len(lines) > 1 else 0
+    def _split_language_body(self, code_block: str) -> tuple[str, str]:
+        match = re.match(r"^```([^\n]*)\n(.*?)\n```$", code_block, re.DOTALL)
 
-        if len(lines) > 1 and lines[-1].startswith("```"):
-            end = len(code_block) - len(lines[-1]) - 1
-        else:
-            end = len(code_block)
+        if not match:
+            return "", code_block
 
-        return sublime.Region(start, max(start, end))
+        return match.group(1).strip(), match.group(2)
+
+    def _language_syntax(self, language: str) -> sublime.Syntax:
+        plain_text_syntax = sublime.find_syntax_by_name("Plain Text")[0]
+
+        if not language:
+            return plain_text_syntax
+
+        for syntax in sublime.list_syntaxes():
+            if syntax.name.casefold() == language.casefold():
+                return syntax
+
+        return plain_text_syntax
 
     def _hover_markdown(self, hover: smarts_client.LSPHover) -> str:
         contents = hover["contents"]
