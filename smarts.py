@@ -1460,7 +1460,16 @@ def present_diagnostics(
 
             # Annotations (minihtml) by Severity
             severity_annotations.append(
-                f'<span style="font-size:0.8em">{html.escape(d["message"])}</span>',
+                (
+                    "<html>"
+                    "<body id='smarts-diagnostic-annotation' "
+                    "style='margin:0;padding:0;font-size:1rem;line-height:1rem;'>"
+                    "<span>"
+                    f"{html.escape(d['message'])}"
+                    "</span>"
+                    "</body>"
+                    "</html>"
+                ),
             )
 
         view.add_regions(
