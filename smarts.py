@@ -185,6 +185,7 @@ class PgSmartsDiagnostic(smarts_client.LSPDiagnostic):
     """
 
     uri: str
+    position_encoding: smarts_client.LSPPositionEncoding
 
 
 class PgSmartsServerConfig(TypedDict):
@@ -289,6 +290,17 @@ def remove_smarts(uuids: set[str]):
     with _SMARTS_LOCK:
         _SMARTS = [smart for smart in _SMARTS if smart.uuid not in uuids]
 
+    for window in sublime.windows():
+        for view in window.views():
+            server_diagnostics = view.settings().get(kDIAGNOSTICS, {})
+
+            for server_uuid in uuids:
+                server_diagnostics.pop(server_uuid, None)
+
+            view.settings().set(kDIAGNOSTICS, server_diagnostics)
+
+            present_diagnostics(view, view_diagnostics(view))
+
 
 def find_smart(uuid: str) -> PgSmart | None:
     with _SMARTS_LOCK:
@@ -335,6 +347,41 @@ def window_initialized_smarts(window: sublime.Window) -> list[PgSmart]:
         for smart in window_running_smarts(window)
         if smart.client.is_server_initialized()
     ]
+
+
+def flatten_diagnostics(
+    server_diagnostics: dict[str, list[PgSmartsDiagnostic]],
+) -> list[PgSmartsDiagnostic]:
+    if not server_diagnostics:
+        return []
+
+    if len(server_diagnostics) == 1:
+        return next(iter(server_diagnostics.values()))
+
+    diagnostics = []
+
+    for server_data in server_diagnostics.values():
+        diagnostics.extend(server_data)
+
+    return list(
+        {
+            json.dumps(diagnostic, sort_keys=True): diagnostic
+            for diagnostic in diagnostics
+        }.values()
+    )
+
+
+def view_diagnostics(view: sublime.View) -> list[PgSmartsDiagnostic]:
+    return flatten_diagnostics(view.settings().get(kDIAGNOSTICS, {}))
+
+
+def window_diagnostics(window: sublime.Window) -> list[PgSmartsDiagnostic]:
+    diagnostics = []
+
+    for view in window.views():
+        diagnostics.extend(view_diagnostics(view))
+
+    return diagnostics
 
 
 def shutdown_smarts(window: sublime.Window):
@@ -1196,10 +1243,9 @@ def goto_diagnostic(
     on_cancel: Callable[[], None] | None = None,
 ):
     if len(diagnostics) == 1:
-        # FIXME
         open_location(
             window,
-            position_encoding="utf-16",
+            position_encoding=diagnostics[0]["position_encoding"],
             location=diagnostics[0],
             empty_region=True,
         )
@@ -1215,10 +1261,9 @@ def goto_diagnostic(
         )
 
         def on_highlight(index):
-            # FIXME
             open_location(
                 window,
-                position_encoding="utf-16",
+                position_encoding=diagnostics[index]["position_encoding"],
                 location=diagnostics[index],
                 flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
             )
@@ -1228,10 +1273,9 @@ def goto_diagnostic(
                 if on_cancel:
                     on_cancel()
             else:
-                # FIXME
                 open_location(
                     window,
-                    position_encoding="utf-16",
+                    position_encoding=diagnostics[index]["position_encoding"],
                     location=diagnostics[index],
                     empty_region=True,
                 )
@@ -1428,7 +1472,6 @@ def handle_window_showMessage(
 
 def present_diagnostics(
     view: sublime.View,
-    position_encoding: smarts_client.LSPPositionEncoding,
     diagnostics: list[PgSmartsDiagnostic],
 ):
     """
@@ -1455,7 +1498,7 @@ def present_diagnostics(
         for d in severity_diagnostics:
             # Regions by Severity
             severity_regions.append(
-                range_region(view, position_encoding, d["range"]),
+                range_region(view, d["position_encoding"], d["range"]),
             )
 
             # Annotations (minihtml) by Severity
@@ -1527,63 +1570,73 @@ def handle_textDocument_publishDiagnostics(
             PgSmartsDiagnostic,
             {
                 "uri": params["uri"],
+                "position_encoding": position_encoding,
                 **diagnostic,
             },
         )
         for diagnostic in params["diagnostics"]
     ]
 
-    # URI to Diagnostics.
-    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic
-    uri_diagnostics = window.settings().get(kDIAGNOSTICS, {})
-    uri_diagnostics[params["uri"]] = diagnostics
+    path = uri_to_path(params["uri"])
+    view = window.find_open_file(path)
 
-    window.settings().set(kDIAGNOSTICS, uri_diagnostics)
+    if view is None:
+        return
 
-    fname = unquote(urlparse(params["uri"]).path)
+    current_view_diagnostics = view.settings().get(kDIAGNOSTICS, {})
 
-    if view := window.find_open_file(fname):
-        # Persists document diagnostics.
-        view.settings().set(kDIAGNOSTICS, diagnostics)
+    # Skip redundant cache writes and redraw work when the server republishes
+    # the same diagnostics while the user is typing.
+    if current_view_diagnostics.get(smart.uuid) == diagnostics:
+        return
 
-        view_id = view.id()
+    # Persists document diagnostics keyed by server.
+    view.settings().set(
+        kDIAGNOSTICS,
+        {
+            **current_view_diagnostics,
+            smart.uuid: diagnostics,
+        },
+    )
 
-        # Cancel any pending diagnostics timer for this view.
-        with _DIAGNOSTICS_TIMERS_LOCK:
-            if view_id in _DIAGNOSTICS_TIMERS:
-                _DIAGNOSTICS_TIMERS[view_id].cancel()
-                del _DIAGNOSTICS_TIMERS[view_id]
+    view_id = view.id()
 
-        def _present():
-            if not view.is_valid():
-                return
+    # Cancel any pending diagnostics timer for this view.
+    with _DIAGNOSTICS_TIMERS_LOCK:
+        if view_id in _DIAGNOSTICS_TIMERS:
+            _DIAGNOSTICS_TIMERS[view_id].cancel()
+            del _DIAGNOSTICS_TIMERS[view_id]
 
-            present_diagnostics(view, position_encoding, diagnostics)
-
-        def _present_timely():
-            # Remove timer reference when it fires.
-            with _DIAGNOSTICS_TIMERS_LOCK:
-                _DIAGNOSTICS_TIMERS.pop(view_id, None)
-            sublime.set_timeout(_present, 0)
-
-        # Cool-down period: Suppress presenting diagnostics while actively editing.
-        #
-        # Without this, diagnostics constantly update while typing, causing
-        # distracting visual changes (squiggly lines and annotations moving around).
-        # We wait until the user stops typing before showing updated diagnostics.
-        last_modified = view.settings().get(kSMARTS_LAST_MODIFIED_TIME, 0)
-        cool_down = 1.0
-        since_modified = time.time() - last_modified
-
-        if since_modified < cool_down:
-            delay = cool_down - since_modified
-            timer = threading.Timer(delay, _present_timely)
-            with _DIAGNOSTICS_TIMERS_LOCK:
-                _DIAGNOSTICS_TIMERS[view_id] = timer
-            timer.start()
+    def _present():
+        if not view.is_valid():
             return
 
+        present_diagnostics(view, view_diagnostics(view))
+
+    def _present_timely():
+        # Remove timer reference when it fires.
+        with _DIAGNOSTICS_TIMERS_LOCK:
+            _DIAGNOSTICS_TIMERS.pop(view_id, None)
         sublime.set_timeout(_present, 0)
+
+    # Cool-down period: Suppress presenting diagnostics while actively editing.
+    #
+    # Without this, diagnostics constantly update while typing, causing
+    # distracting visual changes (squiggly lines and annotations moving around).
+    # We wait until the user stops typing before showing updated diagnostics.
+    last_modified = view.settings().get(kSMARTS_LAST_MODIFIED_TIME, 0)
+    cool_down = 1.0
+    since_modified = time.time() - last_modified
+
+    if since_modified < cool_down:
+        delay = cool_down - since_modified
+        timer = threading.Timer(delay, _present_timely)
+        with _DIAGNOSTICS_TIMERS_LOCK:
+            _DIAGNOSTICS_TIMERS[view_id] = timer
+        timer.start()
+        return
+
+    sublime.set_timeout(_present, 0)
 
 
 def handle_notification(
@@ -2012,7 +2065,7 @@ class PgSmartsGotoDocumentDiagnostic(sublime_plugin.TextCommand):
     def run(self, _):
         restore_view = capture_view(self.view)
 
-        diagnostics = self.view.settings().get(kDIAGNOSTICS, [])
+        diagnostics = view_diagnostics(self.view)
 
         if window := self.view.window():
             goto_diagnostic(
@@ -2030,11 +2083,7 @@ class PgSmartsGotoDiagnostic(sublime_plugin.WindowCommand):
             if view.element() is None:
                 on_cancel = capture_view(view)
 
-        diagnostics = [
-            diagnostic
-            for diagnostics in self.window.settings().get(kDIAGNOSTICS, {}).values()
-            for diagnostic in diagnostics
-        ]
+        diagnostics = window_diagnostics(self.window)
 
         goto_diagnostic(
             self.window,

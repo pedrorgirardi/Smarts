@@ -1378,7 +1378,7 @@ class LanguageServerClient:
         self,
         params,
         callback: Callable[[LSPResponseMessage], None],
-        timeout: float = 30.0,
+        timeout: float = 120.0,
     ):
         """
         The initialize request is sent as the first request from the client to the server.
@@ -1510,7 +1510,7 @@ class LanguageServerClient:
             callback(timeout_response)
 
         # Start timeout timer
-        timeout_timer = threading.Timer(timeout, _timeout_handler)
+        timeout_timer = threading.Timer(interval=timeout, function=_timeout_handler)
         timeout_timer.daemon = True
         timeout_timer.start()
 
