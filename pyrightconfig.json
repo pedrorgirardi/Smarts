@@ -1,7 +1,13 @@
 {
     "pythonVersion": "3.13",
-    "stubPath": "typings",
     "include": ["smarts.py", "lib/", "tests/"],
+    "executionEnvironments": [
+        {
+            "root": ".",
+            "extraPaths": ["/Applications/Sublime Text.app/Contents/MacOS/Lib/python314"]
+        }
+    ],
+    "reportIncompatibleMethodOverride": false,
     "reportMissingImports": false,
     "reportMissingModuleSource": false,
     "reportOptionalMemberAccess": false,

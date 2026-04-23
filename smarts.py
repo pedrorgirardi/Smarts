@@ -1005,7 +1005,7 @@ def open_location_jar(
     window: sublime.Window,
     position_encoding: smarts_client.LSPPositionEncoding,
     location: smarts_client.LSPLocation,
-    flags,
+    flags: sublime.NewFileFlags,
 ):
     """
     Open JAR `fname` and call `f` with the path of the temporary file.
@@ -1042,7 +1042,7 @@ def open_location(
     position_encoding: smarts_client.LSPPositionEncoding,
     location: smarts_client.LSPLocation,
     empty_region: bool | None = False,
-    flags=0,
+    flags: sublime.NewFileFlags = sublime.NewFileFlags.NONE,
 ):
     """
     Open a file at an LSP location and set the selection.
@@ -1186,7 +1186,7 @@ def goto_location(
     item_builder: Callable[
         [sublime.Window, smarts_client.LSPLocation], sublime.QuickPanelItem
     ],
-    flags: int = 0,
+    flags: sublime.NewFileFlags = sublime.NewFileFlags.NONE,
     on_cancel: Callable[[], None] | None = None,
 ):
     if len(locations) == 1:
@@ -1691,8 +1691,8 @@ class RootPathInputHandler(sublime_plugin.TextInputHandler):
         end = len(self._initial_text)
         return [(end, end)]
 
-    def validate(self, arg: str):
-        return bool(arg.strip())
+    def validate(self, text: str, event=None):
+        return bool(text.strip())
 
 
 class ServerInputHandler(sublime_plugin.ListInputHandler):
@@ -1990,7 +1990,9 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
         position_encoding = smart.position_encoding()
 
         open_file_flags = (
-            sublime.SEMI_TRANSIENT | sublime.ADD_TO_SELECTION if side_by_side else 0
+            sublime.SEMI_TRANSIENT | sublime.ADD_TO_SELECTION
+            if side_by_side
+            else sublime.NewFileFlags.NONE
         )
 
         params = view_textDocumentPositionParams(self.view, position_encoding)

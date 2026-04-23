@@ -100,7 +100,7 @@ Callbacks invoked (e.g., update diagnostics UI)
 
 - Configured via pyrightconfig.json
 - Only checks smarts.py (not smarts_client.py)
-- Custom type stubs in `typings/` directory for Sublime Text API (sublime.pyi, sublime_plugin.pyi)
+- Uses the typed Sublime API modules shipped with the local app bundle at `/Applications/Sublime Text.app/Contents/MacOS/Lib/python314`
 - Run: `pyright` (if installed)
 
 ### Testing

@@ -13,7 +13,7 @@ dev = [
 ]
 
 [tool.ty.environment]
-extra-paths = ["./typings"]
+extra-paths = ["/Applications/Sublime Text.app/Contents/MacOS/Lib/python314"]
 python-version = "3.13"
 root = [".."]
 
