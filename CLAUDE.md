@@ -92,7 +92,7 @@ Callbacks invoked (e.g., update diagnostics UI)
 ### Python Environment
 
 - Uses `uv` for Python version management
-- Requires Python ~3.8 (specified in pyproject.toml and .python-version)
+- Requires Python 3.14 (specified in pyproject.toml and .python-version)
 - Find Python executable: `uv python find`
 - Install Python version: `uv python install` (reads .python-version)
 
