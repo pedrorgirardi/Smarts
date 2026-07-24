@@ -2121,9 +2121,9 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
             # DocumentSymbol[] | SymbolInformation[] | null
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
             if result:
-                restore_viewport_position = capture_viewport_position(self.view)
+                restore_view = capture_view(self.view)
 
-                def on_highlight(index):
+                def select_symbol(index):
                     data = result[index]
 
                     selected_range = None
@@ -2144,45 +2144,33 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                         self.view,
                         position_encoding,
                         selected_range,
+                        inverted=True,
                     )
 
-                    show_at_center_region = sublime.Region(
-                        selected_region.end(),
-                        selected_region.begin(),
+                    self.view.run_command(
+                        "pg_smarts_set_selection",
+                        {
+                            "regions": [
+                                [selected_region.a, selected_region.b],
+                            ],
+                        },
                     )
+                    self.view.show_at_center(selected_region)
 
-                    self.view.sel().clear()
-                    self.view.sel().add(show_at_center_region)
-                    self.view.show_at_center(show_at_center_region)
+                def on_highlight(index):
+                    select_symbol(index)
 
                 def on_select(index):
                     global _DOCUMENT_SYMBOL_VIEW_ID
                     _DOCUMENT_SYMBOL_VIEW_ID = None
 
                     if index == -1:
-                        restore_viewport_position()
+                        restore_view()
 
                     else:
-                        data = result[index]
-
-                        selected_range = None
-
-                        if location := data.get("location"):
-                            selected_range = location["range"]
-                        else:
-                            selected_range = data["selectionRange"]
-
-                        # Use ENCODED_POSITION to trigger proper selection events.
-                        start = selected_range["start"]
-                        line = start["line"] + 1  # LSP is 0-based, Sublime is 1-based
-                        col = start["character"] + 1
-                        file_path = self.view.file_name()
-
-                        if file_path and (window := self.view.window()):
-                            window.open_file(
-                                f"{file_path}:{line}:{col}",
-                                sublime.ENCODED_POSITION,
-                            )
+                        # The first quick-panel item may be accepted without
+                        # triggering on_highlight, so apply its range here too.
+                        select_symbol(index)
 
                 quick_panel_items = [
                     document_symbol_quick_panel_item(data) for data in result
@@ -2211,6 +2199,14 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                 panel_log_error(window, error)
 
         smart.client.textDocument_documentSymbol(params, on_result, on_error)
+
+
+class PgSmartsSetSelectionCommand(sublime_plugin.TextCommand):
+    def run(self, _, regions):
+        self.view.sel().clear()
+
+        for start, end in regions:
+            self.view.sel().add(sublime.Region(start, end))
 
 
 # WIP
