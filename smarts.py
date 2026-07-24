@@ -1106,19 +1106,53 @@ def open_location(
 
 
 def capture_view(view: sublime.View) -> Callable[[], None]:
-    regions = [region for region in view.sel()]
-
+    regions = [[region.a, region.b] for region in view.sel()]
     viewport_position = view.viewport_position()
+    highlight_regions = [
+        sublime.Region(region.a, region.b)
+        for region in view.get_regions(kSMARTS_HIGHLIGHTS)
+    ]
+    highlights = view.settings().get(kSMARTS_HIGHLIGHTS)
+    highlights_position_encoding = view.settings().get(
+        kSMARTS_HIGHLIGHTS_POSITION_ENCODING
+    )
 
     def restore():
-        view.sel().clear()
-
-        for region in regions:
-            view.sel().add(region)
+        view.run_command(
+            "pg_smarts_set_selection",
+            {
+                "regions": regions,
+            },
+        )
 
         view.set_viewport_position(viewport_position, True)
 
         if window := view.window():
+            if highlight_regions:
+                highlight_references = setting(
+                    window,
+                    "editor.highlight_references",
+                    False,
+                )
+
+                view.add_regions(
+                    kSMARTS_HIGHLIGHTS,
+                    highlight_regions,
+                    scope="region.yellowish",
+                    icon="",
+                    flags=(
+                        sublime.DRAW_NO_FILL
+                        if highlight_references
+                        else sublime.HIDDEN
+                    ),
+                )
+
+                view.settings().set(kSMARTS_HIGHLIGHTS, highlights)
+                view.settings().set(
+                    kSMARTS_HIGHLIGHTS_POSITION_ENCODING,
+                    highlights_position_encoding,
+                )
+
             window.focus_view(view)
 
     return restore
@@ -2123,7 +2157,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
             if result:
                 restore_view = capture_view(self.view)
 
-                def select_symbol(index):
+                def select_symbol(index, empty_region=False):
                     data = result[index]
 
                     selected_range = None
@@ -2147,15 +2181,23 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                         inverted=True,
                     )
 
+                    selection_region = selected_region
+
+                    if empty_region:
+                        selection_region = sublime.Region(
+                            selected_region.end(),
+                            selected_region.end(),
+                        )
+
                     self.view.run_command(
                         "pg_smarts_set_selection",
                         {
                             "regions": [
-                                [selected_region.a, selected_region.b],
+                                [selection_region.a, selection_region.b],
                             ],
                         },
                     )
-                    self.view.show_at_center(selected_region)
+                    self.view.show_at_center(selection_region)
 
                 def on_highlight(index):
                     select_symbol(index)
@@ -2170,7 +2212,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                     else:
                         # The first quick-panel item may be accepted without
                         # triggering on_highlight, so apply its range here too.
-                        select_symbol(index)
+                        select_symbol(index, empty_region=True)
 
                 quick_panel_items = [
                     document_symbol_quick_panel_item(data) for data in result
