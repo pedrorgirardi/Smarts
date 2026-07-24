@@ -292,7 +292,7 @@ def remove_smarts(uuids: set[str]):
 
     for window in sublime.windows():
         for view in window.views():
-            server_diagnostics = view.settings().get(kDIAGNOSTICS, {})
+            server_diagnostics = view_server_diagnostics(view)
 
             for server_uuid in uuids:
                 server_diagnostics.pop(server_uuid, None)
@@ -371,8 +371,21 @@ def flatten_diagnostics(
     )
 
 
+def view_server_diagnostics(
+    view: sublime.View,
+) -> dict[str, list[PgSmartsDiagnostic]]:
+    server_diagnostics = view.settings().get(kDIAGNOSTICS, {})
+
+    # Before multi-server diagnostics this setting contained a flat list.
+    # Open views can retain that value across plugin reloads.
+    if not isinstance(server_diagnostics, dict):
+        return {}
+
+    return cast(dict[str, list[PgSmartsDiagnostic]], server_diagnostics)
+
+
 def view_diagnostics(view: sublime.View) -> list[PgSmartsDiagnostic]:
-    return flatten_diagnostics(view.settings().get(kDIAGNOSTICS, {}))
+    return flatten_diagnostics(view_server_diagnostics(view))
 
 
 def window_diagnostics(window: sublime.Window) -> list[PgSmartsDiagnostic]:
@@ -1583,7 +1596,7 @@ def handle_textDocument_publishDiagnostics(
     if view is None:
         return
 
-    current_view_diagnostics = view.settings().get(kDIAGNOSTICS, {})
+    current_view_diagnostics = view_server_diagnostics(view)
 
     # Skip redundant cache writes and redraw work when the server republishes
     # the same diagnostics while the user is typing.
