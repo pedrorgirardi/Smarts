@@ -13,7 +13,7 @@ import uuid
 from collections.abc import Callable
 from itertools import groupby
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import Any, Literal, TypedDict, cast
 from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
@@ -1018,6 +1018,7 @@ def open_location_jar(
     window: sublime.Window,
     position_encoding: smarts_client.LSPPositionEncoding,
     location: smarts_client.LSPLocation,
+    caret: Literal["start", "end"],
     flags: sublime.NewFileFlags,
 ):
     """
@@ -1045,7 +1046,7 @@ def open_location_jar(
             window,
             position_encoding=position_encoding,
             location=cast(smarts_client.LSPLocation, new_location),
-            empty_region=True,
+            caret=caret,
             flags=flags,
         )
 
@@ -1054,7 +1055,7 @@ def open_location(
     window: sublime.Window,
     position_encoding: smarts_client.LSPPositionEncoding,
     location: smarts_client.LSPLocation,
-    empty_region: bool | None = False,
+    caret: Literal["start", "end"] | None = None,
     flags: sublime.NewFileFlags = sublime.NewFileFlags.NONE,
 ):
     """
@@ -1066,7 +1067,8 @@ def open_location(
         window: The Sublime window to open the file in.
         position_encoding: LSP position encoding for interpreting character offsets.
         location: LSP Location with URI and range.
-        empty_region: If True, place cursor at range start. If False, select the range.
+        caret: Place an empty cursor at the range start or end. Select the range
+            when omitted.
         flags: Sublime flags (e.g., sublime.TRANSIENT for preview during quick panel).
     """
     file_path = uri_to_path(location["uri"])
@@ -1076,13 +1078,14 @@ def open_location(
             window,
             position_encoding,
             location,
+            caret or "start",
             flags,
         )
-    elif empty_region:
+    elif caret:
         # Use ENCODED_POSITION to trigger proper selection events (e.g., word highlight).
-        start = location["range"]["start"]
-        line = start["line"] + 1  # LSP is 0-based, Sublime is 1-based
-        col = start["character"] + 1
+        position = location["range"][caret]
+        line = position["line"] + 1  # LSP is 0-based, Sublime is 1-based
+        col = position["character"] + 1
         window.open_file(f"{file_path}:{line}:{col}", flags | sublime.ENCODED_POSITION)
     else:
         view = window.open_file(file_path, flags)
@@ -1235,13 +1238,14 @@ def goto_location(
     ],
     flags: sublime.NewFileFlags = sublime.NewFileFlags.NONE,
     on_cancel: Callable[[], None] | None = None,
+    quick_panel_caret: Literal["start", "end"] = "start",
 ):
     if len(locations) == 1:
         open_location(
             window,
             position_encoding=position_encoding,
             location=locations[0],
-            empty_region=True,
+            caret="start",
             flags=flags,
         )
     else:
@@ -1271,7 +1275,7 @@ def goto_location(
                     window,
                     position_encoding=position_encoding,
                     location=locations[index],
-                    empty_region=True,
+                    caret=quick_panel_caret,
                     flags=flags,
                 )
 
@@ -1294,7 +1298,7 @@ def goto_diagnostic(
             window,
             position_encoding=diagnostics[0]["position_encoding"],
             location=diagnostics[0],
-            empty_region=True,
+            caret="start",
         )
     else:
         diagnostics = sorted(
@@ -1324,7 +1328,7 @@ def goto_diagnostic(
                     window,
                     position_encoding=diagnostics[index]["position_encoding"],
                     location=diagnostics[index],
-                    empty_region=True,
+                    caret="start",
                 )
 
         window.show_quick_panel(
@@ -2094,6 +2098,7 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
                     locations=result,
                     item_builder=location_quick_panel_item,
                     on_cancel=restore_view,
+                    quick_panel_caret="end",
                 )
 
         def on_error(error: smarts_client.LSPResponseError):
@@ -2283,7 +2288,7 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
                             self.window,
                             position_encoding="utf-16",
                             location=result[index]["location"],
-                            empty_region=True,
+                            caret="start",
                             flags=sublime.ENCODED_POSITION | sublime.TRANSIENT,
                         )
 
