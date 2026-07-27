@@ -4,6 +4,7 @@ import os
 import shlex
 import subprocess
 import threading
+import time
 import uuid
 from collections.abc import Callable
 from enum import Enum, auto
@@ -1407,6 +1408,8 @@ class LanguageServerClient:
 
         self._logger.debug(f"Initialize `{shlex.join(self._server_args)}`")
 
+        initialization_started_at = time.monotonic()
+
         try:
             server_process = subprocess.Popen(
                 self._server_args,
@@ -1542,7 +1545,12 @@ class LanguageServerClient:
                 else:
                     self._server_status = LanguageServerStatus.INITIALIZED
 
-                    self._logger.info("Server initialized")
+                    initialization_elapsed_ms = (
+                        time.monotonic() - initialization_started_at
+                    ) * 1000
+                    self._logger.info(
+                        f"Server initialized in {initialization_elapsed_ms:.0f}ms"
+                    )
 
                     if result := cast(LSPInitializeResult, response.get("result")):
                         self._server_capabilities = result.get("capabilities")
