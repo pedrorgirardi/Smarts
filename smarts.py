@@ -905,11 +905,11 @@ def diagnostic_origin(diagnostic: PgSmartsDiagnostic) -> str:
     Returns where `diagnostic` comes from: the server name, and its source
     if it's different - e.g. a server which aggregates linters.
     """
-    server = diagnostic.get("server", "")
-    source = diagnostic.get("source") or ""
+    server = diagnostic["server"]
+    source = diagnostic.get("source")
 
     if source and source.casefold() != server.casefold():
-        return f"{server} ({source})" if server else source
+        return f"{server} ({source})"
 
     return server
 
@@ -3204,14 +3204,6 @@ def plugin_loaded():
     plugin_logger.addHandler(console_logging_handler)
     plugin_logger.setLevel(settings().get("logger.plugin.level", "INFO"))
     plugin_logger.debug("Plugin loaded")
-
-    # Diagnostics live in memory, so nothing survives a plugin (re)load:
-    # clear what's rendered, and erase diagnostics persisted in view settings
-    # (and in the session) by previous versions.
-    for window in sublime.windows():
-        for view in window.views():
-            view.settings().erase(kDIAGNOSTICS)
-            clear_diagnostics(view)
 
     initialize_project_smarts(sublime.active_window())
 
