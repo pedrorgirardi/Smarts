@@ -554,7 +554,7 @@ def text_to_html(s: str) -> str:
     result = html.escape(s)
     result = re.sub(r"\n", "<br/>", result)
     result = re.sub(r"\t", "&nbsp;&nbsp;&nbsp;&nbsp;", result)
-    result = re.sub(r" ", "&nbsp;", result)
+    result = result.replace(" ", "&nbsp;")
 
     return result
 
@@ -2072,36 +2072,36 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
         for smart in smarts:
             client = smart.client
 
-            lines.append(f"# {client._name}")
-            lines.append("")
-            lines.append(f"- **UUID:** {smart.uuid}")
-            lines.append(f"- **Status:** {client.server_status().name}")
-            lines.append(
-                f"- **PID:** {client._server_process.pid if client._server_process else None}"
-            )
-            lines.append("")
+            pid = client._server_process.pid if client._server_process else None
 
-            lines.append("## Info")
-            lines.append("")
+            lines.extend([
+                f"# {client._name}",
+                "",
+                f"- **UUID:** {smart.uuid}",
+                f"- **Status:** {client.server_status().name}",
+                f"- **PID:** {pid}",
+                "",
+                "## Info",
+                "",
+            ])
+
             if server_info := client._server_info:
-                lines.append("```json")
-                lines.append(json.dumps(server_info, indent=2))
-                lines.append("```")
+                lines.extend(["```json", json.dumps(server_info, indent=2), "```"])
             else:
                 lines.append("-")
-            lines.append("")
 
-            lines.append("## Capabilities")
-            lines.append("")
+            lines.extend(["", "## Capabilities", ""])
+
             if server_capabilities := client._server_capabilities:
-                lines.append("```json")
-                lines.append(json.dumps(server_capabilities, indent=2))
-                lines.append("```")
+                lines.extend([
+                    "```json",
+                    json.dumps(server_capabilities, indent=2),
+                    "```",
+                ])
             else:
                 lines.append("-")
-            lines.append("")
-            lines.append("---")
-            lines.append("")
+
+            lines.extend(["", "---", ""])
 
         content = "\n".join(lines)
 

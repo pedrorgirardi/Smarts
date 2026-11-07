@@ -829,7 +829,7 @@ def textDocumentSyncOptions(
 
     elif isinstance(textDocumentSync, int):
         return {
-            "openClose": False if textDocumentSync == 0 else True,
+            "openClose": textDocumentSync != 0,
             "change": textDocumentSync,
         }
 
