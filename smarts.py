@@ -1316,6 +1316,31 @@ def apply_workspace_edit(
             )
 
 
+def transient_sheet_ids(window: sublime.Window) -> set[int]:
+    return {
+        sheet.id()
+        for group in range(window.num_groups())
+        if (sheet := window.transient_sheet_in_group(group))
+    }
+
+
+def capture_transient_sheets(window: sublime.Window) -> Callable[[], None]:
+    """
+    Returns a function which closes transient sheets opened after this call -
+    e.g. previews opened while highlighting quick panel items.
+    """
+    before = transient_sheet_ids(window)
+
+    def close():
+        for group in range(window.num_groups()):
+            sheet = window.transient_sheet_in_group(group)
+
+            if sheet and sheet.id() not in before and sheet.is_transient():
+                sheet.close()
+
+    return close
+
+
 def goto_location(
     window: sublime.Window,
     position_encoding: smarts_client.LSPPositionEncoding,
@@ -1345,6 +1370,8 @@ def goto_location(
             ],
         )
 
+        close_previews = capture_transient_sheets(window)
+
         def on_highlight(index):
             open_location(
                 window,
@@ -1355,6 +1382,8 @@ def goto_location(
 
         def on_select(index):
             if index == -1:
+                close_previews()
+
                 if on_cancel:
                     on_cancel()
             else:
@@ -1398,6 +1427,8 @@ def goto_diagnostic(
             ],
         )
 
+        close_previews = capture_transient_sheets(window)
+
         def on_highlight(index):
             open_location(
                 window,
@@ -1408,6 +1439,8 @@ def goto_diagnostic(
 
         def on_select(index):
             if index == -1:
+                close_previews()
+
                 if on_cancel:
                     on_cancel()
             else:
