@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 import shlex
 import subprocess
 import threading
@@ -10,8 +9,6 @@ from collections.abc import Callable
 from enum import Enum, auto
 from queue import Queue
 from typing import Any, Literal, NotRequired, TypedDict, cast
-
-import sublime
 
 LSPPositionEncoding = Literal[
     # Character offsets count UTF-8 code units (e.g bytes).
@@ -438,7 +435,7 @@ class LSPDocumentSymbol(TypedDict, total=False):
     selectionRange: LSPRange
 
     # Children of this symbol, e.g. properties of a class.
-    children: list["LSPDocumentSymbol"]
+    children: list[LSPDocumentSymbol]
 
 
 class LSPSymbolInformation(TypedDict, total=False):
