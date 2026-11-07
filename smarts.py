@@ -187,6 +187,9 @@ class PgSmartsDiagnostic(smarts_client.LSPDiagnostic):
     uri: str
     position_encoding: smarts_client.LSPPositionEncoding
 
+    # Name of the server which published the diagnostic.
+    server: str
+
 
 class PgSmartsServerConfig(TypedDict):
     name: str
@@ -897,15 +900,35 @@ def range_region(
     return sublime.Region(a, b)
 
 
-def diagnostic_quick_panel_item(data) -> sublime.QuickPanelItem:
+def diagnostic_origin(diagnostic: PgSmartsDiagnostic) -> str:
+    """
+    Returns where `diagnostic` comes from: the server name, and its source
+    if it's different - e.g. a server which aggregates linters.
+    """
+    server = diagnostic.get("server", "")
+    source = diagnostic.get("source") or ""
+
+    if source and source.casefold() != server.casefold():
+        return f"{server} ({source})" if server else source
+
+    return server
+
+
+def diagnostic_quick_panel_item(data: PgSmartsDiagnostic) -> sublime.QuickPanelItem:
     path = uri_to_path(data["uri"])
     start_line = data["range"]["start"]["line"] + 1
     start_character = data["range"]["start"]["character"] + 1
 
+    origin = diagnostic_origin(data)
+    code = data.get("code")
+
+    # If omitted, it's recommended for the client to interpret it as an Error severity.
+    severity = data.get("severity") or kDIAGNOSTIC_SEVERITY_ERROR
+
     return sublime.QuickPanelItem(
-        f"{severity_name(data['severity'])}: {data['message']}",
-        kind=severity_kind(data["severity"]),
-        annotation=data.get("code", ""),
+        f"{severity_name(severity)}: {data['message']}",
+        kind=severity_kind(severity),
+        annotation=" · ".join(str(s) for s in (origin, code) if s),
         details=f"{path}:{start_line}:{start_character}",
     )
 
@@ -1368,7 +1391,7 @@ def goto_diagnostic(
         diagnostics = sorted(
             diagnostics,
             key=lambda diagnostic: [
-                diagnostic["severity"],
+                diagnostic.get("severity") or kDIAGNOSTIC_SEVERITY_ERROR,
                 diagnostic["uri"],
                 diagnostic["range"]["start"]["line"],
                 diagnostic["range"]["start"]["character"],
@@ -1616,6 +1639,11 @@ def present_diagnostics(
                 range_region(view, d["position_encoding"], d["range"]),
             )
 
+            message = d["message"]
+
+            if origin := diagnostic_origin(d):
+                message = f"{message} · {origin}"
+
             # Annotations (minihtml) by Severity
             severity_annotations.append(
                 (
@@ -1623,7 +1651,7 @@ def present_diagnostics(
                     "<body id='smarts-diagnostic-annotation' "
                     "style='margin:0;padding:0;font-size:1rem;line-height:1rem;'>"
                     "<span>"
-                    f"{html.escape(d['message'])}"
+                    f"{html.escape(message)}"
                     "</span>"
                     "</body>"
                     "</html>"
@@ -1686,6 +1714,7 @@ def handle_textDocument_publishDiagnostics(
             {
                 "uri": params["uri"],
                 "position_encoding": position_encoding,
+                "server": smart.config["name"],
                 **diagnostic,
             },
         )
