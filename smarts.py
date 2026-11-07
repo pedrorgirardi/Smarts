@@ -232,10 +232,20 @@ _SMARTS_LOCK = threading.Lock()
 # Used to close the quick panel if the user closes the view (e.g., cmd+w).
 _DOCUMENT_SYMBOL_VIEW_ID: int | None = None
 
-# Pending diagnostics timers per view, keyed by view ID.
+# Diagnostics published by Language Servers.
+# Keyed by (window ID, file path), then by Smart UUID.
+#
+# Each server owns its entry: a publish replaces only that server's diagnostics,
+# so servers never overwrite each other. Every client calls the publish handler
+# from its own handler thread, hence the lock. Entries are replaced, never mutated
+# in place.
+_DIAGNOSTICS: dict[tuple[int, str], dict[str, list[PgSmartsDiagnostic]]] = {}
+_DIAGNOSTICS_LOCK = threading.Lock()
+
+# Pending diagnostics presentation per view, keyed by view ID.
 # Used to defer diagnostics rendering while actively editing.
-_DIAGNOSTICS_TIMERS: dict = {}
-_DIAGNOSTICS_TIMERS_LOCK = threading.Lock()
+# Only accessed on the main thread.
+_DIAGNOSTICS_PENDING: dict[int, object] = {}
 
 
 # ---------------------------------------------------------------------------------------
@@ -290,16 +300,10 @@ def remove_smarts(uuids: set[str]):
     with _SMARTS_LOCK:
         _SMARTS = [smart for smart in _SMARTS if smart.uuid not in uuids]
 
-    for window in sublime.windows():
-        for view in window.views():
-            server_diagnostics = view_server_diagnostics(view)
-
-            for server_uuid in uuids:
-                server_diagnostics.pop(server_uuid, None)
-
-            view.settings().set(kDIAGNOSTICS, server_diagnostics)
-
-            present_diagnostics(view, view_diagnostics(view))
+    for window_id, path in remove_server_diagnostics(uuids):
+        if window := find_window(window_id):
+            if view := window.find_open_file(path):
+                present_diagnostics(view, view_diagnostics(view))
 
 
 def find_smart(uuid: str) -> PgSmart | None:
@@ -349,52 +353,112 @@ def window_initialized_smarts(window: sublime.Window) -> list[PgSmart]:
     ]
 
 
-def flatten_diagnostics(
-    server_diagnostics: dict[str, list[PgSmartsDiagnostic]],
-) -> list[PgSmartsDiagnostic]:
-    if not server_diagnostics:
-        return []
+def set_server_diagnostics(
+    window_id: int,
+    path: str,
+    smart_uuid: str,
+    diagnostics: list[PgSmartsDiagnostic],
+) -> bool:
+    """
+    Replace diagnostics published by `smart_uuid` for `path`.
 
-    if len(server_diagnostics) == 1:
-        return next(iter(server_diagnostics.values()))
+    Diagnostics of other servers are kept as is.
 
-    diagnostics = []
+    Returns False if diagnostics didn't change.
+    """
+    key = (window_id, path)
 
-    for server_data in server_diagnostics.values():
-        diagnostics.extend(server_data)
+    with _DIAGNOSTICS_LOCK:
+        server_diagnostics = _DIAGNOSTICS.get(key, {})
 
-    return list(
-        {
-            json.dumps(diagnostic, sort_keys=True): diagnostic
+        if server_diagnostics.get(smart_uuid, []) == diagnostics:
+            return False
+
+        server_diagnostics = {
+            uuid: uuid_diagnostics
+            for uuid, uuid_diagnostics in server_diagnostics.items()
+            if uuid != smart_uuid
+        }
+
+        if diagnostics:
+            server_diagnostics[smart_uuid] = diagnostics
+
+        if server_diagnostics:
+            _DIAGNOSTICS[key] = server_diagnostics
+        else:
+            _DIAGNOSTICS.pop(key, None)
+
+        return True
+
+
+def remove_server_diagnostics(uuids: set[str]) -> set[tuple[int, str]]:
+    """
+    Remove diagnostics published by servers `uuids`.
+
+    Returns keys - (window ID, path) - of affected documents.
+    """
+    affected = set()
+
+    with _DIAGNOSTICS_LOCK:
+        for key, server_diagnostics in list(_DIAGNOSTICS.items()):
+            if not uuids & server_diagnostics.keys():
+                continue
+
+            affected.add(key)
+
+            server_diagnostics = {
+                uuid: uuid_diagnostics
+                for uuid, uuid_diagnostics in server_diagnostics.items()
+                if uuid not in uuids
+            }
+
+            if server_diagnostics:
+                _DIAGNOSTICS[key] = server_diagnostics
+            else:
+                del _DIAGNOSTICS[key]
+
+    return affected
+
+
+def path_diagnostics(window_id: int, path: str) -> list[PgSmartsDiagnostic]:
+    """
+    Returns diagnostics of all servers for `path`.
+    """
+    with _DIAGNOSTICS_LOCK:
+        server_diagnostics = _DIAGNOSTICS.get((window_id, path), {})
+
+        return [
+            diagnostic
+            for diagnostics in server_diagnostics.values()
             for diagnostic in diagnostics
-        }.values()
-    )
-
-
-def view_server_diagnostics(
-    view: sublime.View,
-) -> dict[str, list[PgSmartsDiagnostic]]:
-    server_diagnostics = view.settings().get(kDIAGNOSTICS, {})
-
-    # Before multi-server diagnostics this setting contained a flat list.
-    # Open views can retain that value across plugin reloads.
-    if not isinstance(server_diagnostics, dict):
-        return {}
-
-    return cast(dict[str, list[PgSmartsDiagnostic]], server_diagnostics)
+        ]
 
 
 def view_diagnostics(view: sublime.View) -> list[PgSmartsDiagnostic]:
-    return flatten_diagnostics(view_server_diagnostics(view))
+    window = view.window()
+    file_name = view.file_name()
+
+    if window is None or file_name is None:
+        return []
+
+    return path_diagnostics(window.id(), file_name)
 
 
 def window_diagnostics(window: sublime.Window) -> list[PgSmartsDiagnostic]:
-    diagnostics = []
+    """
+    Returns diagnostics of all servers for all documents in `window`,
+    including documents which are not open.
+    """
+    window_id = window.id()
 
-    for view in window.views():
-        diagnostics.extend(view_diagnostics(view))
-
-    return diagnostics
+    with _DIAGNOSTICS_LOCK:
+        return [
+            diagnostic
+            for (id, _), server_diagnostics in _DIAGNOSTICS.items()
+            if id == window_id
+            for diagnostics in server_diagnostics.values()
+            for diagnostic in diagnostics
+        ]
 
 
 def shutdown_smarts(window: sublime.Window):
@@ -1629,46 +1693,42 @@ def handle_textDocument_publishDiagnostics(
     ]
 
     path = uri_to_path(params["uri"])
+
+    # Diagnostics are stored even if the document is not open:
+    # they're presented when the document is loaded, and are available to Goto Diagnostic.
+    #
+    # Skip redraw work when the server republishes the same diagnostics while the user is typing.
+    if not set_server_diagnostics(window.id(), path, smart.uuid, diagnostics):
+        return
+
+    sublime.set_timeout(lambda: schedule_present_diagnostics(window, path), 0)
+
+
+def schedule_present_diagnostics(window: sublime.Window, path: str):
+    """
+    Present diagnostics for `path`, if it's open, after a cool-down period.
+
+    Must be called on the main thread.
+    """
     view = window.find_open_file(path)
 
     if view is None:
         return
 
-    current_view_diagnostics = view_server_diagnostics(view)
-
-    # Skip redundant cache writes and redraw work when the server republishes
-    # the same diagnostics while the user is typing.
-    if current_view_diagnostics.get(smart.uuid) == diagnostics:
-        return
-
-    # Persists document diagnostics keyed by server.
-    view.settings().set(
-        kDIAGNOSTICS,
-        {
-            **current_view_diagnostics,
-            smart.uuid: diagnostics,
-        },
-    )
-
     view_id = view.id()
 
-    # Cancel any pending diagnostics timer for this view.
-    with _DIAGNOSTICS_TIMERS_LOCK:
-        if view_id in _DIAGNOSTICS_TIMERS:
-            _DIAGNOSTICS_TIMERS[view_id].cancel()
-            del _DIAGNOSTICS_TIMERS[view_id]
+    # Supersedes any pending presentation for this view.
+    token = object()
+    _DIAGNOSTICS_PENDING[view_id] = token
 
     def _present():
-        if not view.is_valid():
+        if _DIAGNOSTICS_PENDING.get(view_id) is not token:
             return
 
-        present_diagnostics(view, view_diagnostics(view))
+        del _DIAGNOSTICS_PENDING[view_id]
 
-    def _present_timely():
-        # Remove timer reference when it fires.
-        with _DIAGNOSTICS_TIMERS_LOCK:
-            _DIAGNOSTICS_TIMERS.pop(view_id, None)
-        sublime.set_timeout(_present, 0)
+        if view.is_valid():
+            present_diagnostics(view, view_diagnostics(view))
 
     # Cool-down period: Suppress presenting diagnostics while actively editing.
     #
@@ -1677,17 +1737,9 @@ def handle_textDocument_publishDiagnostics(
     # We wait until the user stops typing before showing updated diagnostics.
     last_modified = view.settings().get(kSMARTS_LAST_MODIFIED_TIME, 0)
     cool_down = 1.0
-    since_modified = time.time() - last_modified
+    delay = max(0.0, cool_down - (time.time() - last_modified))
 
-    if since_modified < cool_down:
-        delay = cool_down - since_modified
-        timer = threading.Timer(delay, _present_timely)
-        with _DIAGNOSTICS_TIMERS_LOCK:
-            _DIAGNOSTICS_TIMERS[view_id] = timer
-        timer.start()
-        return
-
-    sublime.set_timeout(_present, 0)
+    sublime.set_timeout(_present, int(delay * 1000))
 
 
 def handle_notification(
@@ -2891,6 +2943,13 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 "textDocument": view_text_document_item(self.view),
             })
 
+        # Present diagnostics published before the document was open.
+        if (window := self.view.window()) and (file_name := self.view.file_name()):
+            if path_diagnostics(window.id(), file_name):
+                sublime.set_timeout(
+                    lambda: schedule_present_diagnostics(window, file_name), 0
+                )
+
     def on_pre_save_async(self):
         window = self.view.window()
 
@@ -3116,6 +3175,14 @@ def plugin_loaded():
     plugin_logger.addHandler(console_logging_handler)
     plugin_logger.setLevel(settings().get("logger.plugin.level", "INFO"))
     plugin_logger.debug("Plugin loaded")
+
+    # Diagnostics live in memory, so nothing survives a plugin (re)load:
+    # clear what's rendered, and erase diagnostics persisted in view settings
+    # (and in the session) by previous versions.
+    for window in sublime.windows():
+        for view in window.views():
+            view.settings().erase(kDIAGNOSTICS)
+            clear_diagnostics(view)
 
     initialize_project_smarts(sublime.active_window())
 
