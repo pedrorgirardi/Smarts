@@ -2817,6 +2817,11 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
         if not view_file_name:
             return
 
+        # Same for every server; The full text is read only if a server needs it.
+        uri = path_to_uri(view_file_name)
+        version = view.change_count()
+        full_text: str | None = None
+
         for smart in applicable_smarts(view, method="textDocument/didChange"):
             language_client = smart.client
 
@@ -2830,8 +2835,8 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
             #
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#versionedTextDocumentIdentifier
             textDocument: smarts_client.LSPVersionedTextDocumentIdentifier = {
-                "uri": path_to_uri(view_file_name),
-                "version": view.change_count(),
+                "uri": uri,
+                "version": version,
             }
 
             # The actual content changes.
@@ -2848,11 +2853,14 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
             # Full
             # Documents are synced by always sending the full content of the document.
             if textDocumentSync["change"] == 1:
+                if full_text is None:
+                    full_text = view.substr(sublime.Region(0, view.size()))
+
                 contentChanges = [
                     cast(
                         smarts_client.LSPTextDocumentContentChangeEvent,
                         {
-                            "text": view.substr(sublime.Region(0, view.size())),
+                            "text": full_text,
                         },
                     )
                 ]
