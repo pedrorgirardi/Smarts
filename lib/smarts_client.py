@@ -4,9 +4,9 @@ import shlex
 import subprocess
 import threading
 import time
-import uuid
 from collections.abc import Callable
 from enum import Enum, auto
+from itertools import count
 from queue import Queue
 from typing import Any, Literal, NotRequired, TypedDict, cast
 
@@ -795,13 +795,25 @@ LSPWorkspaceSymbolResult = list[LSPSymbolInformation] | list[LSPWorkspaceSymbol]
 # --------------------------------------------------------------------------------
 
 
+# Request IDs only need to be unique among the pending requests of a client.
+# Starts at 1: an ID of 0 is valid, but easy to mistake for 'no ID'.
+_request_ids = count(1)
+_request_ids_lock = threading.Lock()
+
+
+def next_request_id() -> int:
+    # The lock makes it safe on free-threaded Python builds too.
+    with _request_ids_lock:
+        return next(_request_ids)
+
+
 def request(
     method: str,
     params: Any | None = None,
 ) -> LSPRequestMessage:
     return {
         "jsonrpc": "2.0",
-        "id": str(uuid.uuid4()),
+        "id": next_request_id(),
         "method": method,
         "params": params,
     }
