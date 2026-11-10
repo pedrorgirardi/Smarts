@@ -1183,6 +1183,20 @@ class LanguageServerClient:
         finally:
             self._logger.debug("Reader stopped")
 
+    def _start_stderr_reader(self):
+        """Drain the server's stderr so the server never blocks writing to it.
+
+        If nobody reads the stderr pipe, its OS buffer (~64KB) eventually fills
+        and the server blocks on its next write - which looks like a hung server.
+        """
+        try:
+            for line in iter(self._server_process.stderr.readline, b""):
+                self._logger.debug(
+                    f"stderr: {line.decode('utf-8', errors='replace').rstrip()}"
+                )
+        except Exception as e:
+            self._logger.debug(f"Stderr reader error: {e}")
+
     def _start_writer(self):
         self._logger.debug("Writer started")
 
@@ -1469,6 +1483,13 @@ class LanguageServerClient:
             daemon=True,
         )
         self._reader.start()
+
+        # Thread responsible for draining the server's stderr.
+        threading.Thread(
+            name=f"Stderr - {thread_prefix}",
+            target=self._start_stderr_reader,
+            daemon=True,
+        ).start()
 
         # Thread responsible for monitoring the server process.
         self._monitor = threading.Thread(
