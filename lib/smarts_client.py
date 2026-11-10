@@ -1255,7 +1255,15 @@ class LanguageServerClient:
         self._logger.debug("Handler started")
 
         while (message := self._receive_queue.get()) is not None:
-            message = cast(LSPNotificationMessage | LSPResponseMessage, message)
+            # Messages are told apart by shape - an `id` can be 0, so check for keys:
+            # - Request: `method` and `id`  (server to client; must be answered)
+            # - Notification: `method` only
+            # - Response: `id` only         (to a request of this client)
+            if "method" in message and "id" in message:
+                try:
+                    self._handle_server_request(cast(LSPRequestMessage, message))
+                except Exception:
+                    self._logger.exception(f"Error handling '{message['method']}'")
 
             # A Response Message sent as a result of a request.
             #
@@ -1264,9 +1272,9 @@ class LanguageServerClient:
             # The result property of the ResponseMessage should be set to null in this case to signal a successful request.
             #
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#responseMessage
-            if request_id := message.get("id"):
+            elif "method" not in message:
                 with self._lock:
-                    callback = self._request_callback.pop(request_id, None)
+                    callback = self._request_callback.pop(message.get("id"), None)
 
                 if callback:
                     try:
@@ -1305,6 +1313,65 @@ class LanguageServerClient:
         self._receive_queue.task_done()
 
         self._logger.debug("Handler stopped")
+
+    def _handle_server_request(self, message: LSPRequestMessage):
+        """Answer a request sent by the server.
+
+        Every request must be answered, or the server may wait for the response
+        indefinitely. This client doesn't implement these features, so it answers
+        with the minimal valid response - or MethodNotFound.
+        """
+        method = message["method"]
+        params = message.get("params") or {}
+
+        # One result per requested item; null means 'no configuration'.
+        # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspace_configuration
+        if method == "workspace/configuration":
+            self._respond(message["id"], result=[None] * len(params.get("items", [])))
+
+        # Accept, but ignore: capabilities are not registered dynamically,
+        # and progress is not presented.
+        elif method in {
+            "client/registerCapability",
+            "client/unregisterCapability",
+            "window/workDoneProgress/create",
+        }:
+            self._respond(message["id"], result=None)
+
+        else:
+            self._logger.debug(f"Unsupported server request '{method}'")
+
+            self._respond(
+                message["id"],
+                error={
+                    "code": -32601,  # MethodNotFound
+                    "message": f"Unsupported method: {method}",
+                    "data": None,
+                },
+            )
+
+    def _respond(
+        self,
+        id: int | str,
+        result: Any | None = None,
+        error: LSPResponseError | None = None,
+    ):
+        """Send the response to a request of the server."""
+        response: dict[str, Any] = {"jsonrpc": "2.0", "id": id}
+
+        if error:
+            response["error"] = error
+        else:
+            response["result"] = result
+
+        with self._lock:
+            if self._server_status in (
+                LanguageServerStatus.SHUTDOWN,
+                LanguageServerStatus.FAILED,
+            ):
+                return
+
+        self._send_queue.put(response)
 
     def _put(
         self,

@@ -1,3 +1,4 @@
+import json
 import logging
 import sys
 import threading
@@ -51,6 +52,76 @@ class TestStderr(unittest.TestCase):
             self.assertTrue(client.is_server_initialized())
         finally:
             client._server_process.kill()
+
+
+# A minimal language server: answers 'initialize', sends two requests,
+# and echoes the client's responses back in 'window/logMessage' notifications.
+FAKE_SERVER_REQUESTS = r"""
+import json, sys
+
+def read():
+    headers = {}
+    while (line := sys.stdin.buffer.readline().decode().strip()):
+        k, v = line.split(": ", 1)
+        headers[k] = v
+    return json.loads(sys.stdin.buffer.read(int(headers["Content-Length"])))
+
+def write(message):
+    content = json.dumps(message)
+    sys.stdout.buffer.write(f"Content-Length: {len(content)}\r\n\r\n{content}".encode())
+    sys.stdout.buffer.flush()
+
+initialize = read()
+write({"jsonrpc": "2.0", "id": initialize["id"], "result": {"capabilities": {}}})
+
+# Note: 0 is a valid request ID.
+write({"jsonrpc": "2.0", "id": 0, "method": "workspace/configuration",
+       "params": {"items": [{"section": "a"}, {"section": "b"}]}})
+write({"jsonrpc": "2.0", "id": 1, "method": "unknown/method", "params": {}})
+
+responses = 0
+while responses < 2:
+    message = read()
+    if "method" not in message:
+        responses += 1
+        write({"jsonrpc": "2.0", "method": "window/logMessage",
+               "params": {"type": 3, "message": json.dumps(message)}})
+
+sys.stdin.buffer.read()
+"""
+
+
+class TestServerRequests(unittest.TestCase):
+    def test_server_requests_are_answered(self):
+        responses = []
+        received = threading.Event()
+
+        def on_log_message(notification):
+            responses.append(json.loads(notification["params"]["message"]))
+
+            if len(responses) == 2:
+                received.set()
+
+        client = LanguageServerClient(
+            logger=logging.getLogger("test"),
+            name="Fake",
+            server_args=[sys.executable, "-c", FAKE_SERVER_REQUESTS],
+            before_write=None,
+            after_read=None,
+            on_window_logMessage=on_log_message,
+        )
+
+        client.initialize({}, lambda _: None)
+
+        try:
+            self.assertTrue(received.wait(5), "Server requests were not answered")
+        finally:
+            client._server_process.kill()
+
+        by_id = {response["id"]: response for response in responses}
+
+        self.assertEqual(by_id[0], {"jsonrpc": "2.0", "id": 0, "result": [None, None]})
+        self.assertEqual(by_id[1]["error"]["code"], -32601)
 
 
 def initialized_client() -> LanguageServerClient:
