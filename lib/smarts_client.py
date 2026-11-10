@@ -833,6 +833,14 @@ def notification(
 def textDocumentSyncOptions(
     textDocumentSync: dict | int | None,
 ) -> dict[str, Any]:
+    """
+    Normalize the server's `textDocumentSync` capability - a kind, options, or
+    nothing - into options which always have `openClose` and `change`.
+
+    `change` is a TextDocumentSyncKind: 0 = None, 1 = Full, 2 = Incremental.
+
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentSyncOptions
+    """
     if textDocumentSync is None:
         return {
             "openClose": False,
@@ -846,7 +854,28 @@ def textDocumentSyncOptions(
         }
 
     else:
-        return textDocumentSync
+        return {
+            "openClose": False,
+            "change": 0,
+            **textDocumentSync,
+        }
+
+
+# Server capability which tells whether a method is supported.
+# (Text document synchronization methods are handled separately.)
+METHOD_CAPABILITY = {
+    "textDocument/formatting": "documentFormattingProvider",
+    "textDocument/rangeFormatting": "documentRangeFormattingProvider",
+    "textDocument/documentSymbol": "documentSymbolProvider",
+    "textDocument/documentHighlight": "documentHighlightProvider",
+    "textDocument/references": "referencesProvider",
+    "textDocument/definition": "definitionProvider",
+    "textDocument/hover": "hoverProvider",
+    "textDocument/completion": "completionProvider",
+    "textDocument/signatureHelp": "signatureHelpProvider",
+    "textDocument/rename": "renameProvider",
+    "workspace/symbol": "workspaceSymbolProvider",
+}
 
 
 class LanguageServerStatus(Enum):
@@ -919,6 +948,7 @@ class LanguageServerClient:
         self._server_process: subprocess.Popen | None = None
         self._server_info: LSPServerInfo | None = None
         self._server_capabilities: LSPServerCapabilities | None = None
+        self._text_document_sync = textDocumentSyncOptions(None)
         # Unbounded: put() never blocks, so callers - often Sublime's main thread -
         # never wait on a slow server.
         self._send_queue = Queue()
@@ -972,46 +1002,29 @@ class LanguageServerClient:
         if capabilities := self._server_capabilities:
             return capabilities.get("positionEncoding")
 
+    def server_capabilities(self) -> LSPServerCapabilities | None:
+        """Returns the capabilities of the server - None if not initialized."""
+        return self._server_capabilities
+
+    def text_document_sync(self) -> dict[str, Any]:
+        """Returns the server's text document sync options; See textDocumentSyncOptions."""
+        return self._text_document_sync
+
     def support_method(self, method: str) -> bool | None:
+        """Returns True if the server supports `method` - None if not initialized."""
         if not self._server_capabilities:
             return None
 
-        if method == "textDocument/formatting":
-            return bool(self._server_capabilities.get("documentFormattingProvider"))
-        elif method == "textDocument/rangeFormatting":
-            return bool(
-                self._server_capabilities.get("documentRangeFormattingProvider")
-            )
-        elif method == "textDocument/documentSymbol":
-            return bool(self._server_capabilities.get("documentSymbolProvider"))
-        elif method == "textDocument/documentHighlight":
-            return bool(self._server_capabilities.get("documentHighlightProvider"))
-        elif method == "textDocument/references":
-            return bool(self._server_capabilities.get("referencesProvider"))
-        elif method == "textDocument/definition":
-            return bool(self._server_capabilities.get("definitionProvider"))
-        elif method == "textDocument/hover":
-            return bool(self._server_capabilities.get("hoverProvider"))
-        elif method == "textDocument/completion":
-            return bool(self._server_capabilities.get("completionProvider"))
-        elif method == "textDocument/signatureHelp":
-            return bool(self._server_capabilities.get("signatureHelpProvider"))
-        elif method == "textDocument/rename":
-            return bool(self._server_capabilities.get("renameProvider"))
-        elif method == "textDocument/didOpen" or method == "textDocument/didClose":
-            options = textDocumentSyncOptions(
-                self._server_capabilities.get("textDocumentSync")
-            )
-            return options.get("openClose", False)
-        elif method == "textDocument/didChange":
-            options = textDocumentSyncOptions(
-                self._server_capabilities.get("textDocumentSync")
-            )
-            return options["change"] != 0
-        elif method == "workspace/symbol":
-            return bool(self._server_capabilities.get("workspaceSymbolProvider"))
-        else:
-            return False
+        if method in ("textDocument/didOpen", "textDocument/didClose"):
+            return bool(self._text_document_sync["openClose"])
+
+        if method == "textDocument/didChange":
+            return self._text_document_sync["change"] != 0
+
+        if capability := METHOD_CAPABILITY.get(method):
+            return bool(self._server_capabilities.get(capability))
+
+        return False
 
     def _clear_callbacks(self):
         """Clear all pending request callbacks (must be called with lock held).
@@ -1562,6 +1575,11 @@ class LanguageServerClient:
                     if result := cast(LSPInitializeResult, response.get("result")):
                         self._server_capabilities = result.get("capabilities")
                         self._server_info = result.get("serverInfo")
+
+                        # Computed once: it's needed on every keystroke.
+                        self._text_document_sync = textDocumentSyncOptions(
+                            (self._server_capabilities or {}).get("textDocumentSync")
+                        )
 
                     # The initialized notification is sent from the client to the server
                     # after the client received the result of the initialize request

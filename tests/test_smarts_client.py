@@ -10,6 +10,7 @@ from smarts_client import (
     LanguageServerStatus,
     notification,
     request,
+    textDocumentSyncOptions,
 )
 
 # A minimal language server: floods stderr, then answers 'initialize'.
@@ -246,6 +247,32 @@ class TestPut(unittest.TestCase):
 
         self.assertEqual(lock_held_on_put, [False])
         self.assertIs(client._request_callback[message["id"]], callback)
+
+
+class TestCapabilities(unittest.TestCase):
+    def test_text_document_sync_options(self):
+        self.assertEqual(
+            textDocumentSyncOptions(None), {"openClose": False, "change": 0}
+        )
+        self.assertEqual(textDocumentSyncOptions(2), {"openClose": True, "change": 2})
+        # Missing options get defaults.
+        self.assertEqual(
+            textDocumentSyncOptions({"change": 1}), {"openClose": False, "change": 1}
+        )
+
+    def test_support_method(self):
+        client = initialized_client()
+
+        self.assertIsNone(client.support_method("textDocument/hover"))
+
+        client._server_capabilities = {"hoverProvider": True}  # type: ignore
+        client._text_document_sync = textDocumentSyncOptions(2)
+
+        self.assertTrue(client.support_method("textDocument/hover"))
+        self.assertFalse(client.support_method("textDocument/rename"))
+        self.assertFalse(client.support_method("unknown/method"))
+        self.assertTrue(client.support_method("textDocument/didOpen"))
+        self.assertTrue(client.support_method("textDocument/didChange"))
 
 
 if __name__ == "__main__":

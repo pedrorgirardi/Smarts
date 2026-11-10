@@ -1111,17 +1111,13 @@ def document_resync(view: sublime.View):
     while typing, so incremental-sync servers need an explicit reset.
     """
     for smart in applicable_smarts(view, method="textDocument/didChange"):
-        textDocumentSync = smarts_client.textDocumentSyncOptions(
-            smart.client._server_capabilities.get("textDocumentSync")
-            if smart.client._server_capabilities
-            else None
-        )
+        textDocumentSync = smart.client.text_document_sync()
 
         if textDocumentSync["change"] == 1:
             document_did_change_full(view, smart)
             continue
 
-        if textDocumentSync.get("openClose", False):
+        if textDocumentSync["openClose"]:
             smart.client.textDocument_didClose({
                 "textDocument": view_textDocumentIdentifier(view),
             })
@@ -1540,10 +1536,10 @@ def view_completionContext(
     if point <= 0:
         return context
 
-    if not smart.client._server_capabilities:
+    if not (server_capabilities := smart.client.server_capabilities()):
         return context
 
-    completion_provider = smart.client._server_capabilities.get("completionProvider")
+    completion_provider = server_capabilities.get("completionProvider")
 
     if not isinstance(completion_provider, dict):
         return context
@@ -2151,7 +2147,7 @@ class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
 
             lines.extend(["", "## Capabilities", ""])
 
-            if server_capabilities := client._server_capabilities:
+            if server_capabilities := client.server_capabilities():
                 lines.extend([
                     "```json",
                     json.dumps(server_capabilities, indent=2),
@@ -2877,11 +2873,7 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
 
             position_encoding = language_client.position_encoding()
 
-            textDocumentSync = smarts_client.textDocumentSyncOptions(
-                language_client._server_capabilities.get("textDocumentSync")
-                if language_client._server_capabilities
-                else None
-            )
+            textDocumentSync = language_client.text_document_sync()
 
             # The document that did change.
             # The version number points to the version
