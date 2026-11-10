@@ -696,6 +696,21 @@ def panel_log_error(
     )
 
 
+def panel_error_logger(
+    view: sublime.View,
+) -> Callable[[smarts_client.LSPResponseError], None]:
+    """
+    Returns a request error callback which logs the error in the Output panel
+    of the window of `view` - if the view is still in a window.
+    """
+
+    def on_error(error: smarts_client.LSPResponseError):
+        if window := view.window():
+            panel_log_error(window, error)
+
+    return on_error
+
+
 def messages_panel_insert(window: sublime.Window, label: str, message: Any):
     """
     Append `message` to the Messages panel if the panel is visible.
@@ -2155,9 +2170,7 @@ class PgSmartsGotoDefinition(sublime_plugin.TextCommand):
                     on_cancel=restore_view,
                 )
 
-        def on_error(error: smarts_client.LSPResponseError):
-            if window := self.view.window():
-                panel_log_error(window, error)
+        on_error = panel_error_logger(self.view)
 
         smart.client.textDocument_definition(params, on_result, on_error)
 
@@ -2187,9 +2200,7 @@ class PgSmartsGotoReference(sublime_plugin.TextCommand):
                     quick_panel_caret="end",
                 )
 
-        def on_error(error: smarts_client.LSPResponseError):
-            if window := self.view.window():
-                panel_log_error(window, error)
+        on_error = panel_error_logger(self.view)
 
         params = {
             "context": {
@@ -2327,9 +2338,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
             "textDocument": view_textDocumentIdentifier(self.view),
         }
 
-        def on_error(error: smarts_client.LSPResponseError):
-            if window := self.view.window():
-                panel_log_error(window, error)
+        on_error = panel_error_logger(self.view)
 
         smart.client.textDocument_documentSymbol(params, on_result, on_error)
 
@@ -2462,9 +2471,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
                 else:
                     self._show_popup(smart, result)
 
-        def on_error(error: smarts_client.LSPResponseError):
-            if window := self.view.window():
-                panel_log_error(window, error)
+        on_error = panel_error_logger(self.view)
 
         params = view_textDocumentPositionParams(
             self.view,
@@ -2640,11 +2647,40 @@ class PgSmartsShowSignatureHelpCommand(sublime_plugin.TextCommand):
             if result:
                 show_signature_help_popup(self.view, smart, result)
 
-        def on_error(error: smarts_client.LSPResponseError):
-            if window := self.view.window():
-                panel_log_error(window, error)
+        on_error = panel_error_logger(self.view)
 
         smart.client.textDocument_signatureHelp(params, on_result, on_error)
+
+
+def view_formatting_options(view: sublime.View) -> smarts_client.LSPFormattingOptions:
+    return {
+        "tabSize": view.settings().get("tab_size"),
+        "insertSpaces": True,
+        "insertFinalNewline": None,
+        "trimTrailingWhitespace": None,
+        "trimFinalNewlines": None,
+    }
+
+
+def text_edits_applier(
+    view: sublime.View,
+    position_encoding: smarts_client.LSPPositionEncoding,
+) -> Callable[[smarts_client.LSPFormattingResult], None]:
+    """
+    Returns a formatting result callback which applies the edits to `view`.
+    """
+
+    def on_result(result: smarts_client.LSPFormattingResult):
+        if result:
+            view.run_command(
+                "pg_smarts_apply_edits",
+                {
+                    "position_encoding": position_encoding,
+                    "edits": result,
+                },
+            )
+
+    return on_result
 
 
 class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
@@ -2658,28 +2694,11 @@ class PgSmartsFormatDocumentCommand(sublime_plugin.TextCommand):
 
         params: smarts_client.LSPDocumentFormattingParams = {
             "textDocument": view_textDocumentIdentifier(self.view),
-            "options": {
-                "tabSize": self.view.settings().get("tab_size"),
-                "insertSpaces": True,
-                "insertFinalNewline": None,
-                "trimTrailingWhitespace": None,
-                "trimFinalNewlines": None,
-            },
+            "options": view_formatting_options(self.view),
         }
 
-        def on_result(result: smarts_client.LSPFormattingResult):
-            if result:
-                self.view.run_command(
-                    "pg_smarts_apply_edits",
-                    {
-                        "position_encoding": position_encoding,
-                        "edits": result,
-                    },
-                )
-
-        def on_error(error: smarts_client.LSPResponseError):
-            if window := self.view.window():
-                panel_log_error(window, error)
+        on_result = text_edits_applier(self.view, position_encoding)
+        on_error = panel_error_logger(self.view)
 
         smart.client.textDocument_formatting(params, on_result, on_error)
 
@@ -2709,28 +2728,11 @@ class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
         params = {
             "textDocument": view_textDocumentIdentifier(self.view),
             "range": region_range(self.view, position_encoding, region),
-            "options": {
-                "tabSize": self.view.settings().get("tab_size"),
-                "insertSpaces": True,
-                "insertFinalNewline": None,
-                "trimTrailingWhitespace": None,
-                "trimFinalNewlines": None,
-            },
+            "options": view_formatting_options(self.view),
         }
 
-        def on_result(result: smarts_client.LSPFormattingResult):
-            if result:
-                self.view.run_command(
-                    "pg_smarts_apply_edits",
-                    {
-                        "position_encoding": position_encoding,
-                        "edits": result,
-                    },
-                )
-
-        def on_error(error: smarts_client.LSPResponseError):
-            if window := self.view.window():
-                panel_log_error(window, error)
+        on_result = text_edits_applier(self.view, position_encoding)
+        on_error = panel_error_logger(self.view)
 
         smart.client.textDocument_rangeFormatting(params, on_result, on_error)
 
@@ -2791,9 +2793,7 @@ class PgSmartsRenameCommand(sublime_plugin.TextCommand):
                         )
                     )
 
-            def on_error(error: smarts_client.LSPResponseError):
-                if window := self.view.window():
-                    panel_log_error(window, error)
+            on_error = panel_error_logger(self.view)
 
             smart.client.textDocument_rename(params, on_result, on_error)
 
@@ -2989,9 +2989,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         params = view_textDocumentPositionParams(self.view, position_encoding)
 
-        def on_error(error: smarts_client.LSPResponseError):
-            if window := self.view.window():
-                panel_log_error(window, error)
+        on_error = panel_error_logger(self.view)
 
         smart.client.textDocument_documentHighlight(params, on_result, on_error)
 
