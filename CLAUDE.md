@@ -13,7 +13,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. **smarts_client.py** - Low-level LSP client
    - `LanguageServerClient` class handles LSP communication
    - Manages subprocess for language server (stdin/stdout communication)
-   - Three background threads: reader, writer, handler
+   - Background threads per server: reader, writer, handler, and stderr drain
+   - The reader detects server exit (EOF); `_fail` handles every failure
    - Implements LSP protocol: JSON-RPC message serialization, request/response matching
    - Type definitions for LSP messages and structures (TypedDict classes)
 
@@ -133,11 +134,12 @@ All commands are prefixed with `pg_smarts_`:
 
 ### Important Implementation Details
 
-1. **Thread Safety**: `LanguageServerClient` uses `threading.Lock` for initialization and queues for message passing
-2. **Diagnostics**: Stored in view settings under `PG_SMARTS_DIAGNOSTICS` key, augmented with URI to function as locations
-3. **Position Encoding**: LSP uses 0-based line/character positions; Sublime uses 0-based points with UTF-16 encoding
-4. **View Applicability**: A view is applicable if it has a file and its syntax matches a server's `applicable_to` list
-5. **Multiple Servers**: Multiple servers can operate on the same view if applicable (e.g., Pyright + Ruff for Python)
+1. **Thread Safety**: `LanguageServerClient` uses one `RLock` for its state and unbounded queues for message passing; never block on a queue while holding the lock
+2. **Diagnostics**: Stored in the `_DIAGNOSTICS` dict, keyed by (window ID, path) then server UUID, augmented with URI to function as locations
+3. **Per-view state**: Kept in Python dicts keyed by view ID (or as view regions), not in view settings
+4. **Position Encoding**: LSP uses 0-based line/character positions; Sublime uses 0-based points with UTF-16 encoding
+5. **View Applicability**: A view is applicable if it has a file and its syntax matches a server's `applicable_to` list
+6. **Multiple Servers**: Multiple servers can operate on the same view if applicable (e.g., Pyright + Ruff for Python)
 
 ### Common Patterns
 
@@ -150,8 +152,9 @@ smart = applicable_smart(view, method="textDocument/definition")
 
 **Converting between Sublime and LSP positions:**
 ```python
-lsp_position = to_lsp_position(view, point)
-sublime_point = from_lsp_position(view, lsp_position)
+position_encoding = smart.position_encoding()
+lsp_position = point_position(view, position_encoding, point)
+sublime_point = position_point(view, position_encoding, lsp_position)
 ```
 
 **Sending LSP requests:**
