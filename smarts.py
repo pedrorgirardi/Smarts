@@ -393,10 +393,9 @@ def window_initialized_smarts(window: sublime.Window) -> list[PgSmart]:
     """
     Returns Smarts associated with `window` which are initialized.
     """
+    # (An initialized server is not shutdown.)
     return [
-        smart
-        for smart in window_running_smarts(window)
-        if smart.client.is_server_initialized()
+        smart for smart in window_smarts(window) if smart.client.is_server_initialized()
     ]
 
 
@@ -562,26 +561,30 @@ def view_applicable(config: PgSmartsServerConfig, view: sublime.View) -> bool:
 
     View is applicable if a file is associated and its syntax is contained in the `applicable_to` setting.
     """
-    applicable_to = set(config.get("applicable_to", []))
-
-    return view.file_name() is not None and view_syntax(view) in applicable_to
+    return view.file_name() is not None and view_syntax(view) in config.get(
+        "applicable_to", []
+    )
 
 
 def applicable_smarts(view: sublime.View, method: str) -> list[PgSmart]:
     """
     Returns Smarts applicable to `view`.
     """
-    smarts = []
+    window = view.window()
 
-    if window := view.window():
-        for smart in window_initialized_smarts(window):
-            if not view_applicable(smart.config, view):
-                continue
+    if window is None or view.file_name() is None:
+        return []
 
-            if smart.client.support_method(method):
-                smarts.append(smart)
+    # Called on every keystroke, selection change, and hover:
+    # read the view's syntax once, not once per Smart.
+    syntax = view_syntax(view)
 
-    return smarts
+    return [
+        smart
+        for smart in window_initialized_smarts(window)
+        if syntax in smart.config.get("applicable_to", [])
+        and smart.client.support_method(method)
+    ]
 
 
 def applicable_smart(view: sublime.View, method: str) -> PgSmart | None:
