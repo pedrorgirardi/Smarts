@@ -253,6 +253,9 @@ _DIAGNOSTICS_PENDING: dict[int, object] = {}
 # Written on the main thread; Entries are removed when the view is closed.
 _LAST_MODIFIED: dict[int, float] = {}
 
+# Syntax per code fence language, e.g. "python"; See `language_syntax`.
+_LANGUAGE_SYNTAX: dict[str, sublime.Syntax] = {}
+
 
 # ---------------------------------------------------------------------------------------
 
@@ -551,6 +554,27 @@ def applicable_smart(view: sublime.View, method: str) -> PgSmart | None:
         return applicable[0]
 
     return None
+
+
+def language_syntax(language: str) -> sublime.Syntax:
+    """
+    Returns the syntax named `language` (case-insensitive), or Plain Text.
+
+    Used to highlight code fences in hover popups. Lookups are cached:
+    scanning every syntax for each code fence of each hover is slow.
+    (The cache is cleared when the plugin is reloaded.)
+    """
+    key = language.casefold()
+
+    if (syntax := _LANGUAGE_SYNTAX.get(key)) is None:
+        syntax = next(
+            (s for s in sublime.list_syntaxes() if key and s.name.casefold() == key),
+            None,
+        ) or sublime.find_syntax_by_name("Plain Text")[0]
+
+        _LANGUAGE_SYNTAX[key] = syntax
+
+    return syntax
 
 
 def text_to_html(s: str) -> str:
@@ -2600,7 +2624,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
         panel_name = f"Smarts-{uuid.uuid4().hex}"
 
         output_view = window.create_output_panel(panel_name, unlisted=True)
-        output_view.assign_syntax(self._language_syntax(language))
+        output_view.assign_syntax(language_syntax(language))
 
         try:
             output_view.run_command("append", {"characters": body})
@@ -2616,18 +2640,6 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
             return "", code_block
 
         return match.group(1).strip(), match.group(2)
-
-    def _language_syntax(self, language: str) -> sublime.Syntax:
-        plain_text_syntax = sublime.find_syntax_by_name("Plain Text")[0]
-
-        if not language:
-            return plain_text_syntax
-
-        for syntax in sublime.list_syntaxes():
-            if syntax.name.casefold() == language.casefold():
-                return syntax
-
-        return plain_text_syntax
 
     def _hover_markdown(self, hover: smarts_client.LSPHover) -> str:
         contents = hover["contents"]
