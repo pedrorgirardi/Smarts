@@ -1272,54 +1272,55 @@ def apply_workspace_edit(
     Apply a WorkspaceEdit to the workspace.
 
     Handles both 'changes' and 'documentChanges' formats.
+
+    Must be called on the main thread.
     """
-    # Handle documentChanges format (preferred)
+    # documentChanges (preferred) or changes (older format).
     if document_changes := workspace_edit.get("documentChanges"):
-        for doc_edit in document_changes:
-            uri = doc_edit["textDocument"]["uri"]
-            edits = doc_edit["edits"]
-            file_path = uri_to_path(uri)
+        file_edits = [
+            (doc_edit["textDocument"]["uri"], doc_edit["edits"])
+            for doc_edit in document_changes
+        ]
+    else:
+        file_edits = list((workspace_edit.get("changes") or {}).items())
 
-            # Open the file if not already open
-            view = window.find_open_file(file_path)
+    for uri, edits in file_edits:
+        apply_file_edits(window, position_encoding, uri_to_path(uri), edits)
 
-            if not view:
-                view = window.open_file(file_path)
 
-                # Wait for file to load
-                while view.is_loading():
-                    pass
+def apply_file_edits(
+    window: sublime.Window,
+    position_encoding: smarts_client.LSPPositionEncoding,
+    path: str,
+    edits: list[smarts_client.LSPTextEdit],
+):
+    """
+    Apply `edits` to the file at `path`, opening it if it's not open.
 
-            view.run_command(
-                "pg_smarts_apply_edits",
-                {
-                    "position_encoding": position_encoding,
-                    "edits": edits,
-                },
-            )
+    Edits are applied once the file is loaded; Waiting is done by
+    rescheduling on the main thread - never by blocking a thread.
 
-    # Handle changes format (older format)
-    elif changes := workspace_edit.get("changes"):
-        for uri, edits in changes.items():
-            file_path = uri_to_path(uri)
+    Must be called on the main thread.
+    """
+    view = window.find_open_file(path) or window.open_file(path)
 
-            # Open the file if not already open
-            view = window.find_open_file(file_path)
+    def apply():
+        if not view.is_valid():
+            return
 
-            if not view:
-                view = window.open_file(file_path)
+        if view.is_loading():
+            sublime.set_timeout(apply, 10)
+            return
 
-                # Wait for file to load
-                while view.is_loading():
-                    pass
+        view.run_command(
+            "pg_smarts_apply_edits",
+            {
+                "position_encoding": position_encoding,
+                "edits": edits,
+            },
+        )
 
-            view.run_command(
-                "pg_smarts_apply_edits",
-                {
-                    "position_encoding": position_encoding,
-                    "edits": edits,
-                },
-            )
+    apply()
 
 
 def transient_sheet_ids(window: sublime.Window) -> set[int]:
@@ -2864,10 +2865,12 @@ class PgSmartsRenameCommand(sublime_plugin.TextCommand):
 
             def on_result(result: smarts_client.LSPRenameResult):
                 if result and (window := self.view.window()):
-                    apply_workspace_edit(
-                        window,
-                        position_encoding,
-                        result,
+                    sublime.set_timeout(
+                        lambda: apply_workspace_edit(
+                            window,
+                            position_encoding,
+                            result,
+                        )
                     )
 
             def on_error(error: smarts_client.LSPResponseError):
