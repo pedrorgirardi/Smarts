@@ -863,10 +863,11 @@ class LanguageServerClient:
         - Safe to call methods from multiple threads
 
     Resilience Features:
-        - Detects server crashes via process monitoring thread
+        - Detects server crashes: the reader sees stdout close (EOF)
         - Handles initialization failures explicitly (transitions to FAILED state)
         - Recovers from I/O errors in reader/writer threads
-        - Clears pending callbacks on failure to prevent memory leaks
+        - On failure (see _fail): clears pending callbacks, stops worker threads,
+          and kills the server process if it's still running
 
     Known Limitations:
         1. Reader can hang on incomplete messages:
@@ -913,7 +914,6 @@ class LanguageServerClient:
         self._reader: threading.Thread | None = None
         self._writer: threading.Thread | None = None
         self._handler: threading.Thread | None = None
-        self._monitor: threading.Thread | None = None
         self._request_callback: dict[
             int | str, Callable[[LSPResponseMessage], None]
         ] = {}
@@ -1048,49 +1048,33 @@ class LanguageServerClient:
             except Exception:
                 self._logger.exception("Message observer error")
 
-    def _start_monitor(self):
-        """Monitor the server process and detect unexpected exits.
+    def _fail(self, reason: str):
+        """Transition to FAILED - unless already SHUTDOWN or FAILED.
 
-        Without process monitoring, if the server crashes unexpectedly (segfault,
-        killed by OS, etc.), the client wouldn't know about it until trying to perform I/O,
-        which could hang or fail in confusing ways.
-
-        This thread blocks on process.wait() and immediately detects when the server exits,
-        allowing us to transition to FAILED state and clean up resources promptly.
-
-        The monitor distinguishes between:
-        - Expected shutdown (status is already SHUTDOWN): No action needed
-        - Unexpected crash (status is INITIALIZING/INITIALIZED): Transition to FAILED
+        A failed server is unusable: pending callbacks are cleared (they'd never
+        be called), worker threads are signaled to stop, and the server process
+        is killed if it's still running - e.g. hung, or rejected initialization.
         """
-        self._logger.debug("Monitor started")
+        with self._lock:
+            if self._server_status in (
+                LanguageServerStatus.SHUTDOWN,
+                LanguageServerStatus.FAILED,
+            ):
+                return
 
-        try:
-            # Block until process exits
-            returncode = self._server_process.wait()
+            self._logger.error(reason)
 
-            with self._lock:
-                # Only mark as failed if we weren't expecting the shutdown
-                if self._server_status not in (
-                    LanguageServerStatus.SHUTDOWN,
-                    LanguageServerStatus.FAILED,
-                ):
-                    self._logger.error(
-                        f"Server crashed unexpectedly with exit code {returncode}"
-                    )
-                    self._server_status = LanguageServerStatus.FAILED
-                    self._clear_callbacks()
+            self._server_status = LanguageServerStatus.FAILED
+            self._clear_callbacks()
 
-                    # Signal worker threads to stop
-                    self._send_queue.put(None)
-                    self._receive_queue.put(None)
-                else:
-                    self._logger.debug(f"Server exited with code {returncode}")
+            process = self._server_process
 
-        except Exception as e:
-            self._logger.error(f"Monitor thread error: {e}")
+        # Signal worker threads to stop.
+        self._send_queue.put(None)
+        self._receive_queue.put(None)
 
-        finally:
-            self._logger.debug("Monitor stopped")
+        if process and process.poll() is None:
+            process.kill()
 
     def _start_reader(self):
         self._logger.debug("Reader started")
@@ -1159,23 +1143,18 @@ class LanguageServerClient:
                         # is that an 'in-flight' request won't have its callback called.
                         self._logger.error(f"Failed to decode message: {content}")
 
+            # stdout is closed, so the server exited (or is exiting).
+            #
+            # Unless this client shut it down, the server crashed - e.g. segfault,
+            # killed by the OS. (_fail is a no-op if the status is SHUTDOWN.)
+            returncode = self._server_process.wait()
+
+            self._fail(f"Server exited unexpectedly with code {returncode}")
+
         except Exception as e:
-            # Server crashed or I/O error occurred
-            self._logger.error(f"Reader thread crashed: {e}")
-
-            with self._lock:
-                # Only transition to FAILED if we're not already shutting down
-                # (normal shutdown can cause I/O errors as pipes close)
-                if self._server_status not in (
-                    LanguageServerStatus.SHUTDOWN,
-                    LanguageServerStatus.FAILED,
-                ):
-                    self._server_status = LanguageServerStatus.FAILED
-                    self._clear_callbacks()
-
-            # Signal other threads to stop
-            self._send_queue.put(None)
-            self._receive_queue.put(None)
+            # I/O error; Normal shutdown can cause I/O errors as pipes close,
+            # hence _fail - which is a no-op if the status is SHUTDOWN.
+            self._fail(f"Reader thread crashed: {e}")
 
         finally:
             self._logger.debug("Reader stopped")
@@ -1198,8 +1177,6 @@ class LanguageServerClient:
         self._logger.debug("Writer started")
 
         while (message := self._send_queue.get()) is not None:
-            task_done_called = False
-
             try:
                 self._observe(self._on_send, message)
 
@@ -1218,32 +1195,8 @@ class LanguageServerClient:
                 #
                 # By transitioning to FAILED and breaking, we stop the writer cleanly and
                 # signal to other parts of the client that the server is no longer functional.
-                self._logger.error(f"Can't write to server's stdin (broken pipe): {e}")
-
-                with self._lock:
-                    # Only transition to FAILED if we're not already shutting down
-                    if self._server_status not in (
-                        LanguageServerStatus.SHUTDOWN,
-                        LanguageServerStatus.FAILED,
-                    ):
-                        self._server_status = LanguageServerStatus.FAILED
-                        self._clear_callbacks()
-
-                # Signal other threads to stop
-                self._receive_queue.put(None)
-
-                # Mark current task as done before breaking
-                self._send_queue.task_done()
-                task_done_called = True
+                self._fail(f"Can't write to server's stdin (broken pipe): {e}")
                 break
-
-            finally:
-                # Only call task_done if we didn't already call it in the except block
-                if not task_done_called:
-                    self._send_queue.task_done()
-
-        # 'None Task' is complete.
-        self._send_queue.task_done()
 
         self._logger.debug("Writer stopped")
 
@@ -1284,10 +1237,6 @@ class LanguageServerClient:
                 except Exception:
                     self._logger.exception(f"Error handling '{message['method']}'")
 
-            self._receive_queue.task_done()
-
-        # 'None Task' is complete.
-        self._receive_queue.task_done()
 
         self._logger.debug("Handler stopped")
 
@@ -1503,6 +1452,11 @@ class LanguageServerClient:
             self._server_status = LanguageServerStatus.INITIALIZING
             self._server_process = server_process
 
+            # Fresh queues: if this is a retry, the previous threads may have
+            # left a stop signal (None) behind.
+            self._send_queue = Queue()
+            self._receive_queue = Queue()
+
         pid = self._server_process.pid
         thread_prefix = f"{self._name} {pid}"
 
@@ -1539,14 +1493,6 @@ class LanguageServerClient:
             daemon=True,
         ).start()
 
-        # Thread responsible for monitoring the server process.
-        self._monitor = threading.Thread(
-            name=f"Monitor - {thread_prefix}",
-            target=self._start_monitor,
-            daemon=True,
-        )
-        self._monitor.start()
-
         # Use threading.Timer for timeout instead of blocking on Event.wait().
         # Blocking would freeze the calling thread (often Sublime's main thread),
         # making the UI unresponsive. With a timer, initialize() returns immediately (async),
@@ -1559,11 +1505,7 @@ class LanguageServerClient:
                 if self._server_status != LanguageServerStatus.INITIALIZING:
                     return
 
-                self._logger.error(f"Server initialization timed out after {timeout}s")
-
-                self._server_status = LanguageServerStatus.FAILED
-
-                self._clear_callbacks()
+                self._fail(f"Server initialization timed out after {timeout}s")
 
             # Call user callback with synthetic timeout error
             timeout_response: LSPResponseMessage = {
@@ -1600,11 +1542,7 @@ class LanguageServerClient:
                 # By transitioning to FAILED state, we make the error explicit and allow
                 # higher-level code to detect the failure and potentially retry or alert the user.
                 if error := response.get("error"):
-                    self._server_status = LanguageServerStatus.FAILED
-
-                    self._clear_callbacks()
-
-                    self._logger.error(
+                    self._fail(
                         f"Server initialization failed: "
                         f"code={error.get('code')}, message={error.get('message')}"
                     )

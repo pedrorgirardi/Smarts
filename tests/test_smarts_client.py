@@ -2,6 +2,7 @@ import json
 import logging
 import sys
 import threading
+import time
 import unittest
 
 from smarts_client import (
@@ -118,6 +119,85 @@ class TestServerRequests(unittest.TestCase):
 
         self.assertEqual(by_id[0], {"jsonrpc": "2.0", "id": 0, "result": [None, None]})
         self.assertEqual(by_id[1]["error"]["code"], -32601)
+
+
+# A minimal language server: answers 'initialize' - with `RESPONSE` - then
+# exits with `EXIT_CODE`, or waits until it's killed if `EXIT_CODE` is None.
+FAKE_SERVER_LIFECYCLE = r"""
+import json, sys, time
+
+headers = {}
+while (line := sys.stdin.buffer.readline().decode().strip()):
+    k, v = line.split(": ", 1)
+    headers[k] = v
+
+request = json.loads(sys.stdin.buffer.read(int(headers["Content-Length"])))
+
+content = json.dumps({"jsonrpc": "2.0", "id": request["id"], **RESPONSE})
+sys.stdout.buffer.write(f"Content-Length: {len(content)}\r\n\r\n{content}".encode())
+sys.stdout.buffer.flush()
+
+if EXIT_CODE is None:
+    time.sleep(60)
+else:
+    time.sleep(0.2)
+    sys.exit(EXIT_CODE)
+"""
+
+
+def lifecycle_client(response: dict, exit_code: int | None) -> LanguageServerClient:
+    server = f"RESPONSE = {response!r}\nEXIT_CODE = {exit_code!r}\n" + (
+        FAKE_SERVER_LIFECYCLE
+    )
+
+    return LanguageServerClient(
+        logger=logging.getLogger("test"),
+        name="Fake",
+        server_args=[sys.executable, "-c", server],
+    )
+
+
+def wait_for(predicate, timeout=5.0) -> bool:
+    deadline = time.monotonic() + timeout
+
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+
+        time.sleep(0.01)
+
+    return False
+
+
+class TestFailure(unittest.TestCase):
+    def test_server_crash_fails_client(self):
+        client = lifecycle_client({"result": {"capabilities": {}}}, exit_code=3)
+
+        initialized = threading.Event()
+
+        client.initialize({}, lambda _: initialized.set())
+
+        self.assertTrue(initialized.wait(5))
+        self.assertTrue(wait_for(client.is_server_failed), "Crash was not detected")
+        self.assertEqual(client._server_process.returncode, 3)
+
+    def test_rejected_initialization_kills_server(self):
+        error = {"code": -32603, "message": "Nope", "data": None}
+
+        client = lifecycle_client({"error": error}, exit_code=None)
+
+        responded = threading.Event()
+
+        client.initialize({}, lambda _: responded.set())
+
+        self.assertTrue(responded.wait(5))
+        self.assertTrue(client.is_server_failed())
+
+        # The server would otherwise linger for 60s.
+        self.assertTrue(
+            wait_for(lambda: client._server_process.poll() is not None),
+            "Failed server was not killed",
+        )
 
 
 def initialized_client() -> LanguageServerClient:
