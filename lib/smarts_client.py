@@ -855,14 +855,6 @@ class LanguageServerStatus(Enum):
     SHUTDOWN = auto()  # Server has been shutdown gracefully
 
 
-def _default_before_write(message: LSPMessage) -> LSPMessage:
-    return message
-
-
-def _default_after_read(message: LSPMessage) -> LSPMessage:
-    return message
-
-
 class LanguageServerClient:
     """LSP client that manages communication with a language server subprocess.
 
@@ -902,8 +894,8 @@ class LanguageServerClient:
         logger: logging.Logger,
         name: str,
         server_args: list[str],
-        before_write: Callable[[LSPMessage], LSPMessage] | None,
-        after_read: Callable[[LSPMessage], LSPMessage] | None,
+        on_send: Callable[[LSPMessage], None] | None = None,
+        on_receive: Callable[[LSPMessage], None] | None = None,
         on_notification: LSPNotificationHandler | None = None,
     ):
         self._lock = threading.RLock()
@@ -926,12 +918,9 @@ class LanguageServerClient:
             int | str, Callable[[LSPResponseMessage], None]
         ] = {}
         self._open_documents = set()
-        self._before_write: Callable[[LSPMessage], LSPMessage] = (
-            before_write or _default_before_write
-        )
-        self._after_read: Callable[[LSPMessage], LSPMessage] = (
-            after_read or _default_after_read
-        )
+        # Observers of every message sent to, and received from, the server.
+        self._on_send = on_send
+        self._on_receive = on_receive
         # Called with every notification sent by the server.
         self._on_notification = on_notification
 
@@ -1047,6 +1036,18 @@ class LanguageServerClient:
 
         return b"".join(chunks)
 
+    def _observe(
+        self,
+        observer: Callable[[LSPMessage], None] | None,
+        message: LSPMessage,
+    ):
+        """Call `observer` with `message`; Its errors never stop the caller thread."""
+        if observer:
+            try:
+                observer(message)
+            except Exception:
+                self._logger.exception("Message observer error")
+
     def _start_monitor(self):
         """Monitor the server process and detect unexpected exits.
 
@@ -1148,7 +1149,7 @@ class LanguageServerClient:
                     try:
                         message = json.loads(content)
 
-                        self._after_read(message)
+                        self._observe(self._on_receive, message)
 
                         # Enqueue message; Blocks if queue is full.
                         self._receive_queue.put(message)
@@ -1200,7 +1201,7 @@ class LanguageServerClient:
             task_done_called = False
 
             try:
-                message = self._before_write(message)
+                self._observe(self._on_send, message)
 
                 content = json.dumps(message)
 

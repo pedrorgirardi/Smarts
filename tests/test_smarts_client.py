@@ -39,8 +39,6 @@ class TestStderr(unittest.TestCase):
             logger=logging.getLogger("test"),
             name="Fake",
             server_args=[sys.executable, "-c", FAKE_SERVER],
-            before_write=None,
-            after_read=None,
         )
 
         initialized = threading.Event()
@@ -106,8 +104,6 @@ class TestServerRequests(unittest.TestCase):
             logger=logging.getLogger("test"),
             name="Fake",
             server_args=[sys.executable, "-c", FAKE_SERVER_REQUESTS],
-            before_write=None,
-            after_read=None,
             on_notification=on_log_message,
         )
 
@@ -130,8 +126,6 @@ def initialized_client() -> LanguageServerClient:
         logger=logging.getLogger("test"),
         name="Fake",
         server_args=[],
-        before_write=None,
-        after_read=None,
     )
     client._server_status = LanguageServerStatus.INITIALIZED
 

@@ -2042,22 +2042,16 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
         def _on_receive_notification(message):
             handle_notification(smart_uuid, message)
 
-        def _before_write(message):
-            messages_panel_insert(self.window, "Send", message)
-
-            return message
-
-        def _after_read(message):
-            messages_panel_insert(self.window, "Receive", message)
-
-            return message
-
         client = smarts_client.LanguageServerClient(
             logger=plugin_logger,
             name=server_config["name"],
             server_args=server_config["start"],
-            before_write=_before_write,
-            after_read=_after_read,
+            on_send=lambda message: messages_panel_insert(
+                self.window, "Send", message
+            ),
+            on_receive=lambda message: messages_panel_insert(
+                self.window, "Receive", message
+            ),
             on_notification=_on_receive_notification,
         )
 
