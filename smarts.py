@@ -668,10 +668,16 @@ def toggle_messages_panel(window: sublime.Window):
         show_messages_panel(window)
 
 
-def messages_panel_insert(window: sublime.Window, text: str):
+def messages_panel_insert(window: sublime.Window, label: str, message: Any):
+    """
+    Append `message` to the Messages panel if the panel is visible.
+
+    Serializing is skipped while the panel is hidden: messages can be large
+    (e.g. a full document sync) and are exchanged on every keystroke.
+    """
     if window.active_panel() == kOUTPUT_PANEL_MESSAGES_NAME_PREFIXED:
-        panel_view = messages_panel(window)
-        panel_view.run_command("append", {"characters": text + "\n"})
+        text = f"// {label}:\n{json.dumps(message, indent=2)}\n"
+        messages_panel(window).run_command("append", {"characters": text})
 
 
 def show_signature_help_popup(
@@ -2004,16 +2010,12 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             handle_notification(smart_uuid, message)
 
         def _before_write(message):
-            messages_panel_insert(
-                self.window, "// Send:\n" + json.dumps(message, indent=2)
-            )
+            messages_panel_insert(self.window, "Send", message)
 
             return message
 
         def _after_read(message):
-            messages_panel_insert(
-                self.window, "// Receive:\n" + json.dumps(message, indent=2)
-            )
+            messages_panel_insert(self.window, "Receive", message)
 
             return message
 
