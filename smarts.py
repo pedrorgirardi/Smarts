@@ -3177,12 +3177,16 @@ def plugin_loaded():
     plugin_logger.setLevel(settings().get("logger.plugin.level", "INFO"))
     plugin_logger.debug("Plugin loaded")
 
-    initialize_project_smarts(sublime.active_window())
+    for window in sublime.windows():
+        initialize_project_smarts(window)
 
 
 def plugin_unloaded():
     plugin_logger.debug("Plugin unloaded")
 
-    shutdown_smarts(sublime.active_window())
+    # Every window: once unloaded, the plugin loses track of its servers,
+    # and any server left running would be orphaned.
+    for window in sublime.windows():
+        shutdown_smarts(window)
 
     plugin_logger.removeHandler(console_logging_handler)
