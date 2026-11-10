@@ -3118,41 +3118,26 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if not window:
             return
 
-        highlighter = getattr(self, "pg_smarts_highlighter", None)
+        # Debounce: each selection change supersedes the previous one, so only
+        # the last one - once the caret stops - sends a request.
+        # (e.g. holding an arrow key or dragging sends a single request.)
+        serial = getattr(self, "pg_smarts_highlight_serial", 0) + 1
+        self.pg_smarts_highlight_serial = serial
+
+        def _highlight():
+            if serial == self.pg_smarts_highlight_serial and self.view.is_valid():
+                self.highlight()
 
         # Cool-down period: Suppress highlights while actively editing.
         #
-        # We wait for cool_down seconds after the last modification before
-        # highlighting again. A timer is scheduled so highlights appear
-        # automatically once the user stops typing, without requiring an
-        # additional cursor movement.
+        # Wait for cool_down seconds after the last modification, so highlights
+        # appear once the user stops typing, without another cursor movement.
         last_modified = self.view.settings().get(kSMARTS_LAST_MODIFIED_TIME, 0)
         cool_down = 0.5
-        since_modified = time.time() - last_modified
+        debounce = 0.1
+        delay = max(debounce, cool_down - (time.time() - last_modified))
 
-        if since_modified < cool_down:
-            if highlighter and highlighter.is_alive():
-                highlighter.cancel()
-
-            delay = cool_down - since_modified
-
-            self.pg_smarts_highlighter = threading.Timer(delay, self.highlight)
-            self.pg_smarts_highlighter.start()
-            return
-
-        # Debounce rapid cursor movements (e.g., holding arrow key, dragging).
-        #
-        # The timer acts as a flag: if alive, we're in "rapid movement" mode and
-        # should delay the request. When cursor stops and timer fires, it highlights.
-        # This avoids wasting LSP requests while "sliding" the caret.
-        if highlighter and highlighter.is_alive():
-            highlighter.cancel()
-            self.pg_smarts_highlighter = threading.Timer(0.1, self.highlight)
-            self.pg_smarts_highlighter.start()
-        else:
-            self.highlight()
-            self.pg_smarts_highlighter = threading.Timer(0.1, self.highlight)
-            self.pg_smarts_highlighter.start()
+        sublime.set_timeout_async(_highlight, int(delay * 1000))
 
     def on_query_completions(self, prefix, locations):
         window = self.view.window()
