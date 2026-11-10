@@ -3,6 +3,9 @@
 
     "editor.auto_complete": true,
     "editor.highlight_references": true,
+
+    // How long the caret must rest, in milliseconds, before references are highlighted.
+    "editor.highlight_references_delay": 300,
     "editor.show_hover": true,
     "editor.format_on_save": false,
 

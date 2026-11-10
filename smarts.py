@@ -3013,8 +3013,10 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             return
 
         # Debounce: each selection change supersedes the previous one, so only
-        # the last one - once the caret stops - sends a request.
-        # (e.g. holding an arrow key or dragging sends a single request.)
+        # the last one - once the caret rests for `debounce` - sends a request.
+        #
+        # The delay must outlast the pause between arrow key presses, or moving
+        # line by line highlights every line the caret passes through.
         serial = getattr(self, "pg_smarts_highlight_serial", 0) + 1
         self.pg_smarts_highlight_serial = serial
 
@@ -3028,7 +3030,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         # appear once the user stops typing, without another cursor movement.
         last_modified = _LAST_MODIFIED.get(self.view.id(), 0)
         cool_down = 0.5
-        debounce = 0.1
+        debounce = setting(window, "editor.highlight_references_delay", 300) / 1000
         delay = max(debounce, cool_down - (time.monotonic() - last_modified))
 
         sublime.set_timeout_async(_highlight, int(delay * 1000))
