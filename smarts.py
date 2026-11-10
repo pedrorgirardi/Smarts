@@ -320,11 +320,10 @@ def setting(window: sublime.Window, k: str, not_found: Any):
 
     Returns not_found if setting k is is not set.
     """
-    if project_data := smarts_project_data(window):
-        try:
-            return project_data[k]
-        except KeyError:
-            return settings().get(k, not_found)
+    project_data = smarts_project_data(window) or {}
+
+    if k in project_data:
+        return project_data[k]
 
     return settings().get(k, not_found)
 
