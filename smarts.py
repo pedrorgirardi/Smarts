@@ -618,12 +618,12 @@ def language_syntax(language: str) -> sublime.Syntax:
 
 
 def text_to_html(s: str) -> str:
-    result = html.escape(s)
-    result = re.sub(r"\n", "<br/>", result)
-    result = re.sub(r"\t", "&nbsp;&nbsp;&nbsp;&nbsp;", result)
-    result = result.replace(" ", "&nbsp;")
-
-    return result
+    return (
+        html.escape(s)
+        .replace("\n", "<br/>")
+        .replace("\t", "&nbsp;" * 4)
+        .replace(" ", "&nbsp;")
+    )
 
 
 def panel(window: sublime.Window, name: str, syntax: str | None = None) -> sublime.View:
