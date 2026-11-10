@@ -2962,7 +2962,12 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 "textDocument": view_textDocumentIdentifier(self.view),
             })
 
-    def highlight(self):
+    def highlight(self, serial: int):
+        """
+        Highlight references of the symbol at the caret.
+
+        `serial` identifies the selection change which scheduled this highlight.
+        """
         # Let Sublime Text highlight selection based on `match_selection` setting.
         if self.view.sel().has_non_empty_region():
             erase_view_highlights(self.view)
@@ -2976,6 +2981,11 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         position_encoding = smart.position_encoding()
 
         def on_result(result: smarts_client.LSPDocumentHighlightResult):
+            # The caret moved while the server was computing highlights:
+            # they're for a symbol which is no longer at the caret.
+            if serial != self.pg_smarts_highlight_serial:
+                return
+
             if result is None:
                 erase_view_highlights(self.view)
                 return
@@ -3022,7 +3032,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         def _highlight():
             if serial == self.pg_smarts_highlight_serial and self.view.is_valid():
-                self.highlight()
+                self.highlight(serial)
 
         # Cool-down period: Suppress highlights while actively editing.
         #
