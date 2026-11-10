@@ -892,10 +892,9 @@ class LanguageServerClient:
            If a server never responds to a request, the callback is never invoked.
            Callers should implement their own timeout logic if needed.
 
-        4. Queue size limits:
-           Send/receive queues have maxsize=100. If the server is slow to process
-           messages, queue.put() will block. This is intentional backpressure but
-           could cause deadlocks if not handled carefully.
+        4. Unbounded queues:
+           Send/receive queues have no size limit, so enqueueing never blocks.
+           If the server stops reading, pending messages accumulate in memory.
     """
 
     def __init__(
@@ -918,8 +917,10 @@ class LanguageServerClient:
         self._server_process: subprocess.Popen | None = None
         self._server_info: LSPServerInfo | None = None
         self._server_capabilities: LSPServerCapabilities | None = None
-        self._send_queue = Queue(maxsize=100)
-        self._receive_queue = Queue(maxsize=100)
+        # Unbounded: put() never blocks, so callers - often Sublime's main thread -
+        # never wait on a slow server.
+        self._send_queue = Queue()
+        self._receive_queue = Queue()
         self._reader: threading.Thread | None = None
         self._writer: threading.Thread | None = None
         self._handler: threading.Thread | None = None
@@ -1339,17 +1340,20 @@ class LanguageServerClient:
                 self._logger.warning(f"Server was shutdown; Will drop {method}")
                 return
 
-            self._send_queue.put(message)
-
-            if message_id := message.get("id"):
+            # Register the callback before the message is sent,
+            # so a response can't arrive before its callback exists.
+            if (message_id := message.get("id")) and callback:
                 # A mapping of request ID to callback.
                 #
                 # callback will be called once the response for the request is received.
                 #
                 # callback might not be called if there's an error reading the response,
                 # or the server never returns a response.
-                if callback:
-                    self._request_callback[message_id] = callback
+                self._request_callback[message_id] = callback
+
+        # Enqueue outside the lock: the reader and handler threads need the lock
+        # to make progress, so they must never wait on a caller that is enqueueing.
+        self._send_queue.put(message)
 
     def _make_callback(
         self,
