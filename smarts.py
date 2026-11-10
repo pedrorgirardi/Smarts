@@ -47,9 +47,9 @@ plugin_logger.propagate = False
 kSETTING_SERVERS = "servers"
 
 kOUTPUT_PANEL_NAME = "Smarts - Output"
-kOUTPUT_PANEL_NAME_PREFIXED = f"output.{kOUTPUT_PANEL_NAME}"
 
 kOUTPUT_PANEL_MESSAGES_NAME = "Smarts - Messages"
+kMESSAGES_PANEL_SYNTAX = "Packages/JSON/JSON.sublime-syntax"
 kOUTPUT_PANEL_MESSAGES_NAME_PREFIXED = f"output.{kOUTPUT_PANEL_MESSAGES_NAME}"
 
 kDIAGNOSTICS = "PG_SMARTS_DIAGNOSTICS"
@@ -586,49 +586,56 @@ def text_to_html(s: str) -> str:
     return result
 
 
-def output_panel(window: sublime.Window) -> sublime.View:
-    if panel_view := window.find_output_panel(kOUTPUT_PANEL_NAME):
+def panel(window: sublime.Window, name: str, syntax: str | None = None) -> sublime.View:
+    """
+    Returns output panel `name` of `window` - created if it doesn't exist.
+    """
+    if panel_view := window.find_output_panel(name):
         return panel_view
 
-    panel_view = window.create_output_panel(kOUTPUT_PANEL_NAME)
-    panel_view.settings().set("gutter", False)
-    panel_view.settings().set("auto_indent", False)
-    panel_view.settings().set("translate_tabs_to_spaces", False)
-    panel_view.settings().set("smart_indent", False)
-    panel_view.settings().set("indent_to_bracket", False)
-    panel_view.settings().set("highlight_line", False)
-    panel_view.settings().set("line_numbers", False)
-    panel_view.settings().set("scroll_past_end", False)
+    panel_view = window.create_output_panel(name)
+
+    panel_settings = panel_view.settings()
+    panel_settings.set("gutter", False)
+    panel_settings.set("auto_indent", False)
+    panel_settings.set("translate_tabs_to_spaces", False)
+    panel_settings.set("smart_indent", False)
+    panel_settings.set("indent_to_bracket", False)
+    panel_settings.set("highlight_line", False)
+    panel_settings.set("line_numbers", False)
+    panel_settings.set("scroll_past_end", False)
+
+    if syntax:
+        panel_view.assign_syntax(syntax)
 
     return panel_view
 
 
-def show_output_panel(window: sublime.Window):
-    window.run_command(
-        "show_panel",
-        {
-            "panel": kOUTPUT_PANEL_NAME_PREFIXED,
-        },
-    )
+def show_panel(window: sublime.Window, name: str):
+    window.run_command("show_panel", {"panel": f"output.{name}"})
 
 
-def hide_output_panel(window: sublime.Window):
-    window.run_command(
-        "hide_panel",
-        {
-            "panel": kOUTPUT_PANEL_NAME_PREFIXED,
-        },
-    )
-
-
-def toggle_output_panel(window: sublime.Window):
-    if window.active_panel() == kOUTPUT_PANEL_NAME_PREFIXED:
-        hide_output_panel(window)
+def toggle_panel(window: sublime.Window, name: str, syntax: str | None = None):
+    if window.active_panel() == f"output.{name}":
+        window.run_command("hide_panel", {"panel": f"output.{name}"})
     else:
-        # Create Output Panel if it doesn't exist.
-        output_panel(sublime.active_window())
+        # Create the panel if it doesn't exist.
+        panel(window, name, syntax)
+        show_panel(window, name)
 
-        show_output_panel(window)
+
+def clear_panel(window: sublime.Window, name: str):
+    panel_view = panel(window, name)
+    panel_view.run_command("select_all")
+    panel_view.run_command("left_delete")
+
+
+def output_panel(window: sublime.Window) -> sublime.View:
+    return panel(window, kOUTPUT_PANEL_NAME)
+
+
+def messages_panel(window: sublime.Window) -> sublime.View:
+    return panel(window, kOUTPUT_PANEL_MESSAGES_NAME, kMESSAGES_PANEL_SYNTAX)
 
 
 def panel_log(window: sublime.Window, text: str, show=False):
@@ -636,7 +643,7 @@ def panel_log(window: sublime.Window, text: str, show=False):
     panel_view.run_command("insert", {"characters": text})
 
     if show:
-        show_output_panel(window)
+        show_panel(window, kOUTPUT_PANEL_NAME)
 
 
 def panel_log_error(
@@ -649,50 +656,6 @@ def panel_log_error(
         f"Error: {error.get('code')} {error.get('message')} {error.get('data')}\n",
         show=show,
     )
-
-
-def messages_panel(window: sublime.Window) -> sublime.View:
-    if panel_view := window.find_output_panel(kOUTPUT_PANEL_MESSAGES_NAME):
-        return panel_view
-
-    panel_view = window.create_output_panel(kOUTPUT_PANEL_MESSAGES_NAME)
-    panel_view.settings().set("gutter", False)
-    panel_view.settings().set("auto_indent", False)
-    panel_view.settings().set("translate_tabs_to_spaces", False)
-    panel_view.settings().set("smart_indent", False)
-    panel_view.settings().set("indent_to_bracket", False)
-    panel_view.settings().set("highlight_line", False)
-    panel_view.settings().set("line_numbers", False)
-    panel_view.settings().set("scroll_past_end", False)
-    panel_view.assign_syntax("Packages/JSON/JSON.sublime-syntax")
-
-    return panel_view
-
-
-def show_messages_panel(window: sublime.Window):
-    window.run_command(
-        "show_panel",
-        {
-            "panel": kOUTPUT_PANEL_MESSAGES_NAME_PREFIXED,
-        },
-    )
-
-
-def hide_messages_panel(window: sublime.Window):
-    window.run_command(
-        "hide_panel",
-        {
-            "panel": kOUTPUT_PANEL_MESSAGES_NAME_PREFIXED,
-        },
-    )
-
-
-def toggle_messages_panel(window: sublime.Window):
-    if window.active_panel() == kOUTPUT_PANEL_MESSAGES_NAME_PREFIXED:
-        hide_messages_panel(window)
-    else:
-        messages_panel(window)
-        show_messages_panel(window)
 
 
 def messages_panel_insert(window: sublime.Window, label: str, message: Any):
@@ -2093,26 +2056,22 @@ class PgSmartsShutdownCommand(sublime_plugin.WindowCommand):
 
 class PgSmartsToggleOutputPanelCommand(sublime_plugin.WindowCommand):
     def run(self):
-        toggle_output_panel(self.window)
+        toggle_panel(self.window, kOUTPUT_PANEL_NAME)
 
 
 class PgSmartsClearOutputPanelCommand(sublime_plugin.WindowCommand):
     def run(self):
-        panel_view = output_panel(self.window)
-        panel_view.run_command("select_all")
-        panel_view.run_command("left_delete")
+        clear_panel(self.window, kOUTPUT_PANEL_NAME)
 
 
 class PgSmartsToggleMessagesPanelCommand(sublime_plugin.WindowCommand):
     def run(self):
-        toggle_messages_panel(self.window)
+        toggle_panel(self.window, kOUTPUT_PANEL_MESSAGES_NAME, kMESSAGES_PANEL_SYNTAX)
 
 
 class PgSmartsClearMessagesPanelCommand(sublime_plugin.WindowCommand):
     def run(self):
-        panel_view = messages_panel(self.window)
-        panel_view.run_command("select_all")
-        panel_view.run_command("left_delete")
+        clear_panel(self.window, kOUTPUT_PANEL_MESSAGES_NAME)
 
 
 class PgSmartsStatusCommand(sublime_plugin.WindowCommand):
