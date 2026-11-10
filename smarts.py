@@ -54,8 +54,6 @@ kOUTPUT_PANEL_MESSAGES_NAME_PREFIXED = f"output.{kOUTPUT_PANEL_MESSAGES_NAME}"
 
 kDIAGNOSTICS = "PG_SMARTS_DIAGNOSTICS"
 kSMARTS_HIGHLIGHTS = "PG_SMARTS_HIGHLIGHTS"
-kSMARTS_HIGHLIGHTS_POSITION_ENCODING = "PG_SMARTS_HIGHLIGHTS_POSITION_ENCODING"
-kSMARTS_LAST_MODIFIED_TIME = "PG_SMARTS_LAST_MODIFIED_TIME"
 
 kCOMPLETION_FLAGS = (
     sublime.INHIBIT_WORD_COMPLETIONS
@@ -249,6 +247,11 @@ _DIAGNOSTICS_LOCK = threading.Lock()
 # Used to defer diagnostics rendering while actively editing.
 # Only accessed on the main thread.
 _DIAGNOSTICS_PENDING: dict[int, object] = {}
+
+# Time of the last modification per view, keyed by view ID.
+# Used by the diagnostics and highlights cool-down periods.
+# Written on the main thread; Entries are removed when the view is closed.
+_LAST_MODIFIED: dict[int, float] = {}
 
 
 # ---------------------------------------------------------------------------------------
@@ -1204,14 +1207,7 @@ def open_location(
 def capture_view(view: sublime.View) -> Callable[[], None]:
     regions = [[region.a, region.b] for region in view.sel()]
     viewport_position = view.viewport_position()
-    highlight_regions = [
-        sublime.Region(region.a, region.b)
-        for region in view.get_regions(kSMARTS_HIGHLIGHTS)
-    ]
-    highlights = view.settings().get(kSMARTS_HIGHLIGHTS)
-    highlights_position_encoding = view.settings().get(
-        kSMARTS_HIGHLIGHTS_POSITION_ENCODING
-    )
+    highlight_regions = view_highlights(view)
 
     def restore():
         view.run_command(
@@ -1223,35 +1219,43 @@ def capture_view(view: sublime.View) -> Callable[[], None]:
 
         view.set_viewport_position(viewport_position, True)
 
+        if highlight_regions:
+            set_view_highlights(view, highlight_regions)
+
         if window := view.window():
-            if highlight_regions:
-                highlight_references = setting(
-                    window,
-                    "editor.highlight_references",
-                    False,
-                )
-
-                view.add_regions(
-                    kSMARTS_HIGHLIGHTS,
-                    highlight_regions,
-                    scope="region.yellowish",
-                    icon="",
-                    flags=(
-                        sublime.DRAW_NO_FILL
-                        if highlight_references
-                        else sublime.HIDDEN
-                    ),
-                )
-
-                view.settings().set(kSMARTS_HIGHLIGHTS, highlights)
-                view.settings().set(
-                    kSMARTS_HIGHLIGHTS_POSITION_ENCODING,
-                    highlights_position_encoding,
-                )
-
             window.focus_view(view)
 
     return restore
+
+
+def view_highlights(view: sublime.View) -> list[sublime.Region]:
+    """
+    Returns regions of references highlighted in `view`, in document order.
+
+    Sublime keeps regions in sync with edits, so they're always valid for the
+    current buffer - unlike the LSP ranges they were created from.
+    """
+    return sorted(view.get_regions(kSMARTS_HIGHLIGHTS), key=lambda r: r.begin())
+
+
+def set_view_highlights(view: sublime.View, regions: list[sublime.Region]):
+    highlight_references = False
+
+    if window := view.window():
+        highlight_references = setting(window, "editor.highlight_references", False)
+
+    # Regions are kept even if hidden: Select and Jump use them.
+    view.add_regions(
+        kSMARTS_HIGHLIGHTS,
+        regions,
+        scope="region.yellowish",
+        icon="",
+        flags=sublime.DRAW_NO_FILL if highlight_references else sublime.HIDDEN,
+    )
+
+
+def erase_view_highlights(view: sublime.View):
+    view.erase_regions(kSMARTS_HIGHLIGHTS)
 
 
 def capture_viewport_position(view: sublime.View) -> Callable[[], None]:
@@ -1804,9 +1808,9 @@ def schedule_present_diagnostics(window: sublime.Window, path: str):
     # Without this, diagnostics constantly update while typing, causing
     # distracting visual changes (squiggly lines and annotations moving around).
     # We wait until the user stops typing before showing updated diagnostics.
-    last_modified = view.settings().get(kSMARTS_LAST_MODIFIED_TIME, 0)
+    last_modified = _LAST_MODIFIED.get(view_id, 0)
     cool_down = 1.0
-    delay = max(0.0, cool_down - (time.time() - last_modified))
+    delay = max(0.0, cool_down - (time.monotonic() - last_modified))
 
     sublime.set_timeout(_present, int(delay * 1000))
 
@@ -2437,76 +2441,37 @@ class PgSmartsGotoWorkspaceSymbol(sublime_plugin.WindowCommand):
 
 class PgSmartsSelectCommand(sublime_plugin.TextCommand):
     def run(self, _):
-        locations = self.view.settings().get(kSMARTS_HIGHLIGHTS)
+        regions = view_highlights(self.view)
 
-        position_encoding = self.view.settings().get(
-            kSMARTS_HIGHLIGHTS_POSITION_ENCODING
-        )
-
-        if not locations:
+        if not regions:
             return
 
         self.view.sel().clear()
-
-        for loc in locations:
-            self.view.sel().add(
-                range_region(
-                    self.view,
-                    position_encoding=position_encoding,
-                    range=loc["range"],
-                )
-            )
+        self.view.sel().add_all(regions)
 
 
 class PgSmartsJumpCommand(sublime_plugin.TextCommand):
     def run(self, _, movement):
-        locations = self.view.settings().get(kSMARTS_HIGHLIGHTS)
+        regions = view_highlights(self.view)
 
-        position_encoding = self.view.settings().get(
-            kSMARTS_HIGHLIGHTS_POSITION_ENCODING
-        )
-
-        if not locations:
+        if not regions:
             return
-
-        locations = sorted(
-            locations,
-            key=lambda location: [
-                location["range"]["start"]["line"],
-                location["range"]["start"]["character"],
-            ],
-        )
 
         trampoline = self.view.sel()[0]
 
         jump_loc_index = None
 
-        for index, loc in enumerate(locations):
-            r = range_region(
-                self.view,
-                position_encoding=position_encoding,
-                range=loc["range"],
-            )
-
+        for index, r in enumerate(regions):
             if r.contains(trampoline.begin()) or r.contains(trampoline.end()):
                 if movement == "back":
                     jump_loc_index = max(0, index - 1)
                 elif movement == "forward":
-                    jump_loc_index = min(index + 1, len(locations) - 1)
+                    jump_loc_index = min(index + 1, len(regions) - 1)
 
                 break
 
         if jump_loc_index is not None:
-            jump_region = range_region(
-                self.view,
-                position_encoding=position_encoding,
-                range=locations[jump_loc_index]["range"],
-            )
-
-            jump_region = sublime.Region(
-                jump_region.end(),
-                jump_region.end(),
-            )
+            jump_region = sublime.Region(regions[jump_loc_index].end())
 
             self.view.sel().clear()
             self.view.sel().add(jump_region)
@@ -3034,20 +2999,17 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             if window := self.view.window():
                 window.run_command("hide_overlay")
 
+        _LAST_MODIFIED.pop(self.view.id(), None)
+
         for smart in applicable_smarts(self.view, method="textDocument/didClose"):
             smart.client.textDocument_didClose({
                 "textDocument": view_textDocumentIdentifier(self.view),
             })
 
-    def erase_highlights(self):
-        self.view.erase_regions(kSMARTS_HIGHLIGHTS)
-
-        self.view.settings().erase(kSMARTS_HIGHLIGHTS)
-
     def highlight(self):
         # Let Sublime Text highlight selection based on `match_selection` setting.
         if self.view.sel().has_non_empty_region():
-            self.erase_highlights()
+            erase_view_highlights(self.view)
             return
 
         smart = applicable_smart(self.view, method="textDocument/documentHighlight")
@@ -3059,45 +3021,22 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         def on_result(result: smarts_client.LSPDocumentHighlightResult):
             if result is None:
-                self.erase_highlights()
+                erase_view_highlights(self.view)
                 return
 
-            regions = [
-                range_region(self.view, position_encoding, highlight["range"])
-                for highlight in result
-            ]
+            regions = sorted(
+                (
+                    range_region(self.view, position_encoding, highlight["range"])
+                    for highlight in result
+                ),
+                key=lambda r: r.begin(),
+            )
 
             # Do nothing if result regions are the same as view regions.
-            if regions_ := self.view.get_regions(kSMARTS_HIGHLIGHTS):
-                if regions == regions_:
-                    return
+            if regions == view_highlights(self.view):
+                return
 
-            highlight_references = False
-
-            if window := self.view.window():
-                highlight_references = setting(
-                    window,
-                    "editor.highlight_references",
-                    False,
-                )
-
-            self.view.add_regions(
-                kSMARTS_HIGHLIGHTS,
-                regions,
-                scope="region.yellowish",
-                icon="",
-                flags=sublime.DRAW_NO_FILL if highlight_references else sublime.HIDDEN,
-            )
-
-            self.view.settings().set(
-                kSMARTS_HIGHLIGHTS,
-                result,
-            )
-
-            self.view.settings().set(
-                kSMARTS_HIGHLIGHTS_POSITION_ENCODING,
-                position_encoding,
-            )
+            set_view_highlights(self.view, regions)
 
         params = view_textDocumentPositionParams(self.view, position_encoding)
 
@@ -3109,11 +3048,9 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
     def on_modified(self):
         # Erase highlights immediately.
-        self.erase_highlights()
+        erase_view_highlights(self.view)
 
-        # Store in view.settings() so it's accessible from other functions
-        # (e.g., handle_textDocument_publishDiagnostics for diagnostics cool-down).
-        self.view.settings().set(kSMARTS_LAST_MODIFIED_TIME, time.time())
+        _LAST_MODIFIED[self.view.id()] = time.monotonic()
 
     def on_selection_modified_async(self):
         window = self.view.window()
@@ -3135,10 +3072,10 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         #
         # Wait for cool_down seconds after the last modification, so highlights
         # appear once the user stops typing, without another cursor movement.
-        last_modified = self.view.settings().get(kSMARTS_LAST_MODIFIED_TIME, 0)
+        last_modified = _LAST_MODIFIED.get(self.view.id(), 0)
         cool_down = 0.5
         debounce = 0.1
-        delay = max(debounce, cool_down - (time.time() - last_modified))
+        delay = max(debounce, cool_down - (time.monotonic() - last_modified))
 
         sublime.set_timeout_async(_highlight, int(delay * 1000))
 
