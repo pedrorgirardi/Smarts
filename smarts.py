@@ -3016,6 +3016,29 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         _LAST_MODIFIED[self.view.id()] = time.monotonic()
 
+    def on_selection_modified(self):
+        # Erase highlights as soon as the caret leaves the highlighted symbol,
+        # rather than when the next highlight arrives - after a delay.
+        #
+        # Highlights are kept while the caret moves within one of them:
+        # it's still on the same symbol, so the next highlight is the same,
+        # and erasing would only make them flicker.
+        regions = view_highlights(self.view)
+
+        if not regions:
+            return
+
+        sel = self.view.sel()
+
+        on_highlight = (
+            len(sel) > 0
+            and sel[0].empty()
+            and any(region.contains(sel[0].b) for region in regions)
+        )
+
+        if not on_highlight:
+            erase_view_highlights(self.view)
+
     def on_selection_modified_async(self):
         window = self.view.window()
 
