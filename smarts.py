@@ -866,12 +866,13 @@ def point_position(
     position_encoding: smarts_client.LSPPositionEncoding,
     point: int,
 ) -> smarts_client.LSPPosition:
+    """
+    Convert a Sublime point to an LSP Position.
+
+    UTF-32 isn't advertised to servers, so anything but UTF-8 is UTF-16.
+    """
     if position_encoding == "utf-8":
         row, col = view.rowcol_utf8(point)
-
-    elif position_encoding == "utf-16":
-        row, col = view.rowcol_utf16(point)
-
     else:
         row, col = view.rowcol_utf16(point)
 
@@ -881,22 +882,32 @@ def point_position(
     }
 
 
+def position_point(
+    view: sublime.View,
+    position_encoding: smarts_client.LSPPositionEncoding,
+    position: smarts_client.LSPPosition,
+) -> int:
+    """
+    Convert an LSP Position to a Sublime point; See `point_position`.
+    """
+    if position_encoding == "utf-8":
+        return view.text_point_utf8(
+            position["line"], position["character"], clamp_column=True
+        )
+
+    return view.text_point_utf16(
+        position["line"], position["character"], clamp_column=True
+    )
+
+
 def region_range(
     view: sublime.View,
     position_encoding: smarts_client.LSPPositionEncoding,
     region: sublime.Region,
 ) -> smarts_client.LSPRange:
     return {
-        "start": point_position(
-            view,
-            position_encoding,
-            region.begin(),
-        ),
-        "end": point_position(
-            view,
-            position_encoding,
-            region.end(),
-        ),
+        "start": point_position(view, position_encoding, region.begin()),
+        "end": point_position(view, position_encoding, region.end()),
     }
 
 
@@ -918,23 +929,8 @@ def range_region(
     Returns:
         Sublime Region corresponding to the LSP range.
     """
-    start_line = range["start"]["line"]
-    start_character = range["start"]["character"]
-
-    end_line = range["end"]["line"]
-    end_character = range["end"]["character"]
-
-    a = (
-        view.text_point_utf8(start_line, start_character, clamp_column=True)
-        if position_encoding == "utf-8"
-        else view.text_point_utf16(start_line, start_character, clamp_column=True)
-    )
-
-    b = (
-        view.text_point_utf8(end_line, end_character, clamp_column=True)
-        if position_encoding == "utf-8"
-        else view.text_point_utf16(end_line, end_character, clamp_column=True)
-    )
+    a = position_point(view, position_encoding, range["start"])
+    b = position_point(view, position_encoding, range["end"])
 
     if inverted:
         return sublime.Region(b, a)
