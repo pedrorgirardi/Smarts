@@ -1018,24 +1018,6 @@ class LanguageServerClient:
             self._logger.warning(f"Clearing {n} pending request callback(s)")
             self._request_callback.clear()
 
-    def _read(self, out, n):
-        remaining = n
-
-        chunks = []
-
-        while remaining > 0:
-            chunk = out.read(remaining)
-
-            # End of file or stream
-            if not chunk:
-                break
-
-            chunks.append(chunk)
-
-            remaining -= len(chunk)
-
-        return b"".join(chunks)
-
     def _observe(
         self,
         observer: Callable[[LSPMessage], None] | None,
@@ -1126,11 +1108,18 @@ class LanguageServerClient:
                 # -- CONTENT
 
                 if content_length := headers.get("Content-Length"):
-                    content = (
-                        self._read(out, int(content_length)).decode("utf-8").strip()
-                    )
+                    n = int(content_length)
+
+                    # stdout is buffered: read(n) blocks until n bytes are read,
+                    # or EOF - in which case the message is incomplete.
+                    content = out.read(n)
+
+                    if len(content) < n:
+                        self._logger.debug("Reader detected EOF (incomplete message)")
+                        break
 
                     try:
+                        # JSON is UTF-8 encoded; json.loads decodes bytes.
                         message = json.loads(content)
 
                         self._observe(self._on_receive, message)
@@ -1141,7 +1130,9 @@ class LanguageServerClient:
                     except json.JSONDecodeError:
                         # The effect of not being able to decode a message,
                         # is that an 'in-flight' request won't have its callback called.
-                        self._logger.error(f"Failed to decode message: {content}")
+                        self._logger.error(
+                            f"Failed to decode message: {content.decode(errors='replace')}"
+                        )
 
             # stdout is closed, so the server exited (or is exiting).
             #
