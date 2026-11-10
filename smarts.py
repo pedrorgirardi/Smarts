@@ -2543,9 +2543,10 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
         location = -1
 
         if result_range := hover.get("range"):
-            location = self.view.text_point(
-                result_range["start"]["line"],
-                result_range["start"]["character"],
+            location = position_point(
+                self.view,
+                smart.position_encoding(),
+                result_range["start"],
             )
 
         self.view.show_popup(
