@@ -68,6 +68,14 @@ kDIAGNOSTIC_SEVERITY_WARNING = 2
 kDIAGNOSTIC_SEVERITY_INFORMATION = 3
 kDIAGNOSTIC_SEVERITY_HINT = 4
 
+# Severity: (name, scope, quick panel kind, quick panel kind letter).
+kSEVERITY_STYLE: dict[int, tuple[str, str, sublime.KindId, str]] = {
+    kDIAGNOSTIC_SEVERITY_ERROR: ("Error", "region.redish", sublime.KIND_ID_COLOR_REDISH, "E"),
+    kDIAGNOSTIC_SEVERITY_WARNING: ("Warning", "region.orangish", sublime.KIND_ID_COLOR_ORANGISH, "W"),
+    kDIAGNOSTIC_SEVERITY_INFORMATION: ("Info", "region.bluish", sublime.KIND_ID_COLOR_BLUISH, "I"),
+    kDIAGNOSTIC_SEVERITY_HINT: ("Hint", "region.purplish", sublime.KIND_ID_COLOR_PURPLISH, "H"),
+}
+
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#messageType
 kMESSAGE_TYPE_NAME = {
     1: "Error",
@@ -768,30 +776,29 @@ def show_signature_help_popup(
     view.show_popup(minihtml, location=-1, max_width=1200)
 
 
-def severity_name(severity: int):
-    if severity == kDIAGNOSTIC_SEVERITY_ERROR:
-        return "Error"
-    elif severity == kDIAGNOSTIC_SEVERITY_WARNING:
-        return "Warning"
-    elif severity == kDIAGNOSTIC_SEVERITY_INFORMATION:
-        return "Info"
-    elif severity == kDIAGNOSTIC_SEVERITY_HINT:
-        return "Hint"
-    else:
-        return f"Unknown {severity}"
+def diagnostic_severity(diagnostic: smarts_client.LSPDiagnostic) -> int:
+    """
+    Returns the severity of `diagnostic`.
+
+    To avoid interpretation mismatches when a server is used with different
+    clients it is highly recommended that servers always provide a severity value.
+    If omitted, it's recommended for the client to interpret it as an Error severity.
+    """
+    return diagnostic.get("severity") or kDIAGNOSTIC_SEVERITY_ERROR
 
 
-def severity_scope(severity: int):
-    if severity == kDIAGNOSTIC_SEVERITY_ERROR:
-        return "region.redish"
-    elif severity == kDIAGNOSTIC_SEVERITY_WARNING:
-        return "region.orangish"
-    elif severity == kDIAGNOSTIC_SEVERITY_INFORMATION:
-        return "region.bluish"
-    elif severity == kDIAGNOSTIC_SEVERITY_HINT:
-        return "region.purplish"
-    else:
-        return "invalid"
+def severity_name(severity: int) -> str:
+    if style := kSEVERITY_STYLE.get(severity):
+        return style[0]
+
+    return f"Unknown {severity}"
+
+
+def severity_scope(severity: int) -> str:
+    if style := kSEVERITY_STYLE.get(severity):
+        return style[1]
+
+    return "invalid"
 
 
 def severity_annotation_color(view: sublime.View, severity: int) -> str:
@@ -802,17 +809,11 @@ def severity_annotation_color(view: sublime.View, severity: int) -> str:
     return style.get("foreground", "#ff0000")
 
 
-def severity_kind(severity: int):
-    if severity == kDIAGNOSTIC_SEVERITY_ERROR:
-        return (sublime.KIND_ID_COLOR_REDISH, "E", "E")
-    elif severity == kDIAGNOSTIC_SEVERITY_WARNING:
-        return (sublime.KIND_ID_COLOR_ORANGISH, "W", "W")
-    elif severity == kDIAGNOSTIC_SEVERITY_INFORMATION:
-        return (sublime.KIND_ID_COLOR_BLUISH, "I", "I")
-    elif severity == kDIAGNOSTIC_SEVERITY_HINT:
-        return (sublime.KIND_ID_COLOR_PURPLISH, "H", "H")
-    else:
-        return (sublime.KIND_ID_AMBIGUOUS, "", "")
+def severity_kind(severity: int) -> tuple[sublime.KindId, str, str]:
+    if style := kSEVERITY_STYLE.get(severity):
+        return (style[2], style[3], style[3])
+
+    return (sublime.KIND_ID_AMBIGUOUS, "", "")
 
 
 def point_position(
@@ -918,8 +919,7 @@ def diagnostic_quick_panel_item(data: PgSmartsDiagnostic) -> sublime.QuickPanelI
     origin = diagnostic_origin(data)
     code = data.get("code")
 
-    # If omitted, it's recommended for the client to interpret it as an Error severity.
-    severity = data.get("severity") or kDIAGNOSTIC_SEVERITY_ERROR
+    severity = diagnostic_severity(data)
 
     return sublime.QuickPanelItem(
         f"{severity_name(severity)}: {data['message']}",
@@ -1414,7 +1414,7 @@ def goto_diagnostic(
         diagnostics = sorted(
             diagnostics,
             key=lambda diagnostic: [
-                diagnostic.get("severity") or kDIAGNOSTIC_SEVERITY_ERROR,
+                diagnostic_severity(diagnostic),
                 diagnostic["uri"],
                 diagnostic["range"]["start"]["line"],
                 diagnostic["range"]["start"]["character"],
@@ -1646,14 +1646,9 @@ def present_diagnostics(
 
     diagnostics_status = []
 
-    def severity_key(diagnostic):
-        # The diagnostic's severity.
-        # To avoid interpretation mismatches when a server is used with different clients it is highly recommended
-        # that servers always provide a severity value.
-        # If omitted, it's recommended for the client to interpret it as an Error severity.
-        return diagnostic.get("severity", 1)
-
-    for k, g in groupby(sorted(diagnostics, key=severity_key), key=severity_key):
+    for k, g in groupby(
+        sorted(diagnostics, key=diagnostic_severity), key=diagnostic_severity
+    ):
         severity_regions = []
         severity_annotations = []
         severity_diagnostics = list(g)
@@ -1701,13 +1696,8 @@ def present_diagnostics(
 
 def clear_diagnostics(view: sublime.View):
     # Clear annotations/regions for all severity levels and status.
-    for s in [
-        kDIAGNOSTIC_SEVERITY_ERROR,
-        kDIAGNOSTIC_SEVERITY_WARNING,
-        kDIAGNOSTIC_SEVERITY_INFORMATION,
-        kDIAGNOSTIC_SEVERITY_HINT,
-    ]:
-        view.erase_regions(f"{kDIAGNOSTICS}_SEVERITY_{s}")
+    for severity in kSEVERITY_STYLE:
+        view.erase_regions(f"{kDIAGNOSTICS}_SEVERITY_{severity}")
 
     view.erase_status(kDIAGNOSTICS)
 
