@@ -110,6 +110,36 @@ kCOMPLETION_ITEM_KIND = {
     20: sublime.KIND_ID_TYPE,  # TypeParameter
 }
 
+# https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#symbolKind
+kSYMBOL_KIND_NAME = {
+    1: "File",
+    2: "Module",
+    3: "Namespace",
+    4: "Package",
+    5: "Class",
+    6: "Method",
+    7: "Property",
+    8: "Field",
+    9: "Constructor",
+    10: "Enum",
+    11: "Interface",
+    12: "Function",
+    13: "Variable",
+    14: "Constant",
+    15: "String",
+    16: "Number",
+    17: "Boolean",
+    18: "Array",
+    19: "Object",
+    20: "Key",
+    21: "Null",
+    22: "EnumMember",
+    23: "Struct",
+    24: "Event",
+    25: "Operator",
+    26: "TypeParameter",
+}
+
 kMINIHTML_STYLES = """
 .rounded {
     border-radius: 0.25rem;
@@ -975,38 +1005,9 @@ def workspace_symbol_quick_panel_item(data) -> sublime.QuickPanelItem:
     start_line = data["location"]["range"]["start"]["line"] + 1
     start_character = data["location"]["range"]["start"]["character"] + 1
 
-    symbol_kind = {
-        1: "File",
-        2: "Module",
-        3: "Namespace",
-        4: "Package",
-        5: "Class",
-        6: "Method",
-        7: "Property",
-        8: "Field",
-        9: "Constructor",
-        10: "Enum",
-        11: "Interface",
-        12: "Function",
-        13: "Variable",
-        14: "Constant",
-        15: "String",
-        16: "Number",
-        17: "Boolean",
-        18: "Array",
-        19: "Object",
-        20: "Key",
-        21: "Null",
-        22: "EnumMember",
-        23: "Struct",
-        24: "Event",
-        25: "Operator",
-        26: "TypeParameter",
-    }
-
     return sublime.QuickPanelItem(
         data["name"],
-        annotation=symbol_kind.get(data["kind"], ""),
+        annotation=kSYMBOL_KIND_NAME.get(data["kind"], ""),
         details=f"{path}:{start_line}:{start_character}",
     )
 
