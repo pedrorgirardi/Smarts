@@ -108,7 +108,7 @@ class TestServerRequests(unittest.TestCase):
             server_args=[sys.executable, "-c", FAKE_SERVER_REQUESTS],
             before_write=None,
             after_read=None,
-            on_window_logMessage=on_log_message,
+            on_notification=on_log_message,
         )
 
         client.initialize({}, lambda _: None)

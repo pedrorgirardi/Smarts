@@ -904,10 +904,7 @@ class LanguageServerClient:
         server_args: list[str],
         before_write: Callable[[LSPMessage], LSPMessage] | None,
         after_read: Callable[[LSPMessage], LSPMessage] | None,
-        on_logTrace: LSPNotificationHandler | None = None,
-        on_window_logMessage: LSPNotificationHandler | None = None,
-        on_window_showMessage: LSPNotificationHandler | None = None,
-        on_textDocument_publishDiagnostics: LSPNotificationHandler | None = None,
+        on_notification: LSPNotificationHandler | None = None,
     ):
         self._lock = threading.RLock()
         self._logger = logger
@@ -935,10 +932,8 @@ class LanguageServerClient:
         self._after_read: Callable[[LSPMessage], LSPMessage] = (
             after_read or _default_after_read
         )
-        self._on_logTrace = on_logTrace
-        self._on_window_logMessage = on_window_logMessage
-        self._on_window_showMessage = on_window_showMessage
-        self._on_textDocument_publishDiagnostics = on_textDocument_publishDiagnostics
+        # Called with every notification sent by the server.
+        self._on_notification = on_notification
 
     def server_status(self) -> LanguageServerStatus:
         with self._lock:
@@ -1282,30 +1277,11 @@ class LanguageServerClient:
                     except Exception:
                         self._logger.exception("Request callback error")
 
-            else:
-                notification = cast(LSPNotificationMessage, message)
-
-                method = notification["method"]
-
+            elif f := self._on_notification:
                 try:
-                    if method == "$/logTrace":
-                        if f := self._on_logTrace:
-                            f(notification)
-
-                    elif method == "window/logMessage":
-                        if f := self._on_window_logMessage:
-                            f(notification)
-
-                    elif method == "window/showMessage":
-                        if f := self._on_window_showMessage:
-                            f(notification)
-
-                    elif method == "textDocument/publishDiagnostics":
-                        if f := self._on_textDocument_publishDiagnostics:
-                            f(notification)
-
+                    f(cast(LSPNotificationMessage, message))
                 except Exception:
-                    self._logger.exception(f"Error handling '{method}'")
+                    self._logger.exception(f"Error handling '{message['method']}'")
 
             self._receive_queue.task_done()
 

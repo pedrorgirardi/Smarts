@@ -1867,6 +1867,10 @@ def handle_notification(
     elif message_method == "textDocument/publishDiagnostics":
         handle_textDocument_publishDiagnostics(window, smart, notification)
 
+    # Progress is not presented. (Sent often - don't log it.)
+    elif message_method == "$/progress":
+        pass
+
     else:
         panel_log(window, f"Unhandled Notification: {pprint.pformat(notification)}\n\n")
 
@@ -2054,10 +2058,7 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             server_args=server_config["start"],
             before_write=_before_write,
             after_read=_after_read,
-            on_logTrace=_on_receive_notification,
-            on_window_logMessage=_on_receive_notification,
-            on_window_showMessage=_on_receive_notification,
-            on_textDocument_publishDiagnostics=_on_receive_notification,
+            on_notification=_on_receive_notification,
         )
 
         with _SMARTS_LOCK:
