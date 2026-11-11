@@ -88,26 +88,31 @@ kMESSAGE_TYPE_NAME = {
 # The kind of a completion entry
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#completionItemKind
 kCOMPLETION_ITEM_KIND = {
-    1: sublime.KIND_ID_KEYWORD,  # Text
-    2: sublime.KIND_ID_TYPE,  # Method
+    1: sublime.KIND_ID_AMBIGUOUS,  # Text
+    2: sublime.KIND_ID_FUNCTION,  # Method
     3: sublime.KIND_ID_FUNCTION,  # Function
-    4: sublime.KIND_ID_NAMESPACE,  # Constructor
-    5: sublime.KIND_ID_TYPE,  # Field
-    6: sublime.KIND_ID_TYPE,  # Variable
+    4: sublime.KIND_ID_FUNCTION,  # Constructor
+    5: sublime.KIND_ID_VARIABLE,  # Field
+    6: sublime.KIND_ID_VARIABLE,  # Variable
     7: sublime.KIND_ID_TYPE,  # Class
     8: sublime.KIND_ID_TYPE,  # Interface
-    9: sublime.KIND_ID_TYPE,  # Module
-    10: sublime.KIND_ID_TYPE,  # Property
-    11: sublime.KIND_ID_TYPE,  # Enum
-    12: sublime.KIND_ID_TYPE,  # File
-    13: sublime.KIND_ID_TYPE,  # Reference
-    14: sublime.KIND_ID_TYPE,  # Folder
-    15: sublime.KIND_ID_TYPE,  # EnumMember
-    16: sublime.KIND_ID_TYPE,  # Constant
-    17: sublime.KIND_ID_TYPE,  # Struct
-    18: sublime.KIND_ID_TYPE,  # Event
-    19: sublime.KIND_ID_TYPE,  # Operator
-    20: sublime.KIND_ID_TYPE,  # TypeParameter
+    9: sublime.KIND_ID_NAMESPACE,  # Module
+    10: sublime.KIND_ID_VARIABLE,  # Property
+    11: sublime.KIND_ID_VARIABLE,  # Unit
+    12: sublime.KIND_ID_VARIABLE,  # Value
+    13: sublime.KIND_ID_TYPE,  # Enum
+    14: sublime.KIND_ID_KEYWORD,  # Keyword
+    15: sublime.KIND_ID_SNIPPET,  # Snippet
+    16: sublime.KIND_ID_VARIABLE,  # Color
+    17: sublime.KIND_ID_NAVIGATION,  # File
+    18: sublime.KIND_ID_NAVIGATION,  # Reference
+    19: sublime.KIND_ID_NAVIGATION,  # Folder
+    20: sublime.KIND_ID_VARIABLE,  # EnumMember
+    21: sublime.KIND_ID_VARIABLE,  # Constant
+    22: sublime.KIND_ID_TYPE,  # Struct
+    23: sublime.KIND_ID_FUNCTION,  # Event
+    24: sublime.KIND_ID_KEYWORD,  # Operator
+    25: sublime.KIND_ID_TYPE,  # TypeParameter
 }
 
 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#symbolKind
