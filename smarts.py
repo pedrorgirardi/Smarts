@@ -1089,7 +1089,7 @@ def view_text_document_item(view: sublime.View) -> smarts_client.LSPTextDocument
     """
     return {
         "uri": view_file_name_uri(view),
-        "languageId": syntax_languageId(view_syntax(view)),
+        "languageId": view_languageId(view),
         "version": view.change_count(),
         "text": view.substr(sublime.Region(0, view.size())),
     }
@@ -1635,32 +1635,61 @@ def completions(
     return completions
 
 
-def syntax_languageId(syntax: str):
-    """
-    Args:
-        syntax:
+# Language identifier of syntaxes whose scope doesn't tell it; See `view_languageId`.
+kSYNTAX_LANGUAGE_ID = {
+    "Packages/Clojure/Clojure.sublime-syntax": "clojure",
+    "Packages/Clojure/ClojureScript.sublime-syntax": "clojure",
+    "Packages/Tutkain/EDN (Tutkain).sublime-syntax": "clojure",
+    "Packages/Tutkain/Clojure (Tutkain).sublime-syntax": "clojure",
+    "Packages/Tutkain/ClojureScript (Tutkain).sublime-syntax": "clojure",
+    "Packages/Tutkain/Clojure Common (Tutkain).sublime-syntax": "clojure",
+    "Packages/Clojure Sublimed/Clojure (Sublimed).sublime-syntax": "clojure",
+}
 
-    Returns:
-        the text document's language identifier.
+# Language identifier of scopes whose name isn't the identifier.
+kSCOPE_LANGUAGE_ID = {
+    "source.js": "javascript",
+    "source.jsx": "javascriptreact",
+    "source.ts": "typescript",
+    "source.tsx": "typescriptreact",
+    "source.c++": "cpp",
+    "source.cs": "csharp",
+    "source.objc": "objective-c",
+    "source.objc++": "objective-cpp",
+    "source.shell.bash": "shellscript",
+    "text.html.basic": "html",
+    "text.html.markdown": "markdown",
+    "text.tex.latex": "latex",
+}
+
+
+def scope_languageId(scope: str) -> str:
+    """
+    Returns the language identifier for the scope of a syntax.
+
+    Most scopes are named after the language - e.g. "source.python" is "python".
+    """
+    if language_id := kSCOPE_LANGUAGE_ID.get(scope):
+        return language_id
+
+    names = scope.split(".")
+
+    return names[1] if len(names) > 1 else ""
+
+
+def view_languageId(view: sublime.View) -> str:
+    """
+    Returns the text document's language identifier.
 
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentItem
     """
-    if syntax == "Packages/Python/Python.sublime-syntax":
-        return "python"
-    elif syntax in {
-        "Packages/Clojure/Clojure.sublime-syntax",
-        "Packages/Clojure/ClojureScript.sublime-syntax",
-        "Packages/Tutkain/EDN (Tutkain).sublime-syntax",
-        "Packages/Tutkain/Clojure (Tutkain).sublime-syntax",
-        "Packages/Tutkain/ClojureScript (Tutkain).sublime-syntax",
-        "Packages/Tutkain/Clojure Common (Tutkain).sublime-syntax",
-        "Packages/Clojure Sublimed/Clojure (Sublimed).sublime-syntax",
-    }:
-        return "clojure"
-    elif syntax == "Packages/Go/Go.sublime-syntax":
-        return "go"
-    else:
-        return ""
+    if language_id := kSYNTAX_LANGUAGE_ID.get(view_syntax(view)):
+        return language_id
+
+    if syntax := view.syntax():
+        return scope_languageId(syntax.scope)
+
+    return ""
 
 
 def handle_logTrace(
