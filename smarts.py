@@ -1164,25 +1164,11 @@ def document_resync(view: sublime.View):
     Re-synchronize a view with all applicable servers after a reload/revert.
 
     External file modifications do not produce the incremental edit stream used
-    while typing, so incremental-sync servers need an explicit reset.
+    while typing, so servers are sent the full text - which is a valid change
+    for servers which sync incrementally too: a change without a range is
+    the full content of the document.
     """
     for smart in applicable_smarts(view, method="textDocument/didChange"):
-        textDocumentSync = smart.client.text_document_sync()
-
-        if textDocumentSync["change"] == 1:
-            document_did_change_full(view, smart)
-            continue
-
-        if textDocumentSync["openClose"]:
-            smart.client.textDocument_didClose({
-                "textDocument": view_textDocumentIdentifier(view),
-            })
-            smart.client.textDocument_didOpen({
-                "textDocument": view_text_document_item(view),
-            })
-            continue
-
-        # Best effort fallback for incremental sync without open/close support.
         document_did_change_full(view, smart)
 
 
