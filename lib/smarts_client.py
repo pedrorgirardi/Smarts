@@ -1047,6 +1047,11 @@ class LanguageServerClient:
 
         return False
 
+    def is_document_open(self, uri: str) -> bool:
+        """Returns True if the server was notified that the document is open."""
+        with self._lock:
+            return uri in self._open_documents
+
     def _clear_callbacks(self):
         """Drop all pending request callbacks (must be called with lock held).
 

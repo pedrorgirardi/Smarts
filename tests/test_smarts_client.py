@@ -629,11 +629,18 @@ class TestOpenDocuments(unittest.TestCase):
         client.textDocument_didChange(open_params)  # type: ignore
         client.textDocument_didClose(open_params)
 
+        self.assertFalse(client.is_document_open("file:///a.py"))
+
         client.textDocument_didOpen(open_params)  # type: ignore
         client.textDocument_didOpen(open_params)  # type: ignore
+
+        self.assertTrue(client.is_document_open("file:///a.py"))
+
         client.textDocument_didChange(open_params)  # type: ignore
         client.textDocument_didClose(open_params)
         client.textDocument_didClose(open_params)
+
+        self.assertFalse(client.is_document_open("file:///a.py"))
 
         self.assertEqual(
             self.methods(client),

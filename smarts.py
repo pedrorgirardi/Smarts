@@ -1054,6 +1054,21 @@ def view_text_document_item(view: sublime.View) -> smarts_client.LSPTextDocument
     }
 
 
+def document_open(view: sublime.View):
+    """
+    Notify applicable servers that the document of `view` is open -
+    unless they were notified already.
+    """
+    uri = view_file_name_uri(view)
+
+    for smart in applicable_smarts(view, method="textDocument/didOpen"):
+        # Checked first: the text of the document isn't read for nothing.
+        if not smart.client.is_document_open(uri):
+            smart.client.textDocument_didOpen({
+                "textDocument": view_text_document_item(view),
+            })
+
+
 def document_did_change_full(
     view: sublime.View,
     smart: PgSmart,
@@ -2954,10 +2969,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 self.view.run_command("pg_smarts_show_hover", {"position": point})
 
     def on_load_async(self):
-        for smart in applicable_smarts(self.view, method="textDocument/didOpen"):
-            smart.client.textDocument_didOpen({
-                "textDocument": view_text_document_item(self.view),
-            })
+        document_open(self.view)
 
         # Present diagnostics published before the document was open.
         if (window := self.view.window()) and (file_name := self.view.file_name()):
@@ -2965,6 +2977,11 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                 sublime.set_timeout(
                     lambda: schedule_present_diagnostics(window, file_name), 0
                 )
+
+    def on_post_save_async(self):
+        # A new file is not open until it's saved: only then it has a name -
+        # and there's no 'load' for a file which was created in the editor.
+        document_open(self.view)
 
     def on_pre_save_async(self):
         window = self.view.window()
