@@ -3,6 +3,24 @@ import re
 from collections.abc import Callable
 
 
+# List item per list tag: `<marker> <content>`
+#   ul: dash, asterisk, or plus
+#   ol: a number followed by a dot or a parenthesis
+_LIST_ITEM = {
+    "ul": re.compile(r"^[-*+]\s+(.+)$"),
+    "ol": re.compile(r"^\d+[.)]\s+(.+)$"),
+}
+
+
+def _list_tag(line: str) -> str | None:
+    """Returns the tag of the list `line` is an item of - 'ul', 'ol' - or None."""
+    for tag, item in _LIST_ITEM.items():
+        if item.match(line):
+            return tag
+
+    return None
+
+
 def markdown_to_html(
     text: str,
     *,
@@ -17,6 +35,7 @@ def markdown_to_html(
     - Bold **text** → <strong>
     - Italic *text* → <em>
     - Headers # → <h1>, ## → <h2>, etc.
+    - Lists: unordered (-, *, +) → <ul>, ordered (1.) → <ol>
     - Paragraphs
     """
     lines = text.split("\n")
@@ -65,17 +84,14 @@ def markdown_to_html(
             i += 1
             continue
 
-        # Unordered list: ^[-*+]\s+(.+)$
-        #   [-*+]  - dash, asterisk, or plus (list marker)
-        #   \s+    - one or more spaces
-        #   (.+)$  - rest of line (capture: item content)
-        list_match = re.match(r"^[-*+]\s+(.+)$", line)
-        if list_match:
+        # List - unordered or ordered; See _LIST_ITEM.
+        list_tag = _list_tag(line)
+        if list_tag:
             list_items = []
             current_item_lines = []
             while i < len(lines):
                 current = lines[i]
-                item_match = re.match(r"^[-*+]\s+(.+)$", current)
+                item_match = _LIST_ITEM[list_tag].match(current)
                 if item_match:
                     # Save previous item if any
                     if current_item_lines:
@@ -93,6 +109,9 @@ def markdown_to_html(
                 elif current.startswith("```"):
                     # Code block ends the list
                     break
+                elif _list_tag(current):
+                    # An item of the other kind of list ends the list
+                    break
                 else:
                     # Continuation line - append to current item
                     current_item_lines.append(current)
@@ -101,7 +120,7 @@ def markdown_to_html(
             if current_item_lines:
                 item_text = " ".join(current_item_lines)
                 list_items.append(f"<li>{_process_inline(item_text)}</li>")
-            result.append(f"<ul>{''.join(list_items)}</ul>")
+            result.append(f"<{list_tag}>{''.join(list_items)}</{list_tag}>")
             continue
 
         # Paragraph: collect consecutive non-empty, non-special lines
@@ -116,7 +135,7 @@ def markdown_to_html(
                 break
             if re.match(r"^(-{3,}|\*{3,}|_{3,})$", current.strip()):
                 break
-            if re.match(r"^[-*+]\s+", current):
+            if _list_tag(current):
                 break
             para_lines.append(current)
             i += 1
@@ -152,8 +171,18 @@ def _process_inline(text: str) -> str:
     #   `        - opening backtick
     #   ([^`]+)  - one or more non-backtick characters (capture: code)
     #   `        - closing backtick
-    # Must be before other patterns to avoid conflicts.
-    text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
+    #
+    # Code is literal: it's set aside - replaced by a placeholder - so the
+    # patterns below never apply to it (e.g. `__init__` is not bold), and
+    # it's put back at the end.
+    codes: list[str] = []
+
+    def set_code_aside(match: re.Match) -> str:
+        codes.append(match.group(1))
+
+        return f"\x00{len(codes) - 1}\x00"
+
+    text = re.sub(r"`([^`]+)`", set_code_aside, text)
 
     # Links: \[([^\]]+)\]\(([^)]+)\)
     #   \[([^\]]+)\]  - [text] (capture: link text)
@@ -177,5 +206,12 @@ def _process_inline(text: str) -> str:
     # Handle markdown escape sequences.
     text = text.replace(r"\_", "_")
     text = text.replace(r"\*", "*")
+
+    # Put inline code back.
+    text = re.sub(
+        r"\x00(\d+)\x00",
+        lambda match: f"<code>{codes[int(match.group(1))]}</code>",
+        text,
+    )
 
     return text

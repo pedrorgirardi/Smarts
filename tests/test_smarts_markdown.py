@@ -36,6 +36,14 @@ class TestInlineCode(unittest.TestCase):
         html = markdown_to_html(md, code_block_renderer=lambda block: block)
         self.assertIn("<code>&lt;tag&gt;</code>", html)
 
+    def test_inline_code_is_literal(self):
+        md = "Call `__init__`, `a*b*c` and `_x_` - **really**"
+        html = markdown_to_html(md, code_block_renderer=lambda block: block)
+        self.assertIn("<code>__init__</code>", html)
+        self.assertIn("<code>a*b*c</code>", html)
+        self.assertIn("<code>_x_</code>", html)
+        self.assertIn("<strong>really</strong>", html)
+
 
 class TestLinks(unittest.TestCase):
     def test_link(self):
@@ -118,6 +126,22 @@ class TestHorizontalRule(unittest.TestCase):
 
 
 class TestLists(unittest.TestCase):
+    def test_ordered_list(self):
+        md = "1. item 1\n2. item 2"
+        html = markdown_to_html(md, code_block_renderer=lambda block: block)
+        self.assertIn("<ol><li>item 1</li><li>item 2</li></ol>", html)
+
+    def test_ordered_list_after_unordered_list(self):
+        md = "- a\n1. b"
+        html = markdown_to_html(md, code_block_renderer=lambda block: block)
+        self.assertIn("<ul><li>a</li></ul>", html)
+        self.assertIn("<ol><li>b</li></ol>", html)
+
+    def test_number_in_paragraph_is_not_a_list(self):
+        md = "Python 3.14 is out"
+        html = markdown_to_html(md, code_block_renderer=lambda block: block)
+        self.assertIn("<p>Python 3.14 is out</p>", html)
+
     def test_unordered_list_dash(self):
         md = "- item 1\n- item 2"
         html = markdown_to_html(md, code_block_renderer=lambda block: block)
