@@ -65,8 +65,9 @@ The `applicable_to` field determines which file syntaxes trigger a server. The `
 
 1. **Plugin load** (`plugin_loaded`): Initializes loggers and auto-starts servers defined in project
 2. **Initialization** (`initialize_project_smarts`): Creates `LanguageServerClient` instances based on project config
-3. **Runtime**: Event listeners (`on_activated`, `on_modified`) send LSP notifications (`textDocument/didOpen`, `didChange`)
+3. **Runtime**: Event listeners send LSP notifications: `on_load_async` and `on_post_save_async` (`didOpen`, `didSave`), `on_text_changed_async` (`didChange`), `on_pre_close` (`didClose`)
 4. **Shutdown**: Sends LSP `shutdown` request, then `exit` notification, terminates subprocess
+5. **Failure**: If a server fails (crash, I/O error, rejected or timed out initialization), the client answers pending requests with an error (`CLIENT_ERROR`) and calls `on_failure`; the plugin (`handle_failure`) removes the Smart and its diagnostics. A client is initialized once - to retry, create a new one
 
 ### Communication Flow
 
@@ -100,22 +101,23 @@ Callbacks invoked (e.g., update diagnostics UI)
 ### Type Checking
 
 - Configured via pyrightconfig.json
-- Only checks smarts.py (not smarts_client.py)
+- Checks `smarts.py`, `lib/` and `tests/`
 - Uses the typed Sublime API modules shipped with the local app bundle at `/Applications/Sublime Text.app/Contents/MacOS/Lib/python314`
 - Run: `pyright` (if installed)
 
 ### Testing
 
-- Tests are in `tests/` directory using pytest
+- Tests are in `tests/` directory using unittest
+- `test_smarts_client.py` runs the client against fake servers - Python scripts sharing `FAKE_SERVER_IO`
+- `test_smarts.py` tests plugin functions which don't need an editor; `fake_sublime.py` fakes Sublime's API so `smarts.py` can be imported
 - Run tests: `bin/test`
 - Run with verbose output: `bin/test -v`
 - Run specific tests: `bin/test -k <pattern>`
 
 ### Logging
 
-Two separate loggers with configurable levels (in Smarts.sublime-settings):
-- `logger.plugin.level` - Plugin-level events (default: INFO)
-- `logger.client.level` - LSP client communication (default: INFO)
+One logger, used by the plugin and its clients, with a configurable level (in Smarts.sublime-settings):
+- `logger.plugin.level` (default: INFO)
 
 View logs in Sublime Text console (View → Show Console).
 
