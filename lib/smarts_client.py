@@ -1053,7 +1053,8 @@ class LanguageServerClient:
 
     def support_method(self, method: str) -> bool | None:
         """Returns True if the server supports `method` - None if not initialized."""
-        if not self._server_capabilities:
+        # (A server without any capability has capabilities - an empty dict.)
+        if self._server_capabilities is None:
             return None
 
         if method in ("textDocument/didOpen", "textDocument/didClose"):
@@ -1063,7 +1064,10 @@ class LanguageServerClient:
             return self._text_document_sync["change"] != 0
 
         if method == "textDocument/didSave":
-            return bool(self._text_document_sync["save"])
+            save = self._text_document_sync["save"]
+
+            # SaveOptions - even if empty - mean the server wants the notification.
+            return save is True or isinstance(save, dict)
 
         if capability := METHOD_CAPABILITY.get(method):
             return bool(self._server_capabilities.get(capability))

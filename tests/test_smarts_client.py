@@ -738,6 +738,17 @@ class TestCapabilities(unittest.TestCase):
 
         self.assertFalse(client.support_method("textDocument/didSave"))
 
+        # Empty SaveOptions: save notifications, without the text.
+        client._text_document_sync = textDocumentSyncOptions({"save": {}})
+
+        self.assertTrue(client.support_method("textDocument/didSave"))
+
+    def test_server_without_capabilities_is_initialized(self):
+        client = initialized_client()
+        client._server_capabilities = {}
+
+        self.assertIs(client.support_method("textDocument/hover"), False)
+
     def test_capabilities_of_the_server_are_kept(self):
         client = fake_client(
             r"""
