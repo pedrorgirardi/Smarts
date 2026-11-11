@@ -48,15 +48,22 @@ class Record:
 
 class FakeModule(types.ModuleType):
     """
-    A module which has every attribute: constants - upper case names - are 0,
-    so flags can be combined, and anything else is a class.
+    A module which has every attribute: constants - upper case names - are
+    distinct flags, so they can be combined and told apart, and anything else
+    is a class.
     """
 
     def __getattr__(self, name: str):
         if name.startswith("__"):
             raise AttributeError(name)
 
-        value = 0 if name.isupper() else type(name, (Record,), {"NONE": 0})
+        if name.isupper():
+            constants = self.__dict__.setdefault("_constants", [])
+            constants.append(name)
+
+            value = 1 << len(constants)
+        else:
+            value = type(name, (Record,), {"NONE": 0})
 
         setattr(self, name, value)
 

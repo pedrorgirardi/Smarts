@@ -252,6 +252,21 @@ class TestCompletions(unittest.TestCase):
     def test_every_completion_item_kind_is_known(self):
         self.assertEqual(list(smarts.kCOMPLETION_ITEM_KIND), list(range(1, 26)))
 
+    def test_completion_item_kinds(self):
+        sublime = smarts.sublime
+
+        self.assertNotEqual(sublime.KIND_ID_FUNCTION, sublime.KIND_ID_KEYWORD)
+
+        kinds = smarts.kCOMPLETION_ITEM_KIND
+
+        self.assertEqual(kinds[2], sublime.KIND_ID_FUNCTION)  # Method
+        self.assertEqual(kinds[6], sublime.KIND_ID_VARIABLE)  # Variable
+        self.assertEqual(kinds[7], sublime.KIND_ID_TYPE)  # Class
+        self.assertEqual(kinds[9], sublime.KIND_ID_NAMESPACE)  # Module
+        self.assertEqual(kinds[14], sublime.KIND_ID_KEYWORD)  # Keyword
+        self.assertEqual(kinds[15], sublime.KIND_ID_SNIPPET)  # Snippet
+        self.assertEqual(kinds[21], sublime.KIND_ID_VARIABLE)  # Constant
+
     def test_completions(self):
         items = smarts.completions(
             [
@@ -281,6 +296,16 @@ class TestCompletions(unittest.TestCase):
                 ("a", "a", "", ""),
                 ("b", "b()", "def b()", "Docs"),
                 ("c", "c", "", "Text"),
+            ],
+        )
+
+        # The kind of the item; Unknown kinds are ambiguous.
+        self.assertEqual(
+            [item.kwargs["kind"][0] for item in items],
+            [
+                smarts.sublime.KIND_ID_AMBIGUOUS,
+                smarts.sublime.KIND_ID_FUNCTION,
+                smarts.sublime.KIND_ID_AMBIGUOUS,
             ],
         )
 
