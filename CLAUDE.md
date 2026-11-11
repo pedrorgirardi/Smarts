@@ -65,7 +65,7 @@ The `applicable_to` field determines which file syntaxes trigger a server. The `
 
 1. **Plugin load** (`plugin_loaded`): Initializes loggers and auto-starts servers defined in project
 2. **Initialization** (`initialize_project_smarts`): Creates `LanguageServerClient` instances based on project config
-3. **Runtime**: Event listeners send LSP notifications: `on_load_async` and `on_post_save_async` (`didOpen`, `didSave`), `on_text_changed_async` (`didChange`), `on_pre_close` (`didClose`)
+3. **Runtime**: Event listeners send LSP notifications: `on_load` and `on_post_save` (`didOpen`, `didSave`), `on_text_changed` (`didChange`), `on_pre_close` (`didClose`). They're synchronous - on the main thread - so servers are told about a change before any request which depends on it
 4. **Shutdown**: Sends LSP `shutdown` request, then `exit` notification, terminates subprocess
 5. **Failure**: If a server fails (crash, I/O error, rejected or timed out initialization), the client answers pending requests with an error (`CLIENT_ERROR`) and calls `on_failure`; the plugin (`handle_failure`) removes the Smart and its diagnostics. A client is initialized once - to retry, create a new one
 

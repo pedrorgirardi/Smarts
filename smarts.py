@@ -2934,7 +2934,14 @@ class PgSmartsRenameCommand(sublime_plugin.TextCommand):
 
 
 class PgSmartsTextListener(sublime_plugin.TextChangeListener):
-    def on_text_changed_async(self, changes):
+    # Documents are synchronized on the main thread - not asynchronously - so
+    # servers are told about a change, in order, before anything which depends
+    # on it: the next change, or a request for the changed document.
+    #
+    # It also makes every notification consistent: the text, or the changes,
+    # and the version are read with no edit in between.
+
+    def on_text_changed(self, changes):
         buffer = self.buffer
 
         if not buffer:
@@ -3035,11 +3042,11 @@ class PgSmartsTextListener(sublime_plugin.TextChangeListener):
 
             language_client.textDocument_didChange(params)
 
-    def on_reload_async(self):
+    def on_reload(self):
         if self.buffer and (view := self.buffer.primary_view()):
             document_resync(view)
 
-    def on_revert_async(self):
+    def on_revert(self):
         if self.buffer and (view := self.buffer.primary_view()):
             document_resync(view)
 
@@ -3055,7 +3062,9 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
             if hover_zone == sublime.HOVER_TEXT:
                 self.view.run_command("pg_smarts_show_hover", {"position": point})
 
-    def on_load_async(self):
+    # (Documents are opened on the main thread; See PgSmartsTextListener.)
+
+    def on_load(self):
         document_open(self.view)
 
         # Present diagnostics published before the document was open.
@@ -3065,7 +3074,7 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
                     lambda: schedule_present_diagnostics(window, file_name), 0
                 )
 
-    def on_post_save_async(self):
+    def on_post_save(self):
         # A new file is not open until it's saved: only then it has a name -
         # and there's no 'load' for a file which was created in the editor.
         document_open(self.view)
