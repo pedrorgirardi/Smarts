@@ -554,17 +554,6 @@ def view_syntax(view: sublime.View) -> str:
     return view.settings().get("syntax")
 
 
-def view_applicable(config: PgSmartsServerConfig, view: sublime.View) -> bool:
-    """
-    Returns True if view is applicable.
-
-    View is applicable if a file is associated and its syntax is contained in the `applicable_to` setting.
-    """
-    return view.file_name() is not None and view_syntax(view) in config.get(
-        "applicable_to", []
-    )
-
-
 def applicable_smarts(view: sublime.View, method: str) -> list[PgSmart]:
     """
     Returns Smarts applicable to `view`.
@@ -2099,15 +2088,15 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             if response.get("error"):
                 return
 
-            # Notify the server about 'open documents'.
-            # (Check if a view's syntax is valid for the server.)
-            for view in self.window.views():
-                if view_applicable(server_config, view):
-                    params: smarts_client.LSPDidOpenTextDocumentParams = {
-                        "textDocument": view_text_document_item(view),
-                    }
+            # Notify the server about open documents.
+            #
+            # On the main thread - this is a thread of the client: a document's
+            # text and version must be read together, with no edit in between.
+            def open_documents():
+                for view in self.window.views():
+                    document_open(view)
 
-                    client.textDocument_didOpen(params)
+            sublime.set_timeout(open_documents, 0)
 
         client.initialize(params, callback)
 
