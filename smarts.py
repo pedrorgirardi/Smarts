@@ -524,10 +524,20 @@ def initialize_project_smarts(window: sublime.Window):
     if project_data_ := smarts_project_data(window):
         # It's expected a list of server (dict) with 'name', and 'rootPath' optionally - 'rootPath' can be a relative.
         for initialize_data in project_data_.get("initialize", []):
+            name = initialize_data.get("name")
+
             rootPath = initialize_data.get("rootPath")
 
             if rootPath is None:
-                rootPath = window.folders()[0]
+                folders = window.folders()
+
+                if not folders:
+                    plugin_logger.error(
+                        f"Can't initialize {name}: no 'rootPath', and no open folder"
+                    )
+                    continue
+
+                rootPath = folders[0]
 
             rootPath = Path(rootPath)
 
@@ -536,10 +546,18 @@ def initialize_project_smarts(window: sublime.Window):
             if not rootPath.is_absolute() and project_path is not None:
                 rootPath = (project_path / rootPath).resolve()
 
+            # A relative path can't be made into the root URI.
+            if not rootPath.is_absolute():
+                plugin_logger.error(
+                    f"Can't initialize {name}: 'rootPath' {rootPath} is relative, "
+                    "and the window has no project path"
+                )
+                continue
+
             window.run_command(
                 "pg_smarts_initialize",
                 {
-                    "server": initialize_data.get("name"),
+                    "server": name,
                     "rootPath": rootPath.as_posix(),
                 },
             )
