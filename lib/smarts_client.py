@@ -1074,7 +1074,7 @@ class LanguageServerClient:
     def _fail(
         self,
         reason: str,
-        expected_status: LanguageServerStatus | None = None,
+        expected: LanguageServerStatus | None = None,
     ):
         """Transition to FAILED - unless already SHUTDOWN or FAILED.
 
@@ -1083,7 +1083,7 @@ class LanguageServerClient:
         the server process is killed if it's still running - e.g. hung, or
         rejected initialization - and `on_failure` is called.
 
-        expected_status: fail only if the server is in this status - compared
+        expected: fail only if the server is in this status - compared
         atomically with the transition.
 
         Must not be called with the lock held: callbacks are called.
@@ -1095,7 +1095,7 @@ class LanguageServerClient:
             ):
                 return
 
-            if expected_status is not None and self._server_status != expected_status:
+            if expected is not None and self._server_status != expected:
                 return
 
             self._logger.error(reason)
@@ -1562,7 +1562,7 @@ class LanguageServerClient:
             # error - which reaches `callback` via `_callback`.
             self._fail(
                 f"Server initialization timed out after {timeout}s",
-                expected_status=LanguageServerStatus.INITIALIZING,
+                expected=LanguageServerStatus.INITIALIZING,
             )
 
         # Start timeout timer
