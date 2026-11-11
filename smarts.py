@@ -2985,6 +2985,12 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         _LAST_MODIFIED.pop(self.view.id(), None)
 
+        # Views of the same buffer - clones - show the same document:
+        # it's closed when its last view is closed.
+        if buffer := self.view.buffer():
+            if any(view.id() != self.view.id() for view in buffer.views()):
+                return
+
         for smart in applicable_smarts(self.view, method="textDocument/didClose"):
             smart.client.textDocument_didClose({
                 "textDocument": view_textDocumentIdentifier(self.view),
