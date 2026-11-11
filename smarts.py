@@ -2766,17 +2766,28 @@ def text_edits_applier(
 ) -> Callable[[smarts_client.LSPFormattingResult], None]:
     """
     Returns a formatting result callback which applies the edits to `view`.
+
+    Edits are dropped if the document changed since this function was called -
+    i.e. since the request: their ranges refer to a document which no longer
+    exists, and applying them would corrupt the text.
     """
+    change_count = view.change_count()
 
     def on_result(result: smarts_client.LSPFormattingResult):
-        if result:
-            view.run_command(
-                "pg_smarts_apply_edits",
-                {
-                    "position_encoding": position_encoding,
-                    "edits": result,
-                },
-            )
+        if not result:
+            return
+
+        if view.change_count() != change_count:
+            plugin_logger.debug("Document changed; Will drop formatting edits")
+            return
+
+        view.run_command(
+            "pg_smarts_apply_edits",
+            {
+                "position_encoding": position_encoding,
+                "edits": result,
+            },
+        )
 
     return on_result
 
