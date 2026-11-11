@@ -340,6 +340,18 @@ class LSPDidCloseTextDocumentParams(TypedDict):
     textDocument: LSPTextDocumentIdentifier
 
 
+class LSPDidSaveTextDocumentParams(TypedDict):
+    """
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#didSaveTextDocumentParams
+    """
+
+    textDocument: LSPTextDocumentIdentifier
+
+    # Optional the content when saved.
+    # Depends on the includeText value when the save notification was requested.
+    text: NotRequired[str]
+
+
 class LSPDocumentFormattingParams(TypedDict):
     """
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#documentFormattingParams
@@ -835,9 +847,12 @@ def textDocumentSyncOptions(
 ) -> dict[str, Any]:
     """
     Normalize the server's `textDocumentSync` capability - a kind, options, or
-    nothing - into options which always have `openClose` and `change`.
+    nothing - into options which always have `openClose`, `change` and `save`.
 
     `change` is a TextDocumentSyncKind: 0 = None, 1 = Full, 2 = Incremental.
+
+    `save` is a boolean, or SaveOptions - `includeText` tells whether the
+    server wants the text of the document when it's saved.
 
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentSyncOptions
     """
@@ -845,18 +860,23 @@ def textDocumentSyncOptions(
         return {
             "openClose": False,
             "change": 0,
+            "save": False,
         }
 
     elif isinstance(textDocumentSync, int):
         return {
             "openClose": textDocumentSync != 0,
             "change": textDocumentSync,
+            # A kind doesn't say anything about save; Like other clients,
+            # save notifications are sent if documents are synchronized at all.
+            "save": textDocumentSync != 0,
         }
 
     else:
         return {
             "openClose": False,
             "change": 0,
+            "save": False,
             **textDocumentSync,
         }
 
@@ -1041,6 +1061,9 @@ class LanguageServerClient:
 
         if method == "textDocument/didChange":
             return self._text_document_sync["change"] != 0
+
+        if method == "textDocument/didSave":
+            return bool(self._text_document_sync["save"])
 
         if capability := METHOD_CAPABILITY.get(method):
             return bool(self._server_capabilities.get(capability))
@@ -1867,6 +1890,21 @@ class LanguageServerClient:
                 return
 
         self._put(notification("textDocument/didChange", params))
+
+    def textDocument_didSave(self, params: LSPDidSaveTextDocumentParams):
+        """
+        The document save notification is sent from the client to the server
+        when the document was saved in the client.
+
+        https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didSave
+        """
+
+        # Only an open document is owned by the client.
+        with self._lock:
+            if params["textDocument"]["uri"] not in self._open_documents:
+                return
+
+        self._put(notification("textDocument/didSave", params))
 
     def textDocument_hover(
         self,

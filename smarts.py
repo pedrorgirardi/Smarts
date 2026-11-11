@@ -1069,6 +1069,29 @@ def document_open(view: sublime.View):
             })
 
 
+def document_did_save(view: sublime.View):
+    """
+    Notify applicable servers that the document of `view` was saved.
+    """
+    text: str | None = None
+
+    for smart in applicable_smarts(view, method="textDocument/didSave"):
+        params: smarts_client.LSPDidSaveTextDocumentParams = {
+            "textDocument": view_textDocumentIdentifier(view),
+        }
+
+        save = smart.client.text_document_sync()["save"]
+
+        # The text is included only if the server asked for it.
+        if isinstance(save, dict) and save.get("includeText"):
+            if text is None:
+                text = view.substr(sublime.Region(0, view.size()))
+
+            params["text"] = text
+
+        smart.client.textDocument_didSave(params)
+
+
 def document_did_change_full(
     view: sublime.View,
     smart: PgSmart,
@@ -1993,6 +2016,8 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
                     "synchronization": {
                         # Whether text document synchronization supports dynamic registration.
                         "dynamicRegistration": False,
+                        # Save notifications are sent to the server.
+                        "didSave": True,
                         # Open and close notifications are sent to the server.
                         "openClose": True,
                         # Documents are synced by always sending the full content of the document.
@@ -2982,6 +3007,8 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         # A new file is not open until it's saved: only then it has a name -
         # and there's no 'load' for a file which was created in the editor.
         document_open(self.view)
+
+        document_did_save(self.view)
 
     def on_pre_save_async(self):
         window = self.view.window()

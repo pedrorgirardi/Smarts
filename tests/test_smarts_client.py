@@ -625,8 +625,9 @@ class TestOpenDocuments(unittest.TestCase):
 
         open_params = {"textDocument": {"uri": "file:///a.py"}}
 
-        # Change and close need a previous open.
+        # Change, save and close need a previous open.
         client.textDocument_didChange(open_params)  # type: ignore
+        client.textDocument_didSave(open_params)  # type: ignore
         client.textDocument_didClose(open_params)
 
         self.assertFalse(client.is_document_open("file:///a.py"))
@@ -637,6 +638,7 @@ class TestOpenDocuments(unittest.TestCase):
         self.assertTrue(client.is_document_open("file:///a.py"))
 
         client.textDocument_didChange(open_params)  # type: ignore
+        client.textDocument_didSave(open_params)  # type: ignore
         client.textDocument_didClose(open_params)
         client.textDocument_didClose(open_params)
 
@@ -647,6 +649,7 @@ class TestOpenDocuments(unittest.TestCase):
             [
                 "textDocument/didOpen",
                 "textDocument/didChange",
+                "textDocument/didSave",
                 "textDocument/didClose",
             ],
         )
@@ -672,12 +675,21 @@ class TestOpenDocuments(unittest.TestCase):
 class TestCapabilities(unittest.TestCase):
     def test_text_document_sync_options(self):
         self.assertEqual(
-            textDocumentSyncOptions(None), {"openClose": False, "change": 0}
+            textDocumentSyncOptions(None),
+            {"openClose": False, "change": 0, "save": False},
         )
-        self.assertEqual(textDocumentSyncOptions(2), {"openClose": True, "change": 2})
+        self.assertEqual(
+            textDocumentSyncOptions(2),
+            {"openClose": True, "change": 2, "save": True},
+        )
         # Missing options get defaults.
         self.assertEqual(
-            textDocumentSyncOptions({"change": 1}), {"openClose": False, "change": 1}
+            textDocumentSyncOptions({"change": 1}),
+            {"openClose": False, "change": 1, "save": False},
+        )
+        self.assertEqual(
+            textDocumentSyncOptions({"save": {"includeText": True}}),
+            {"openClose": False, "change": 0, "save": {"includeText": True}},
         )
 
     def test_support_method(self):
@@ -693,6 +705,11 @@ class TestCapabilities(unittest.TestCase):
         self.assertFalse(client.support_method("unknown/method"))
         self.assertTrue(client.support_method("textDocument/didOpen"))
         self.assertTrue(client.support_method("textDocument/didChange"))
+        self.assertTrue(client.support_method("textDocument/didSave"))
+
+        client._text_document_sync = textDocumentSyncOptions({"openClose": True})
+
+        self.assertFalse(client.support_method("textDocument/didSave"))
 
 
 if __name__ == "__main__":
