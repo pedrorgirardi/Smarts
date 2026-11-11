@@ -2736,6 +2736,30 @@ def view_formatting_options(view: sublime.View) -> smarts_client.LSPFormattingOp
     }
 
 
+def text_edits_application_order(
+    edits: list[smarts_client.LSPTextEdit],
+) -> list[smarts_client.LSPTextEdit]:
+    """
+    Returns `edits` in the order to apply them, one by one.
+
+    All ranges refer to the document before any edit, so edits are applied
+    from the end of the document to its start: an edit never moves the
+    range of the ones still to apply.
+
+    Inserts at the same position are applied last to first: each one is
+    inserted before the previous, so their text ends up in the order of `edits`.
+    """
+    # The sort is stable - also if reversed - hence `edits` is reversed first.
+    return sorted(
+        reversed(edits),
+        key=lambda e: (
+            e["range"]["start"]["line"],
+            e["range"]["start"]["character"],
+        ),
+        reverse=True,
+    )
+
+
 def text_edits_applier(
     view: sublime.View,
     position_encoding: smarts_client.LSPPositionEncoding,
@@ -2813,17 +2837,7 @@ class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
 
 class PgSmartsApplyEditsCommand(sublime_plugin.TextCommand):
     def run(self, edit, edits, position_encoding):
-        # Sort edits by position (descending) so we apply from end to start to avoid offset issues.
-        sorted_edits = sorted(
-            edits,
-            key=lambda e: (
-                e["range"]["start"]["line"],
-                e["range"]["start"]["character"],
-            ),
-            reverse=True,
-        )
-
-        for e in sorted_edits:
+        for e in text_edits_application_order(edits):
             edit_region = range_region(self.view, position_encoding, e["range"])
             edit_new_text = e["newText"]
 
