@@ -2895,28 +2895,58 @@ class PgSmartsFormatSelectionCommand(sublime_plugin.TextCommand):
             return
 
         if region is None:
-            for r in self.view.sel():
-                if not r.empty():
-                    self.view.run_command(
-                        "pg_smarts_format_selection",
-                        {
-                            "region": [r.a, r.b],
-                        },
-                    )
+            regions = [r for r in self.view.sel() if not r.empty()]
+        else:
+            regions = [sublime.Region(region[0], region[1])]
+
+        # Regions are formatted one at a time, from the last to the first:
+        # the edits of a region change the text - so the next region is only
+        # requested once they're applied - but never move the regions before it.
+        regions = sorted(regions, key=lambda r: r.begin(), reverse=True)
+
+        self._format(smart, regions)
+
+    def _format(self, smart: PgSmart, regions: list[sublime.Region]):
+        """
+        Format the first of `regions`, then - once its edits are applied - the rest.
+        """
+        if not regions or not self.view.is_valid():
             return
 
+        view = self.view
         position_encoding = smart.position_encoding()
-
-        region = sublime.Region(region[0], region[1])
+        change_count = view.change_count()
 
         params = {
-            "textDocument": view_textDocumentIdentifier(self.view),
-            "range": region_range(self.view, position_encoding, region),
-            "options": view_formatting_options(self.view),
+            "textDocument": view_textDocumentIdentifier(view),
+            "range": region_range(view, position_encoding, regions[0]),
+            "options": view_formatting_options(view),
         }
 
-        on_result = text_edits_applier(self.view, position_encoding)
-        on_error = panel_error_logger(self.view)
+        def apply(result: smarts_client.LSPFormattingResult):
+            # The ranges of the edits, and the remaining regions, refer to
+            # a document which no longer exists.
+            if view.change_count() != change_count:
+                plugin_logger.debug("Document changed; Will drop formatting edits")
+                return
+
+            if result:
+                view.run_command(
+                    "pg_smarts_apply_edits",
+                    {
+                        "position_encoding": position_encoding,
+                        "edits": result,
+                    },
+                )
+
+            self._format(smart, regions[1:])
+
+        # Called on a thread of the client; Edits are applied on the main thread,
+        # where servers are told about the change before the next request.
+        def on_result(result: smarts_client.LSPFormattingResult):
+            sublime.set_timeout(lambda: apply(result), 0)
+
+        on_error = panel_error_logger(view)
 
         smart.client.textDocument_rangeFormatting(params, on_result, on_error)
 
