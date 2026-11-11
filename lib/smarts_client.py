@@ -1807,6 +1807,11 @@ class LanguageServerClient:
             if textDocument_uri in self._open_documents:
                 return
 
+            # The notification would be dropped (see _put) - and the document
+            # must not be considered open if the server was never told so.
+            if self._server_status != LanguageServerStatus.INITIALIZED:
+                return
+
             self._open_documents.add(textDocument_uri)
 
         self._put(notification("textDocument/didOpen", params))

@@ -616,6 +616,52 @@ class TestPut(unittest.TestCase):
         self.assertIs(client._request_callback[message["id"]], callback)
 
 
+class TestOpenDocuments(unittest.TestCase):
+    def methods(self, client) -> list[str]:
+        return [message["method"] for message in list(client._send_queue.queue)]
+
+    def test_open_and_close_are_balanced(self):
+        client = initialized_client()
+
+        open_params = {"textDocument": {"uri": "file:///a.py"}}
+
+        # Change and close need a previous open.
+        client.textDocument_didChange(open_params)  # type: ignore
+        client.textDocument_didClose(open_params)
+
+        client.textDocument_didOpen(open_params)  # type: ignore
+        client.textDocument_didOpen(open_params)  # type: ignore
+        client.textDocument_didChange(open_params)  # type: ignore
+        client.textDocument_didClose(open_params)
+        client.textDocument_didClose(open_params)
+
+        self.assertEqual(
+            self.methods(client),
+            [
+                "textDocument/didOpen",
+                "textDocument/didChange",
+                "textDocument/didClose",
+            ],
+        )
+
+    def test_document_is_not_open_if_server_is_not_initialized(self):
+        client = initialized_client()
+        client._server_status = LanguageServerStatus.INITIALIZING
+
+        open_params = {"textDocument": {"uri": "file:///a.py"}}
+
+        client.textDocument_didOpen(open_params)  # type: ignore
+
+        self.assertEqual(self.methods(client), [])
+
+        # Once initialized, the document can be opened.
+        client._server_status = LanguageServerStatus.INITIALIZED
+
+        client.textDocument_didOpen(open_params)  # type: ignore
+
+        self.assertEqual(self.methods(client), ["textDocument/didOpen"])
+
+
 class TestCapabilities(unittest.TestCase):
     def test_text_document_sync_options(self):
         self.assertEqual(
