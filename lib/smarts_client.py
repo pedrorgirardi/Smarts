@@ -1655,37 +1655,46 @@ class LanguageServerClient:
                 return
 
             with self._lock:
-                # A response which arrives after the timeout is ignored.
+                # The server failed - e.g. initialization timed out - or was shut
+                # down, while its response was on the way here.
+                #
+                # The response was taken from the pending requests already, so
+                # _fail didn't answer it: the caller is told here that the server
+                # is not initialized.
                 if self._server_status != LanguageServerStatus.INITIALIZING:
-                    return
+                    response = _failure_response("Server is no longer initializing")
 
-                self._server_status = LanguageServerStatus.INITIALIZED
+                else:
+                    self._server_status = LanguageServerStatus.INITIALIZED
 
-                initialization_elapsed_ms = (
-                    time.monotonic() - initialization_started_at
-                ) * 1000
-                self._logger.info(
-                    f"Server initialized in {initialization_elapsed_ms:.0f}ms"
-                )
-
-                if result := cast(LSPInitializeResult, response.get("result")):
-                    self._server_capabilities = result.get("capabilities")
-                    self._server_info = result.get("serverInfo")
-
-                    # Computed once: it's needed on every keystroke.
-                    self._text_document_sync = textDocumentSyncOptions(
-                        (self._server_capabilities or {}).get("textDocumentSync")
+                    initialization_elapsed_ms = (
+                        time.monotonic() - initialization_started_at
+                    ) * 1000
+                    self._logger.info(
+                        f"Server initialized in {initialization_elapsed_ms:.0f}ms"
                     )
 
-                # The initialized notification is sent from the client to the server
-                # after the client received the result of the initialize request
-                # but before the client is sending any other request or notification to the server.
-                #
-                # The server can use the initialized notification, for example, to dynamically register capabilities.
-                # The initialized notification may only be sent once.
-                #
-                # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialized
-                self._put(notification("initialized", {}))
+                    if result := cast(LSPInitializeResult, response.get("result")):
+                        self._server_capabilities = result.get("capabilities")
+                        self._server_info = result.get("serverInfo")
+
+                        # Computed once: it's needed on every keystroke.
+                        self._text_document_sync = textDocumentSyncOptions(
+                            (self._server_capabilities or {}).get("textDocumentSync")
+                        )
+
+                    # The initialized notification is sent from the client to the server
+                    # after the client received the result of the initialize request
+                    # but before the client is sending any other request or notification to the server.
+                    #
+                    # The server can use the initialized notification, for example, to dynamically register capabilities.
+                    # The initialized notification may only be sent once.
+                    #
+                    # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialized
+                    #
+                    # Enqueued with the lock held - which never blocks, see _put -
+                    # so it's sent before anything another thread sends.
+                    self._put(notification("initialized", {}))
 
             callback(response)
 
