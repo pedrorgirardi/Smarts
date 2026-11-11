@@ -997,6 +997,35 @@ def location_quick_panel_item(
     )
 
 
+def flatten_document_symbols(symbols: list, container: str | None = None) -> list:
+    """
+    Returns `symbols` and their descendants as a flat list, in document order.
+
+    DocumentSymbols are hierarchical - e.g. the methods of a class are its
+    `children`. Each descendant gets a `containerName`, the qualified name of
+    its parent, like a SymbolInformation - which is flat already - might have.
+    """
+    flat = []
+
+    for symbol in symbols:
+        if container and not symbol.get("containerName"):
+            symbol = {**symbol, "containerName": container}
+
+        flat.append(symbol)
+
+        if children := symbol.get("children"):
+            name = symbol["name"]
+
+            flat.extend(
+                flatten_document_symbols(
+                    children,
+                    container=f"{container}.{name}" if container else name,
+                )
+            )
+
+    return flat
+
+
 def document_symbol_quick_panel_item(data) -> sublime.QuickPanelItem:
     line = None
     character = None
@@ -2327,10 +2356,12 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
             # DocumentSymbol[] | SymbolInformation[] | null
             # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentSymbol
             if result:
+                symbols = flatten_document_symbols(result)
+
                 restore_view = capture_view(self.view)
 
                 def select_symbol(index, empty_region=False):
-                    data = result[index]
+                    data = symbols[index]
 
                     selected_range = None
 
@@ -2387,7 +2418,7 @@ class PgSmartsGotoDocumentSymbol(sublime_plugin.TextCommand):
                         select_symbol(index, empty_region=True)
 
                 quick_panel_items = [
-                    document_symbol_quick_panel_item(data) for data in result
+                    document_symbol_quick_panel_item(data) for data in symbols
                 ]
 
                 window = self.view.window()
