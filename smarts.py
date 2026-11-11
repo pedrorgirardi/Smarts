@@ -296,6 +296,12 @@ _DIAGNOSTICS_PENDING: dict[int, object] = {}
 # Written on the main thread; Entries are removed when the view is closed.
 _LAST_MODIFIED: dict[int, float] = {}
 
+# URI of the document of a buffer in a window, keyed by (window ID, buffer ID),
+# as of the last time servers were notified that it's open; See `document_open`.
+# Used to close the document when it's saved as another file.
+# Only accessed on the main thread; Entries are removed when the document is closed.
+_DOCUMENT_URI: dict[tuple[int, int], str] = {}
+
 # Syntax per code fence language, e.g. "python"; See `language_syntax`.
 _LANGUAGE_SYNTAX: dict[str, sublime.Syntax] = {}
 
@@ -1119,7 +1125,27 @@ def document_open(view: sublime.View):
     Notify applicable servers that the document of `view` is open -
     unless they were notified already.
     """
+    window = view.window()
+
+    if window is None or view.file_name() is None:
+        return
+
     uri = view_file_name_uri(view)
+
+    # The document was saved as another file: for servers it's another
+    # document, and the one they know is no longer open.
+    key = (window.id(), view.buffer_id())
+
+    previous_uri = _DOCUMENT_URI.get(key)
+
+    if previous_uri and previous_uri != uri:
+        for smart in window_initialized_smarts(window):
+            # (A no-op for servers which don't have the document open.)
+            smart.client.textDocument_didClose({
+                "textDocument": {"uri": previous_uri},
+            })
+
+    _DOCUMENT_URI[key] = uri
 
     for smart in applicable_smarts(view, method="textDocument/didOpen"):
         # Checked first: the text of the document isn't read for nothing.
@@ -3169,6 +3195,9 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         # (Servers are per window, and so are their open documents.)
         if view_clones(self.view):
             return
+
+        if window := self.view.window():
+            _DOCUMENT_URI.pop((window.id(), self.view.buffer_id()), None)
 
         for smart in applicable_smarts(self.view, method="textDocument/didClose"):
             smart.client.textDocument_didClose({
