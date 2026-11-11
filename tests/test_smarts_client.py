@@ -6,6 +6,7 @@ import time
 import unittest
 
 from smarts_client import (
+    CLIENT_ERROR,
     LanguageServerClient,
     LanguageServerStatus,
     notification,
@@ -199,6 +200,192 @@ class TestFailure(unittest.TestCase):
             wait_for(lambda: client._server_process.poll() is not None),
             "Failed server was not killed",
         )
+
+
+# A minimal language server: answers 'initialize', reads one more message
+# - which it never answers - and crashes.
+FAKE_SERVER_CRASH_ON_REQUEST = r"""
+import json, sys
+
+def read():
+    headers = {}
+    while (line := sys.stdin.buffer.readline().decode().strip()):
+        k, v = line.split(": ", 1)
+        headers[k] = v
+    return json.loads(sys.stdin.buffer.read(int(headers["Content-Length"])))
+
+initialize = read()
+content = json.dumps({"jsonrpc": "2.0", "id": initialize["id"], "result": {"capabilities": {}}})
+sys.stdout.buffer.write(f"Content-Length: {len(content)}\r\n\r\n{content}".encode())
+sys.stdout.buffer.flush()
+
+while read().get("method") != "textDocument/hover":
+    pass
+
+sys.exit(1)
+"""
+
+
+class TestFailureCallbacks(unittest.TestCase):
+    def test_crash_during_initialization_calls_callback(self):
+        failures = []
+
+        client = LanguageServerClient(
+            logger=logging.getLogger("test"),
+            name="Fake",
+            server_args=[sys.executable, "-c", "import sys; sys.exit(7)"],
+            on_failure=failures.append,
+        )
+
+        responses = []
+        responded = threading.Event()
+
+        def callback(response):
+            responses.append(response)
+            responded.set()
+
+        client.initialize({}, callback)
+
+        self.assertTrue(responded.wait(5), "Callback was not called")
+        self.assertTrue(client.is_server_failed())
+        self.assertEqual(len(responses), 1)
+        self.assertEqual(responses[0]["error"]["code"], CLIENT_ERROR)
+        self.assertTrue(wait_for(lambda: len(failures) == 1))
+
+    def test_initialization_timeout_calls_callback_once(self):
+        failures = []
+
+        # Never answers.
+        client = LanguageServerClient(
+            logger=logging.getLogger("test"),
+            name="Fake",
+            server_args=[sys.executable, "-c", "import time; time.sleep(60)"],
+            on_failure=failures.append,
+        )
+
+        responses = []
+        responded = threading.Event()
+
+        def callback(response):
+            responses.append(response)
+            responded.set()
+
+        client.initialize({}, callback, timeout=0.2)
+
+        self.assertTrue(responded.wait(5), "Callback was not called")
+        self.assertTrue(client.is_server_failed())
+        self.assertIn("timed out", responses[0]["error"]["message"])
+        self.assertTrue(
+            wait_for(lambda: client._server_process.poll() is not None),
+            "Hung server was not killed",
+        )
+
+        time.sleep(0.1)
+
+        self.assertEqual(len(responses), 1)
+        self.assertEqual(len(failures), 1)
+
+    def test_failure_to_start_calls_callbacks(self):
+        failures = []
+
+        client = LanguageServerClient(
+            logger=logging.getLogger("test"),
+            name="Fake",
+            server_args=["/nonexistent/language-server"],
+            on_failure=failures.append,
+        )
+
+        responses = []
+
+        client.initialize({}, responses.append)
+
+        self.assertTrue(client.is_server_failed())
+        self.assertEqual(responses[0]["error"]["code"], CLIENT_ERROR)
+        self.assertEqual(len(failures), 1)
+
+    def test_pending_requests_are_answered_when_server_crashes(self):
+        failures = []
+
+        client = LanguageServerClient(
+            logger=logging.getLogger("test"),
+            name="Fake",
+            server_args=[sys.executable, "-c", FAKE_SERVER_CRASH_ON_REQUEST],
+            on_failure=failures.append,
+        )
+
+        initialized = threading.Event()
+
+        client.initialize({}, lambda _: initialized.set())
+
+        self.assertTrue(initialized.wait(5))
+
+        results = []
+        errors = []
+        answered = threading.Event()
+
+        def on_error(error):
+            errors.append(error)
+            answered.set()
+
+        client.textDocument_hover({}, results.append, on_error)  # type: ignore
+
+        self.assertTrue(answered.wait(5), "Pending request was not answered")
+        self.assertEqual(results, [])
+        self.assertEqual(errors[0]["code"], CLIENT_ERROR)
+        self.assertTrue(wait_for(lambda: len(failures) == 1))
+
+    def test_shutdown_is_not_a_failure(self):
+        failures = []
+
+        client = LanguageServerClient(
+            logger=logging.getLogger("test"),
+            name="Fake",
+            server_args=[sys.executable, "-c", FAKE_SERVER_SHUTDOWN],
+            on_failure=failures.append,
+        )
+
+        initialized = threading.Event()
+
+        client.initialize({}, lambda _: initialized.set())
+
+        self.assertTrue(initialized.wait(5))
+
+        client.shutdown()
+
+        self.assertTrue(wait_for(client.is_server_shutdown), "Server didn't shutdown")
+        self.assertTrue(wait_for(lambda: client._server_process.poll() is not None))
+
+        time.sleep(0.1)
+
+        self.assertEqual(failures, [])
+
+
+# A minimal language server: answers 'initialize' and 'shutdown', exits on 'exit'.
+FAKE_SERVER_SHUTDOWN = r"""
+import json, sys
+
+def read():
+    headers = {}
+    while (line := sys.stdin.buffer.readline().decode().strip()):
+        k, v = line.split(": ", 1)
+        headers[k] = v
+    return json.loads(sys.stdin.buffer.read(int(headers["Content-Length"])))
+
+def write(message):
+    content = json.dumps(message)
+    sys.stdout.buffer.write(f"Content-Length: {len(content)}\r\n\r\n{content}".encode())
+    sys.stdout.buffer.flush()
+
+while True:
+    message = read()
+    method = message.get("method")
+    if method == "initialize":
+        write({"jsonrpc": "2.0", "id": message["id"], "result": {"capabilities": {}}})
+    elif method == "shutdown":
+        write({"jsonrpc": "2.0", "id": message["id"], "result": None})
+    elif method == "exit":
+        sys.exit(0)
+"""
 
 
 def initialized_client() -> LanguageServerClient:

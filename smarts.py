@@ -1838,6 +1838,27 @@ def handle_notification(
         panel_log(window, f"Unhandled Notification: {pprint.pformat(notification)}\n\n")
 
 
+def handle_failure(smart_uuid: str, reason: str):
+    """
+    Remove a Smart whose server failed - e.g. it crashed, or didn't initialize.
+
+    A failed server is unusable, and nothing it published is valid anymore:
+    removing the Smart also removes its diagnostics.
+
+    Must be called on the main thread.
+    """
+    smart = find_smart(smart_uuid)
+
+    # Removed already - e.g. the user shut it down.
+    if smart is None:
+        return
+
+    if window := find_window(smart.window):
+        panel_log(window, f"Error {smart.config['name']}: {reason}\n", show=True)
+
+    remove_smarts({smart_uuid})
+
+
 # -- INPUT HANDLERS
 
 
@@ -2016,6 +2037,10 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
                 self.window, "Receive", message
             ),
             on_notification=_on_receive_notification,
+            # Called on a thread of the client; Smarts are removed on the main thread.
+            on_failure=lambda reason: sublime.set_timeout(
+                lambda: handle_failure(smart_uuid, reason), 0
+            ),
         )
 
         with _SMARTS_LOCK:
@@ -2029,9 +2054,8 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             )
 
         def callback(response: smarts_client.LSPResponseMessage):
-            if error := response.get("error"):
-                if window := self.window:
-                    panel_log_error(window, error)
+            # A server which fails to initialize is handled by `handle_failure`.
+            if response.get("error"):
                 return
 
             # Notify the server about 'open documents'.
