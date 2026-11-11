@@ -2809,15 +2809,22 @@ def text_edits_application_order(
     Inserts at the same position are applied last to first: each one is
     inserted before the previous, so their text ends up in the order of `edits`.
     """
-    # The sort is stable - also if reversed - hence `edits` is reversed first.
-    return sorted(
-        reversed(edits),
+    # Sorted by position - the sort is stable, so inserts at the same position
+    # keep their order - and then reversed as a whole.
+    #
+    # (Not `sorted(..., reverse=True)`: it keeps the order of equal elements,
+    # so inserts at the same position wouldn't be reversed.)
+    ordered = sorted(
+        edits,
         key=lambda e: (
             e["range"]["start"]["line"],
             e["range"]["start"]["character"],
         ),
-        reverse=True,
     )
+
+    ordered.reverse()
+
+    return ordered
 
 
 def text_edits_applier(
