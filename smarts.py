@@ -3140,6 +3140,11 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         if smart is None:
             return
 
+        # A file being saved for the first time isn't open yet - it's opened
+        # once it's saved - and servers can't format a document they don't know.
+        if not smart.client.is_document_open(view_file_name_uri(self.view)):
+            return
+
         # Formatting must be done before the document is saved: this waits for
         # the edits - and blocks the UI meanwhile, hence the timeout - then
         # applies them. (Edits applied after the save would leave the file
