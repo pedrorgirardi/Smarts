@@ -2043,7 +2043,8 @@ class PgSmartsInitializeCommand(sublime_plugin.WindowCommand):
             "rootUri": rootUri,
             # The workspace folders configured in the client when the server starts.
             "workspaceFolders": workspaceFolders,
-            "trace": "verbose",
+            # Servers must not send $/logTrace notifications.
+            "trace": "off",
             "capabilities": {
                 "general": {
                     "positionEncodings": ["utf-16", "utf-8"],
