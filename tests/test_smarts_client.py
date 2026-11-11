@@ -601,6 +601,42 @@ class TestWriter(unittest.TestCase):
         finally:
             kill(client)
 
+    def test_write_error_fails_client(self):
+        failures = []
+
+        # Closes its stdin - nothing else can be written to it - but keeps running.
+        client = fake_client(
+            r"""
+import os
+
+initialize()
+
+os.close(0)
+
+time.sleep(60)
+""",
+            on_failure=failures.append,
+        )
+
+        initialize(client)
+
+        def put_and_check():
+            client._put(notification("test/a", {}))
+
+            return client.is_server_failed()
+
+        self.assertTrue(wait_for(put_and_check), "Write error was not detected")
+        self.assertTrue(
+            wait_for(lambda: not client._writer.is_alive()), "Writer didn't stop"
+        )
+        self.assertEqual(len(failures), 1)
+
+        # A server which can't be written to is killed.
+        self.assertTrue(
+            wait_for(lambda: client._server_process.poll() is not None),
+            "Failed server was not killed",
+        )
+
     def test_content_length_counts_bytes(self):
         echoed = []
 
