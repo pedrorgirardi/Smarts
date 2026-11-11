@@ -1396,12 +1396,9 @@ class LanguageServerClient:
         with self._lock:
             method = message["method"]
 
-            # WHY: Allow certain lifecycle methods through regardless of state:
+            # WHY: Allow lifecycle methods through even if not INITIALIZED:
             # - initialize: needed to start the server
-            # - shutdown/exit: needed to clean up FAILED or stuck servers
-            #
-            # This prevents situations where a FAILED server can't be cleaned up
-            # because shutdown messages are dropped.
+            # - shutdown/exit: needed to stop a server which is still INITIALIZING
             lifecycle_methods = {"initialize", "shutdown", "exit"}
 
             # Drop message if server is not ready - unless it's a lifecycle message.
@@ -1681,6 +1678,12 @@ class LanguageServerClient:
         # If NOT_STARTED, there's nothing to shutdown
         if current_status == LanguageServerStatus.NOT_STARTED:
             self._logger.debug("Server was never started")
+            return
+
+        # Neither if FAILED: the server process is not running - it never
+        # started, it exited, or it was killed; See _fail.
+        if current_status == LanguageServerStatus.FAILED:
+            self._logger.debug("Server failed; Nothing to shutdown")
             return
 
         # Use threading.Timer for timeout instead of blocking on Event.wait().
