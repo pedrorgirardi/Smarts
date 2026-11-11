@@ -1492,11 +1492,13 @@ def view_textDocumentPositionParams(
 
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentPositionParams
     """
-    default_point = view.sel()[0].begin()
+    # (A point of 0 - the beginning of the document - is a valid point.)
+    if point is None:
+        point = view.sel()[0].begin()
 
     return {
         "textDocument": view_textDocumentIdentifier(view),
-        "position": point_position(view, position_encoding, point or default_point),
+        "position": point_position(view, position_encoding, point),
     }
 
 
@@ -2482,12 +2484,14 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
             return
 
         position_encoding = smart.position_encoding()
-        position_point = position or self.view.sel()[0].begin()
+
+        # (A position of 0 - the beginning of the document - is a valid position.)
+        point = position if position is not None else self.view.sel()[0].begin()
 
         def on_result(result: smarts_client.LSPHoverResult):
             if result:
                 if show == "transient":
-                    word_region = self.view.word(position_point)
+                    word_region = self.view.word(point)
                     word_str = self.view.substr(word_region)
                     self._show_transient(smart, word_str, result)
                 else:
@@ -2498,7 +2502,7 @@ class PgSmartsShowHoverCommand(sublime_plugin.TextCommand):
         params = view_textDocumentPositionParams(
             self.view,
             position_encoding,
-            position_point,
+            point,
         )
 
         smart.client.textDocument_hover(params, on_result, on_error)
@@ -2649,7 +2653,8 @@ class PgSmartsShowSignatureHelpCommand(sublime_plugin.TextCommand):
         if smart is None:
             return
 
-        position = position or self.view.sel()[0].begin()
+        if position is None:
+            position = self.view.sel()[0].begin()
 
         position_encoding = smart.position_encoding()
 
