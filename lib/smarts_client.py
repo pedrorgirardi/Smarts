@@ -1241,25 +1241,40 @@ class LanguageServerClient:
         self._logger.debug("Writer started")
 
         while (message := self._send_queue.get()) is not None:
+            self._observe(self._on_send, message)
+
             try:
-                self._observe(self._on_send, message)
+                content = json.dumps(message).encode("utf-8")
+            except Exception as e:
+                # A message which can't be serialized is a bug of the caller.
+                # It's dropped - and answered, if it's a request - but it must
+                # not stop the writer: nothing else would ever be sent.
+                self._logger.exception(f"Can't serialize '{message.get('method')}'")
 
-                content = json.dumps(message)
+                with self._lock:
+                    callback = self._request_callback.pop(message.get("id"), None)
 
-                header = f"Content-Length: {len(content)}\r\n\r\n"
+                if callback:
+                    try:
+                        callback(_failure_response(f"Can't serialize message: {e}"))
+                    except Exception:
+                        self._logger.exception("Request callback error")
 
-                encoded = header.encode("ascii") + content.encode("utf-8")
-                self._server_process.stdin.write(encoded)
+                continue
+
+            try:
+                # Content-Length is the number of bytes of the content.
+                header = f"Content-Length: {len(content)}\r\n\r\n".encode("ascii")
+
+                self._server_process.stdin.write(header + content)
                 self._server_process.stdin.flush()
 
-            except BrokenPipeError as e:
-                # BrokenPipeError means the server's stdin pipe is closed, which happens
-                # when the server crashes or exits unexpectedly. Continuing to loop would just
-                # keep trying to write to a broken pipe, logging errors repeatedly.
-                #
-                # By transitioning to FAILED and breaking, we stop the writer cleanly and
-                # signal to other parts of the client that the server is no longer functional.
-                self._fail(f"Can't write to server's stdin (broken pipe): {e}")
+            except Exception as e:
+                # The server's stdin is closed or broken - e.g. BrokenPipeError
+                # if the server crashed or exited. Nothing else can be written,
+                # so the server is unusable: fail (a no-op if the status is
+                # SHUTDOWN), which also tells everyone else, and stop.
+                self._fail(f"Can't write to server's stdin: {e}")
                 break
 
         self._logger.debug("Writer stopped")

@@ -388,6 +388,95 @@ while True:
 """
 
 
+# A minimal language server: answers 'initialize', then echoes the method of
+# every message it receives in a 'window/logMessage' notification.
+FAKE_SERVER_ECHO = r"""
+import json, sys
+
+def read():
+    headers = {}
+    while (line := sys.stdin.buffer.readline().decode().strip()):
+        k, v = line.split(": ", 1)
+        headers[k] = v
+    return json.loads(sys.stdin.buffer.read(int(headers["Content-Length"])))
+
+def write(message):
+    content = json.dumps(message).encode()
+    sys.stdout.buffer.write(f"Content-Length: {len(content)}\r\n\r\n".encode() + content)
+    sys.stdout.buffer.flush()
+
+initialize = read()
+write({"jsonrpc": "2.0", "id": initialize["id"], "result": {"capabilities": {}}})
+
+while True:
+    message = read()
+    write({"jsonrpc": "2.0", "method": "window/logMessage",
+           "params": {"type": 3, "message": json.dumps(message)}})
+"""
+
+
+def echo_client(echoed: list) -> LanguageServerClient:
+    """An initialized client of a server which echoes messages into `echoed`."""
+    client = LanguageServerClient(
+        logger=logging.getLogger("test"),
+        name="Fake",
+        server_args=[sys.executable, "-c", FAKE_SERVER_ECHO],
+        on_notification=lambda n: echoed.append(json.loads(n["params"]["message"])),
+    )
+
+    initialized = threading.Event()
+
+    client.initialize({}, lambda _: initialized.set())
+
+    assert initialized.wait(5)
+
+    return client
+
+
+class TestWriter(unittest.TestCase):
+    def test_unserializable_message_does_not_stop_writer(self):
+        echoed = []
+
+        client = echo_client(echoed)
+
+        try:
+            errors = []
+
+            # A set is not JSON serializable.
+            client.textDocument_hover({"bad": {1}}, lambda _: None, errors.append)  # type: ignore
+            client._put(notification("test/good", {}))
+
+            self.assertTrue(
+                wait_for(lambda: any(m.get("method") == "test/good" for m in echoed)),
+                "Writer stopped after a message it couldn't serialize",
+            )
+            self.assertTrue(client.is_server_initialized())
+
+            # The request was answered - with an error.
+            self.assertTrue(wait_for(lambda: len(errors) == 1))
+            self.assertEqual(errors[0]["code"], CLIENT_ERROR)
+        finally:
+            client._server_process.kill()
+
+    def test_content_length_counts_bytes(self):
+        echoed = []
+
+        client = echo_client(echoed)
+
+        try:
+            client._put(notification("test/text", {"text": "ação 🎉"}))
+
+            self.assertTrue(
+                wait_for(lambda: any(m.get("method") == "test/text" for m in echoed))
+            )
+
+            message = next(m for m in echoed if m.get("method") == "test/text")
+
+            self.assertEqual(message["params"]["text"], "ação 🎉")
+        finally:
+            client._server_process.kill()
+
+
 def initialized_client() -> LanguageServerClient:
     """A client marked as initialized, without a server or worker threads."""
     client = LanguageServerClient(
