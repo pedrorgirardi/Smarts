@@ -1095,6 +1095,25 @@ def view_text_document_item(view: sublime.View) -> smarts_client.LSPTextDocument
     }
 
 
+def view_clones(view: sublime.View) -> list[sublime.View]:
+    """
+    Returns the other views of the buffer of `view` in its window.
+    """
+    buffer = view.buffer()
+    window = view.window()
+
+    if buffer is None or window is None:
+        return []
+
+    return [
+        clone
+        for clone in buffer.views()
+        if clone.id() != view.id()
+        and (clone_window := clone.window()) is not None
+        and clone_window.id() == window.id()
+    ]
+
+
 def document_open(view: sublime.View):
     """
     Notify applicable servers that the document of `view` is open -
@@ -3146,10 +3165,10 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
         _LAST_MODIFIED.pop(self.view.id(), None)
 
         # Views of the same buffer - clones - show the same document:
-        # it's closed when its last view is closed.
-        if buffer := self.view.buffer():
-            if any(view.id() != self.view.id() for view in buffer.views()):
-                return
+        # it's closed when its last view in the window is closed.
+        # (Servers are per window, and so are their open documents.)
+        if view_clones(self.view):
+            return
 
         for smart in applicable_smarts(self.view, method="textDocument/didClose"):
             smart.client.textDocument_didClose({
