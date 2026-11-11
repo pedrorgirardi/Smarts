@@ -455,6 +455,28 @@ while True:
 
         self.assert_shutdown(client, failures)
 
+    def test_server_which_exits_on_shutdown_is_not_a_failure(self):
+        failures = []
+
+        # Exits instead of answering 'shutdown'.
+        client = fake_client(
+            r"""
+initialize()
+
+while read().get("method") != "shutdown":
+    pass
+
+sys.exit(0)
+""",
+            on_failure=failures.append,
+        )
+
+        initialize(client)
+
+        client.shutdown()
+
+        self.assert_shutdown(client, failures)
+
     def test_messages_are_dropped_after_shutdown(self):
         failures = []
 

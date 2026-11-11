@@ -924,6 +924,12 @@ class LanguageServerStatus(Enum):
 
     FAILED state can be reached from INITIALIZING (init error),
     INITIALIZED (server crash), or during I/O operations.
+
+    SHUTDOWN can also be reached from INITIALIZING, if shutdown is requested
+    before the server is initialized.
+
+    FAILED and SHUTDOWN are final. A server which stops while it's being
+    shut down is SHUTDOWN - not FAILED; See _fail.
     """
 
     NOT_STARTED = auto()  # Server process hasn't been created yet
@@ -951,7 +957,7 @@ class LanguageServerClient:
     Known Limitations:
         1. Reader can hang on incomplete messages:
            If the server sends partial headers or crashes mid-message, readline()
-           blocks indefinitely. The outer loop only checks is_server_shutdown()
+           blocks indefinitely. The outer loop only checks the server status
            between messages, not during a read. Python's limited support for
            non-blocking pipe I/O makes this difficult to solve without select/poll.
 
@@ -999,6 +1005,8 @@ class LanguageServerClient:
             int | str, Callable[[LSPResponseMessage], None]
         ] = {}
         self._open_documents = set()
+        # True once shutdown is requested: from then on the server is expected to exit.
+        self._shutdown_requested = False
         # Observers of every message sent to, and received from, the server.
         self._on_send = on_send
         self._on_receive = on_receive
@@ -1130,9 +1138,19 @@ class LanguageServerClient:
             if expected is not None and self._server_status != expected:
                 return
 
-            self._logger.error(reason)
+            # A server which stops while it's being shut down - e.g. it exits
+            # without answering 'shutdown' - did what it was asked to do:
+            # it's SHUTDOWN, not FAILED, and nobody is told about a failure.
+            shutdown_requested = self._shutdown_requested
 
-            self._server_status = LanguageServerStatus.FAILED
+            if shutdown_requested:
+                self._logger.info(f"{reason} (while shutting down)")
+
+                self._server_status = LanguageServerStatus.SHUTDOWN
+            else:
+                self._logger.error(reason)
+
+                self._server_status = LanguageServerStatus.FAILED
 
             # Pending requests will never be answered by the server.
             callbacks = list(self._request_callback.values())
@@ -1154,7 +1172,8 @@ class LanguageServerClient:
             except Exception:
                 self._logger.exception("Request callback error")
 
-        self._notify_failure(reason)
+        if not shutdown_requested:
+            self._notify_failure(reason)
 
     def _notify_failure(self, reason: str):
         if self._on_failure:
@@ -1709,6 +1728,9 @@ class LanguageServerClient:
         if current_status == LanguageServerStatus.FAILED:
             self._logger.debug("Server failed; Nothing to shutdown")
             return
+
+        with self._lock:
+            self._shutdown_requested = True
 
         # Use threading.Timer for timeout instead of blocking on Event.wait().
         # Blocking would freeze the calling thread, making the UI unresponsive during shutdown.
