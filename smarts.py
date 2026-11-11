@@ -1737,18 +1737,6 @@ def view_languageId(view: sublime.View) -> str:
     return ""
 
 
-def handle_logTrace(
-    window: sublime.Window,
-    message: smarts_client.LSPNotificationMessage,
-):
-    """
-    A notification to log the trace of the server’s execution.
-    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#logTrace
-    """
-
-    panel_log(window, f"{pprint.pformat(message)}\n\n")
-
-
 def handle_window_message(
     window: sublime.Window,
     message: smarts_client.LSPNotificationMessage,
@@ -1939,10 +1927,7 @@ def handle_notification(
 
     message_method = notification.get("method")
 
-    if message_method == "$/logTrace":
-        handle_logTrace(window, notification)
-
-    elif message_method in ("window/logMessage", "window/showMessage"):
+    if message_method in ("window/logMessage", "window/showMessage"):
         handle_window_message(window, notification)
 
     elif message_method == "textDocument/publishDiagnostics":
