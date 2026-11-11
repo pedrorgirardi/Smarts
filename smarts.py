@@ -1675,34 +1675,15 @@ def handle_logTrace(
     panel_log(window, f"{pprint.pformat(message)}\n\n")
 
 
-def handle_window_logMessage(
+def handle_window_message(
     window: sublime.Window,
     message: smarts_client.LSPNotificationMessage,
 ) -> None:
     """
-    The log message notification is sent from the server to the client
-    to ask the client to log a particular message.
+    Log a message of the server - both a message to log and a message to show
+    have a type and a text, and are logged in the Output panel.
 
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_logMessage
-    """
-
-    if params := message["params"]:
-        message_type = params["type"]
-        message_type = kMESSAGE_TYPE_NAME.get(message_type, message_type)
-
-        message_message = params["message"]
-
-        panel_log(window, f"{message_type} {message_message}\n")
-
-
-def handle_window_showMessage(
-    window: sublime.Window,
-    message: smarts_client.LSPNotificationMessage,
-) -> None:
-    """
-    The show message notification is sent from a server to a client
-    to ask the client to display a particular message in the user interface.
-
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_showMessage
     """
 
@@ -1712,7 +1693,7 @@ def handle_window_showMessage(
 
         message_message = params["message"]
 
-        panel_log(window, f"{message_type} {message_message}\n", show=False)
+        panel_log(window, f"{message_type} {message_message}\n")
 
 
 def present_diagnostics(
@@ -1887,11 +1868,8 @@ def handle_notification(
     if message_method == "$/logTrace":
         handle_logTrace(window, notification)
 
-    elif message_method == "window/logMessage":
-        handle_window_logMessage(window, notification)
-
-    elif message_method == "window/showMessage":
-        handle_window_showMessage(window, notification)
+    elif message_method in ("window/logMessage", "window/showMessage"):
+        handle_window_message(window, notification)
 
     elif message_method == "textDocument/publishDiagnostics":
         handle_textDocument_publishDiagnostics(window, smart, notification)
