@@ -303,6 +303,21 @@ class TestFailureCallbacks(unittest.TestCase):
         self.assertEqual(responses[0]["error"]["code"], CLIENT_ERROR)
         self.assertEqual(len(failures), 1)
 
+    def test_failed_client_can_not_be_initialized_again(self):
+        client = LanguageServerClient(
+            logger=logging.getLogger("test"),
+            name="Fake",
+            server_args=["/nonexistent/language-server"],
+        )
+
+        responses = []
+
+        client.initialize({}, responses.append)
+        client.initialize({}, responses.append)
+
+        self.assertEqual(len(responses), 1)
+        self.assertTrue(client.is_server_failed())
+
     def test_shutdown_of_failed_server_is_a_noop(self):
         thread_errors = []
         excepthook = threading.excepthook

@@ -955,10 +955,10 @@ class LanguageServerClient:
            between messages, not during a read. Python's limited support for
            non-blocking pipe I/O makes this difficult to solve without select/poll.
 
-        2. No automatic reconnection:
-           Once the client enters FAILED state, it stays failed. Callers must detect
-           the failure and create a new LanguageServerClient instance if they want
-           to retry.
+        2. No reconnection:
+           Once the client enters FAILED state, it stays failed. Callers are told
+           (see `on_failure`) and must create a new LanguageServerClient instance
+           if they want to retry.
 
         3. Callback timeouts not enforced:
            If a server never responds to a request, the callback is never invoked.
@@ -1514,19 +1514,17 @@ class LanguageServerClient:
         https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
         """
 
-        current_status = self.server_status()
+        # A client is initialized once: to retry, or restart, create a new client.
+        #
+        # Checked and set at once, so concurrent calls can't both start a server.
+        with self._lock:
+            if self._server_status != LanguageServerStatus.NOT_STARTED:
+                self._logger.warning(
+                    f"Cannot initialize - already in state {self._server_status.name}"
+                )
+                return
 
-        # Allow reinitializing FAILED servers for retry logic.
-        # If a server failed due to temporary issue (network, resource), caller should be
-        # able to try again without creating a new client instance.
-        if current_status not in (
-            LanguageServerStatus.NOT_STARTED,
-            LanguageServerStatus.FAILED,
-        ):
-            self._logger.warning(
-                f"Cannot initialize - already in state {current_status.name}"
-            )
-            return
+            self._server_status = LanguageServerStatus.INITIALIZING
 
         self._logger.debug(f"Initialize `{shlex.join(self._server_args)}`")
 
@@ -1557,13 +1555,7 @@ class LanguageServerClient:
             return
 
         with self._lock:
-            self._server_status = LanguageServerStatus.INITIALIZING
             self._server_process = server_process
-
-            # Fresh queues: if this is a retry, the previous threads may have
-            # left a stop signal (None) behind.
-            self._send_queue = Queue()
-            self._receive_queue = Queue()
 
         pid = self._server_process.pid
         thread_prefix = f"{self._name} {pid}"
