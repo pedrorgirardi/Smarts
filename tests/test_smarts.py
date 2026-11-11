@@ -1,19 +1,110 @@
+import logging
 import unittest
+from typing import Any
 
 from fake_sublime import Region, load_smarts
 
-smarts = load_smarts()
+# (Any: the module is loaded dynamically, so its attributes aren't known.)
+smarts: Any = load_smarts()
+
+# (The plugin imports its own copy of the client - as a module of its package.)
+smarts_client = smarts.smarts_client
+
+PYTHON_SYNTAX = "Packages/Python/Python.sublime-syntax"
+
+
+class FakeSyntax:
+    scope = "source.python"
+
+
+class FakeBuffer:
+    def __init__(self, id=1):
+        self._id = id
+        self._views = []
+
+    def views(self):
+        return self._views
+
+
+class FakeWindow:
+    def __init__(self, id=1):
+        self._id = id
+        self.commands = []
+        self.panel = FakeView(file_name=None)
+        self.open_files = {}
+
+    def id(self):
+        return self._id
+
+    def run_command(self, name, args=None):
+        self.commands.append((name, args))
+
+    def find_output_panel(self, name):
+        return self.panel
+
+    def find_open_file(self, path):
+        return self.open_files.get(path)
+
+    def project_data(self):
+        return None
 
 
 class FakeView:
     """A view of an ASCII document - so a column is a character, in any encoding."""
 
-    def __init__(self, text="", file_name="/tmp/a.py", sel=()):
+    ids = iter(range(1, 1_000_000))
+
+    def __init__(
+        self,
+        text="",
+        file_name: str | None = "/tmp/a.py",
+        sel=(),
+        window=None,
+        buffer=None,
+    ):
         self.text = text
+        self._id = next(FakeView.ids)
         self._file_name = file_name
         self._sel = list(sel)
         self._change_count = 0
+        self._window = window
+        self._buffer = buffer or FakeBuffer()
+        self._buffer._views.append(self)
         self.commands = []
+        self.status = {}
+
+    def id(self):
+        return self._id
+
+    def window(self):
+        return self._window
+
+    def buffer(self):
+        return self._buffer
+
+    def buffer_id(self):
+        return self._buffer._id
+
+    def settings(self):
+        return {"syntax": PYTHON_SYNTAX}
+
+    def syntax(self):
+        return FakeSyntax()
+
+    def size(self):
+        return len(self.text)
+
+    def substr(self, region):
+        return self.text[region.begin() : region.end()]
+
+    def erase_regions(self, key):
+        pass
+
+    def erase_status(self, key):
+        self.status.pop(key, None)
+
+    def set_status(self, key, value):
+        self.status[key] = value
 
     def file_name(self):
         return self._file_name
@@ -33,6 +124,227 @@ class FakeView:
         return (before.count("\n"), len(before) - (before.rfind("\n") + 1))
 
     rowcol_utf8 = rowcol_utf16
+
+
+def add_smart(window: FakeWindow, text_document_sync, name="Fake"):
+    """
+    Add an initialized Smart to `window` - without a server: messages stay in
+    the send queue of its client; See `sent`.
+    """
+    client = smarts_client.LanguageServerClient(
+        logger=logging.getLogger("test"),
+        name=name,
+        server_args=[],
+    )
+    client._server_status = smarts_client.LanguageServerStatus.INITIALIZED
+    client._server_capabilities = {}
+    client._text_document_sync = smarts_client.textDocumentSyncOptions(
+        text_document_sync
+    )
+
+    smart = smarts.PgSmart(
+        uuid=name,
+        window=window.id(),
+        config={"name": name, "start": [], "applicable_to": [PYTHON_SYNTAX]},
+        client=client,
+    )
+
+    smarts._SMARTS.append(smart)
+
+    return smart
+
+
+def sent(smart) -> list[tuple[str, dict]]:
+    """Returns (method, params) of the messages `smart` sent, and forgets them."""
+    queue = smart.client._send_queue
+
+    messages = []
+
+    while not queue.empty():
+        message = queue.get()
+
+        messages.append((message["method"], message["params"]))
+
+    return messages
+
+
+class TestDocuments(unittest.TestCase):
+    def setUp(self):
+        smarts._SMARTS = []
+        smarts._DOCUMENT_URI.clear()
+
+        self.window = FakeWindow()
+        self.view = FakeView(text="x = 1", window=self.window)
+
+    def test_document_is_opened_once(self):
+        smart = add_smart(self.window, {"openClose": True})
+
+        smarts.document_open(self.view)
+        smarts.document_open(self.view)
+
+        self.assertEqual(
+            sent(smart),
+            [
+                (
+                    "textDocument/didOpen",
+                    {
+                        "textDocument": {
+                            "uri": "file:///tmp/a.py",
+                            "languageId": "python",
+                            "version": 0,
+                            "text": "x = 1",
+                        }
+                    },
+                )
+            ],
+        )
+
+    def test_document_is_not_opened_by_servers_which_do_not_sync(self):
+        smart = add_smart(self.window, None)
+
+        smarts.document_open(self.view)
+
+        self.assertEqual(sent(smart), [])
+
+    def test_document_without_a_file_is_not_opened(self):
+        smart = add_smart(self.window, {"openClose": True})
+
+        smarts.document_open(FakeView(file_name=None, window=self.window))
+        smarts.document_open(FakeView(window=None))
+
+        self.assertEqual(sent(smart), [])
+
+    def test_document_saved_as_another_file_closes_the_previous(self):
+        smart = add_smart(self.window, {"openClose": True})
+
+        smarts.document_open(self.view)
+
+        sent(smart)
+
+        self.view._file_name = "/tmp/b.py"
+
+        smarts.document_open(self.view)
+
+        messages = sent(smart)
+
+        self.assertEqual(
+            [(method, params["textDocument"]["uri"]) for method, params in messages],
+            [
+                ("textDocument/didClose", "file:///tmp/a.py"),
+                ("textDocument/didOpen", "file:///tmp/b.py"),
+            ],
+        )
+
+    def test_did_save(self):
+        without_text = add_smart(self.window, {"openClose": True, "save": {}}, "A")
+        with_text = add_smart(
+            self.window, {"openClose": True, "save": {"includeText": True}}, "B"
+        )
+        without_save = add_smart(self.window, {"openClose": True}, "C")
+
+        smarts.document_open(self.view)
+
+        for smart in (without_text, with_text, without_save):
+            sent(smart)
+
+        smarts.document_did_save(self.view)
+
+        identifier = {"uri": "file:///tmp/a.py"}
+
+        self.assertEqual(
+            sent(without_text),
+            [("textDocument/didSave", {"textDocument": identifier})],
+        )
+        self.assertEqual(
+            sent(with_text),
+            [("textDocument/didSave", {"textDocument": identifier, "text": "x = 1"})],
+        )
+        self.assertEqual(sent(without_save), [])
+
+    def test_resync_sends_the_full_text(self):
+        smart = add_smart(self.window, 2)
+
+        smarts.document_open(self.view)
+
+        sent(smart)
+
+        self.view.text = "y = 2"
+        self.view._change_count = 7
+
+        smarts.document_resync(self.view)
+
+        self.assertEqual(
+            sent(smart),
+            [
+                (
+                    "textDocument/didChange",
+                    {
+                        "textDocument": {"uri": "file:///tmp/a.py", "version": 7},
+                        "contentChanges": [{"text": "y = 2"}],
+                    },
+                )
+            ],
+        )
+
+    def test_clones_are_views_of_the_buffer_in_the_same_window(self):
+        buffer = FakeBuffer()
+
+        view = FakeView(window=self.window, buffer=buffer)
+
+        self.assertEqual(smarts.view_clones(view), [])
+
+        # A clone in another window.
+        FakeView(window=FakeWindow(id=2), buffer=buffer)
+
+        self.assertEqual(smarts.view_clones(view), [])
+
+        clone = FakeView(window=self.window, buffer=buffer)
+
+        self.assertEqual(smarts.view_clones(view), [clone])
+
+
+class TestFailure(unittest.TestCase):
+    def setUp(self):
+        smarts._SMARTS = []
+        smarts._DIAGNOSTICS.clear()
+
+        self.window = FakeWindow()
+
+        smarts.sublime.windows = lambda: [self.window]
+
+    def test_failed_smart_is_removed_with_its_diagnostics(self):
+        add_smart(self.window, None, "A")
+        add_smart(self.window, None, "B")
+
+        view = FakeView(window=self.window)
+        view.status["PG_SMARTS_DIAGNOSTICS"] = "Error: 1"
+
+        self.window.open_files["/tmp/a.py"] = view
+
+        smarts.set_server_diagnostics(1, "/tmp/a.py", "A", [{"message": "a"}])
+
+        smarts.handle_failure("A", "Server exited unexpectedly")
+
+        self.assertIsNone(smarts.find_smart("A"))
+        self.assertIsNotNone(smarts.find_smart("B"))
+        self.assertEqual(smarts.path_diagnostics(1, "/tmp/a.py"), [])
+
+        # Diagnostics are presented again - there's none.
+        self.assertEqual(view.status, {"PG_SMARTS_DIAGNOSTICS": ""})
+
+        # The reason is logged in the Output panel, which is shown.
+        (_, args), = self.window.panel.commands
+
+        self.assertIn("Server exited unexpectedly", args["characters"])
+        self.assertEqual(
+            self.window.commands,
+            [("show_panel", {"panel": "output.Smarts - Output"})],
+        )
+
+    def test_failure_of_a_removed_smart_is_ignored(self):
+        smarts.handle_failure("A", "Server exited unexpectedly")
+
+        self.assertEqual(self.window.panel.commands, [])
 
 
 class TestUri(unittest.TestCase):
