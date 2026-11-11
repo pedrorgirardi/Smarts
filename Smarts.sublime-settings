@@ -9,5 +9,9 @@
     "editor.show_hover": true,
     "editor.format_on_save": false,
 
+    // How long saving waits for the document to be formatted, in milliseconds.
+    // If it takes longer, the document is saved as is.
+    "editor.format_on_save_timeout": 1000,
+
     "servers": []
 }

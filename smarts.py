@@ -3042,14 +3042,59 @@ class PgSmartsViewListener(sublime_plugin.ViewEventListener):
 
         document_did_save(self.view)
 
-    def on_pre_save_async(self):
+    def on_pre_save(self):
         window = self.view.window()
 
         if not window:
             return
 
-        if setting(window, "editor.format_on_save", False):
-            self.view.run_command("pg_smarts_format_document")
+        if not setting(window, "editor.format_on_save", False):
+            return
+
+        smart = applicable_smart(self.view, method="textDocument/formatting")
+
+        if smart is None:
+            return
+
+        # Formatting must be done before the document is saved: this waits for
+        # the edits - and blocks the UI meanwhile, hence the timeout - then
+        # applies them. (Edits applied after the save would leave the file
+        # unformatted, and the view dirty.)
+        timeout = setting(window, "editor.format_on_save_timeout", 1000) / 1000
+
+        edits: list[smarts_client.LSPTextEdit] = []
+        done = threading.Event()
+
+        # Called on a thread of the client - the main thread is waiting.
+        def on_result(result: smarts_client.LSPFormattingResult):
+            edits.extend(result or [])
+            done.set()
+
+        # (The error is logged by the client.)
+        def on_error(_: smarts_client.LSPResponseError):
+            done.set()
+
+        params: smarts_client.LSPDocumentFormattingParams = {
+            "textDocument": view_textDocumentIdentifier(self.view),
+            "options": view_formatting_options(self.view),
+        }
+
+        smart.client.textDocument_formatting(params, on_result, on_error)
+
+        if not done.wait(timeout):
+            plugin_logger.warning(
+                f"Format on save timed out after {timeout}s; Will save unformatted"
+            )
+            return
+
+        if edits:
+            self.view.run_command(
+                "pg_smarts_apply_edits",
+                {
+                    "position_encoding": smart.position_encoding(),
+                    "edits": edits,
+                },
+            )
 
     def on_pre_close(self):
         # Close document symbol quick panel if its view is being closed.
