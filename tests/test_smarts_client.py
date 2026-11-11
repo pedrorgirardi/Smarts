@@ -433,6 +433,70 @@ def echo_client(echoed: list) -> LanguageServerClient:
     return client
 
 
+# A minimal language server: answers 'initialize' - with HEADER as the name of
+# the content length header - sends PREAMBLE (raw bytes), and a notification.
+FAKE_SERVER_RAW = r"""
+import json, sys
+
+headers = {}
+while (line := sys.stdin.buffer.readline().decode().strip()):
+    k, v = line.split(": ", 1)
+    headers[k] = v
+
+request = json.loads(sys.stdin.buffer.read(int(headers["Content-Length"])))
+
+def write(message):
+    content = json.dumps(message).encode()
+    sys.stdout.buffer.write(f"{HEADER}: {len(content)}\r\n\r\n".encode() + content)
+    sys.stdout.buffer.flush()
+
+write({"jsonrpc": "2.0", "id": request["id"], "result": {"capabilities": {}}})
+
+sys.stdout.buffer.write(PREAMBLE)
+sys.stdout.buffer.flush()
+
+write({"jsonrpc": "2.0", "method": "test/after", "params": {}})
+
+sys.stdin.buffer.read()
+"""
+
+
+def raw_client(notifications: list, header="Content-Length", preamble=b""):
+    server = f"HEADER = {header!r}\nPREAMBLE = {preamble!r}\n" + FAKE_SERVER_RAW
+
+    return LanguageServerClient(
+        logger=logging.getLogger("test"),
+        name="Fake",
+        server_args=[sys.executable, "-c", server],
+        on_notification=notifications.append,
+    )
+
+
+class TestReader(unittest.TestCase):
+    def assert_notified_after(self, **kwargs):
+        notifications = []
+
+        client = raw_client(notifications, **kwargs)
+
+        client.initialize({}, lambda _: None)
+
+        try:
+            self.assertTrue(
+                wait_for(lambda: len(notifications) == 1),
+                "Notification was not handled",
+            )
+            self.assertEqual(notifications[0]["method"], "test/after")
+            self.assertTrue(client.is_server_initialized())
+        finally:
+            client._server_process.kill()
+
+    def test_message_which_is_not_an_object_is_skipped(self):
+        self.assert_notified_after(preamble=b"Content-Length: 2\r\n\r\n[]")
+
+    def test_message_which_is_not_json_is_skipped(self):
+        self.assert_notified_after(preamble=b"Content-Length: 2\r\n\r\n{x")
+
+
 class TestWriter(unittest.TestCase):
     def test_unserializable_message_does_not_stop_writer(self):
         echoed = []

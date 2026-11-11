@@ -1194,18 +1194,26 @@ class LanguageServerClient:
                     try:
                         # JSON is UTF-8 encoded; json.loads decodes bytes.
                         message = json.loads(content)
-
-                        self._observe(self._on_receive, message)
-
-                        # Enqueue message; Blocks if queue is full.
-                        self._receive_queue.put(message)
-
-                    except json.JSONDecodeError:
+                    except ValueError:
+                        # (JSONDecodeError and UnicodeDecodeError are ValueErrors.)
+                        #
                         # The effect of not being able to decode a message,
                         # is that an 'in-flight' request won't have its callback called.
                         self._logger.error(
                             f"Failed to decode message: {content.decode(errors='replace')}"
                         )
+                        continue
+
+                    # Every message is a JSON object. Anything else is skipped -
+                    # e.g. a batch (array), which LSP doesn't support - or
+                    # the handler, which expects an object, would stop.
+                    if not isinstance(message, dict):
+                        self._logger.error(f"Unexpected message: {message!r}")
+                        continue
+
+                    self._observe(self._on_receive, message)
+
+                    self._receive_queue.put(message)
 
             # stdout is closed, so the server exited (or is exiting).
             #
