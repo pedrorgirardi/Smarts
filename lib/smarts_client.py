@@ -1168,9 +1168,11 @@ class LanguageServerClient:
                     if line == "":
                         break
 
-                    k, v = line.split(": ", 1)
+                    # Header field names are case-insensitive - like HTTP's -
+                    # and the space after the colon is not required.
+                    k, _, v = line.partition(":")
 
-                    headers[k] = v
+                    headers[k.strip().lower()] = v.strip()
 
                 # If we got no headers at all, stdout is closed (EOF).
                 # Break the outer loop so the reader can exit cleanly.
@@ -1180,7 +1182,7 @@ class LanguageServerClient:
 
                 # -- CONTENT
 
-                if content_length := headers.get("Content-Length"):
+                if content_length := headers.get("content-length"):
                     n = int(content_length)
 
                     # stdout is buffered: read(n) blocks until n bytes are read,
@@ -1211,7 +1213,7 @@ class LanguageServerClient:
                         self._logger.error(f"Unexpected message: {message!r}")
                         continue
 
-                    self._observe(self._on_receive, message)
+                    self._observe(self._on_receive, cast(LSPMessage, message))
 
                     self._receive_queue.put(message)
 

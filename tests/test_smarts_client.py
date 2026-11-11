@@ -497,6 +497,10 @@ class TestReader(unittest.TestCase):
         self.assert_notified_after(preamble=b"Content-Length: 2\r\n\r\n{x")
 
 
+    def test_header_names_are_case_insensitive(self):
+        self.assert_notified_after(header="content-length")
+
+
 class TestWriter(unittest.TestCase):
     def test_unserializable_message_does_not_stop_writer(self):
         echoed = []
