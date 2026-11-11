@@ -1493,12 +1493,11 @@ def view_textDocumentPositionParams(
     https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentPositionParams
     """
     # (A point of 0 - the beginning of the document - is a valid point.)
-    if point is None:
-        point = view.sel()[0].begin()
+    position_point: int = view.sel()[0].begin() if point is None else point
 
     return {
         "textDocument": view_textDocumentIdentifier(view),
-        "position": point_position(view, position_encoding, point),
+        "position": point_position(view, position_encoding, position_point),
     }
 
 
