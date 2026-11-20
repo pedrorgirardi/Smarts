@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Runs editor_tests/ inside Sublime Text - with UnitTesting; See unittesting.json.
+#
+# Sublime Text must have UnitTesting installed - and running, or it's started.
+set -euo pipefail
+
+subl="$(command -v subl || echo "/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl")"
+
+output="$(mktemp -d)/editor-tests.txt"
+
+"$subl" --command "unit_testing {\"package\": \"Smarts\", \"output\": \"$output\"}"
+
+# UnitTesting writes the results as the tests run - and a last line when done.
+for _ in $(seq 1 300); do
+    if [[ -f "$output" ]] && grep -q '^UnitTesting: Done\.$' "$output"; then
+        cat "$output"
+
+        grep -q '^OK' "$output"
+
+        exit $?
+    fi
+
+    sleep 0.2
+done
+
+[[ -f "$output" ]] && cat "$output"
+
+echo "Timed out waiting for Sublime Text." >&2
+
+exit 1

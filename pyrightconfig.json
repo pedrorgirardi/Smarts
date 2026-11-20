@@ -1,6 +1,6 @@
 {
     "pythonVersion": "3.14",
-    "include": ["smarts.py", "lib/", "tests/"],
+    "include": ["smarts.py", "lib/", "tests/", "editor_tests/"],
     "executionEnvironments": [
         {
             "root": ".",

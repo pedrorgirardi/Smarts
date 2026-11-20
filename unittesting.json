@@ -1,0 +1,15 @@
+{
+    // Tests which run inside Sublime Text - see editor_tests/.
+    // (Not tests/: those fake Sublime's modules, which in the editor would
+    // replace the real ones.)
+    "tests_dir": "editor_tests",
+    "pattern": "test*.py",
+
+    // Reloading the package unloads the plugin - which shuts down every
+    // server it started, in every window.
+    "reload_package_on_testing": false,
+
+    "capture_console": true,
+    "verbosity": 2,
+    "condition_timeout": 5000
+}
