@@ -1,0 +1,51 @@
+# Runs editor_tests/ inside Sublime Text - with UnitTesting; See unittesting.json.
+#
+# (tests/ run without the editor - with bin/test.)
+
+name: Editor tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  editor-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The same UnitTesting as bin/test-editor is run with locally.
+      # It installs the latest stable Sublime Text, Package Control - which
+      # installs UnitTesting's dependencies (sublime_aio) - and the package.
+      - uses: SublimeText/UnitTesting/actions/setup@1.12.2
+        with:
+          package-name: Smarts
+          sublime-text-version: 4
+
+      # Smarts runs on Python 3.14 (.python-version): fail clearly if the
+      # installed Sublime Text doesn't have its plugin host.
+      - name: Check the Python 3.14 plugin host
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            host="$HOME/Applications/Sublime Text.app/Contents/MacOS/plugin_host-3.14"
+          else
+            host="$HOME/sublime_text/plugin_host-3.14"
+          fi
+
+          if [ ! -f "$host" ]; then
+            echo "::error::Sublime Text has no Python 3.14 plugin host: $host"
+            exit 1
+          fi
+
+      - uses: SublimeText/UnitTesting/actions/run-tests@1.12.2
+        with:
+          package-name: Smarts
