@@ -114,6 +114,17 @@ Callbacks invoked (e.g., update diagnostics UI)
 - Run with verbose output: `bin/test -v`
 - Run specific tests: `bin/test -k <pattern>`
 
+### Editor Tests
+
+- `editor_tests/` run inside Sublime Text, with [UnitTesting](https://github.com/SublimeText/UnitTesting), for what the fake can't cover: the editor's conversion of points to UTF-16/UTF-8 positions, and the changes it reports as text is edited
+- Run: `bin/test-editor` - Sublime Text must be running, or it's started
+- Needs UnitTesting in `Packages/UnitTesting`, and its dependency `sublime_aio.py` in `Lib/python314` (there's no Package Control to install it)
+- Configured by `unittesting.json`:
+  - `tests_dir` is `editor_tests`, not `tests/`: those fake Sublime's modules, which in the editor would replace the real ones
+  - `reload_package_on_testing` is false: unloading the plugin shuts down every server it started, in every window
+- The editor is the user's own: each test works in a window of its own, with Smarts without a server (messages stay in the client's send queue); remove the Smarts before closing the window - closing it shuts them down
+- Wait with `yield lambda: <condition>` (`DeferrableTestCase`), never by blocking: the plugin's callbacks need the main thread
+
 ### Logging
 
 One logger, used by the plugin and its clients, with a configurable level (in Smarts.sublime-settings):
